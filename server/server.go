@@ -2,7 +2,6 @@ package server
 
 import (
 	"context"
-	"encoding/json"
 	"fmt"
 	"log"
 	"net"
@@ -22,56 +21,33 @@ const (
 
 // Handler implements jsonrpc2.Handle
 type Handler struct {
+	fmap map[string]handleFunc
+}
+
+type handleFunc func(ctx context.Context, conn *jsonrpc2.Conn, req *jsonrpc2.Request)
+
+func noopHandleFunc(ctx context.Context, conn *jsonrpc2.Conn, req *jsonrpc2.Request) {}
+
+// NewHandler creates a new Handler
+func NewHandler() *Handler {
+	return &Handler{
+		fmap: map[string]handleFunc{
+			didChangeConfigurationMethod: didChangeConfiguration,
+			initializeMethod:             initialize,
+			"initialized":                noopHandleFunc,
+			shutdownMethod:               shutdown,
+		},
+	}
 }
 
 func (h *Handler) Handle(ctx context.Context, conn *jsonrpc2.Conn, req *jsonrpc2.Request) {
-	fmt.Printf("Handling something something...\n")
-
-	switch req.Method {
-	case "initialize":
-		fmt.Printf("Got initialize method\n")
-
-		var params InitializeParams
-		if err := json.Unmarshal(*req.Params, &params); err != nil {
-			return
-		}
-
-		fmt.Printf("Got parameters: %#v\n", params)
-
-		results := &InitializeResult{
-			Capabilities: ServerCapabilities{
-				TextDocumentSync: TextDocumentSyncOptions{
-					Change: 0,
-				},
-				HoverProvider:                    false,
-				CompletionProvider:               nil,
-				SignatureHelpProvider:            nil,
-				DefinitionProvider:               false,
-				ReferencesProvider:               false,
-				DocumentHighlightProvider:        false,
-				DocumentSymbolProvider:           false,
-				WorkspaceSymbolProvider:          false,
-				CodeActionProvider:               false,
-				CodeLensProvider:                 nil,
-				DocumentFormattingProvider:       false,
-				DocumentRangeFormattingProvider:  false,
-				DocumentOnTypeFormattingProvider: nil,
-				RenameProvider:                   false,
-			},
-		}
-
-		err := conn.Reply(ctx, req.ID, results)
-		if err != nil {
-			fmt.Printf("Reply got error: %s\n", err.Error())
-		}
-		fmt.Printf("Responded to initialization request\n")
-
-	case "initialized":
-		// No-op.
-
-	default:
+	f, ok := h.fmap[req.Method]
+	if !ok {
 		fmt.Printf("Unhandled method '%s'\n", req.Method)
+		return
 	}
+
+	f(ctx, conn, req)
 }
 
 // InitializeService starts the service
@@ -99,7 +75,7 @@ func InitializeService() error {
 
 			go func(c net.Conn) {
 				fmt.Printf("Got connection\n")
-				h := &Handler{}
+				h := NewHandler()
 
 				fmt.Printf("Created handler\n")
 				os := jsonrpc2.NewBufferedStream(c, jsonrpc2.VSCodeObjectCodec{})
