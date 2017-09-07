@@ -19,37 +19,6 @@ const (
 	jsonPort = ":9877"
 )
 
-// Handler implements jsonrpc2.Handle
-type Handler struct {
-	fmap map[string]handleFunc
-}
-
-type handleFunc func(ctx context.Context, conn *jsonrpc2.Conn, req *jsonrpc2.Request)
-
-func noopHandleFunc(ctx context.Context, conn *jsonrpc2.Conn, req *jsonrpc2.Request) {}
-
-// NewHandler creates a new Handler
-func NewHandler() *Handler {
-	return &Handler{
-		fmap: map[string]handleFunc{
-			didChangeConfigurationMethod: didChangeConfiguration,
-			initializeMethod:             initialize,
-			"initialized":                noopHandleFunc,
-			shutdownMethod:               shutdown,
-		},
-	}
-}
-
-func (h *Handler) Handle(ctx context.Context, conn *jsonrpc2.Conn, req *jsonrpc2.Request) {
-	f, ok := h.fmap[req.Method]
-	if !ok {
-		fmt.Printf("Unhandled method '%s'\n", req.Method)
-		return
-	}
-
-	f(ctx, conn, req)
-}
-
 // InitializeService starts the service
 func InitializeService() error {
 	wg := &sync.WaitGroup{}
@@ -75,7 +44,7 @@ func InitializeService() error {
 
 			go func(c net.Conn) {
 				fmt.Printf("Got connection\n")
-				h := NewHandler()
+				h := jsonrpc2.AsyncHandler(NewHandler())
 
 				fmt.Printf("Created handler\n")
 				os := jsonrpc2.NewBufferedStream(c, jsonrpc2.VSCodeObjectCodec{})

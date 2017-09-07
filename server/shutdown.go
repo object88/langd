@@ -10,6 +10,6 @@ const (
 	shutdownMethod = "shutdown"
 )
 
-func shutdown(ctx context.Context, conn *jsonrpc2.Conn, req *jsonrpc2.Request) {
+func (h *Handler) shutdown(ctx context.Context, conn *jsonrpc2.Conn, req *jsonrpc2.Request) {
 	// Fill in here...
 }

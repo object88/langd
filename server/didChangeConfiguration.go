@@ -18,7 +18,7 @@ type DidChangeConfigurationParams struct {
 	Settings map[string]interface{} `json:"settings"`
 }
 
-func didChangeConfiguration(ctx context.Context, conn *jsonrpc2.Conn, req *jsonrpc2.Request) {
+func (h *Handler) didChangeConfiguration(ctx context.Context, conn *jsonrpc2.Conn, req *jsonrpc2.Request) {
 	fmt.Printf("Got '%s'\n", didChangeConfigurationMethod)
 
 	var params DidChangeConfigurationParams
