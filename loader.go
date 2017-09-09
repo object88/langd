@@ -38,7 +38,7 @@ func NewLoader() *Loader {
 }
 
 // Load reads in the AST
-func (l *Loader) Load(ctx context.Context, base string) (*Program, error) {
+func (l *Loader) Load(ctx context.Context, base string) (*Workspace, error) {
 	if l == nil {
 		return nil, errors.New("No pointer receiver")
 	}
@@ -78,36 +78,38 @@ func (l *Loader) Load(ctx context.Context, base string) (*Program, error) {
 
 	ls := newLoaderState(pkgName)
 
-	pkg, err := l.load(ctx, ls, abs, pkgName, 0)
+	err = l.load(ctx, ls, abs, pkgName, 0)
 	if err != nil {
 		return nil, err
 	}
 
-	program := newProgram(ls.fset, ls.pkgs, pkg)
+	workspace := newWorkspace(ls.fset, ls.pkgs)
 
-	return program, nil
+	return workspace, nil
 }
 
-func (l *Loader) load(ctx context.Context, ls *loaderState, fpath, base string, depth int) (*Package, error) {
+func (l *Loader) load(ctx context.Context, ls *loaderState, fpath, base string, depth int) error {
 	select {
 	case <-ctx.Done():
-		return nil, context.Canceled
+		return context.Canceled
 	default:
 	}
 
-	pkg, p, err := l.buildPackage(ls, fpath, base, depth)
+	pkgs, err := l.buildPackages(ls, fpath, base, depth)
 	if err != nil {
-		return nil, err
+		return err
 	}
 
-	l.stderr.Verbosef("%sProcessing '%s' imports...\n", ls.getSpacer(depth), p.Path())
+	for _, v := range *pkgs {
+		l.stderr.Verbosef("%sProcessing '%s' imports...\n", ls.getSpacer(depth), v.Pkg.Path())
 
-	err = l.visitImports(ctx, p, ls, depth)
-	if err != nil {
-		return nil, err
+		err = l.visitImports(ctx, v.Pkg, ls, depth)
+		if err != nil {
+			return err
+		}
 	}
 
-	return pkg, nil
+	return nil
 }
 
 func (l *Loader) buildAstPackages(buildP *build.Package, ls *loaderState) map[string]*ast.Package {
@@ -136,43 +138,43 @@ func (l *Loader) buildAstPackages(buildP *build.Package, ls *loaderState) map[st
 	return astPkgs
 }
 
-func (l *Loader) buildPackage(ls *loaderState, fpath, base string, depth int) (*Package, *types.Package, error) {
+func (l *Loader) buildPackages(ls *loaderState, fpath, base string, depth int) (*[]*Package, error) {
 	buildP, err := build.ImportDir(fpath, 0)
 	if err != nil {
-		return nil, nil, err
+		return nil, err
 	}
 
-	pkg := newPkg(cleanPath(base))
-	astPkgs := l.buildAstPackages(buildP, ls)
+	pkgs := []*Package{}
 
-	for k, v := range astPkgs {
-		if strings.HasSuffix(v.Name, "_test") {
-			continue
-		}
+	astPackages := l.buildAstPackages(buildP, ls)
 
-		pkg.asts = makeAsts(v)
+	for k, v := range astPackages {
+		pkg := newPkg(cleanPath(base))
+		pkg.AstPkg = v
 
-		p, err := l.config.Check(k, ls.fset, *pkg.asts, pkg.info)
+		files := getFileFlatlist(v)
+
+		p, err := l.config.Check(k, ls.fset, *files, pkg.Info)
 		if err != nil {
 			l.stderr.Verbosef("Got error checking package '%s':\n%s\n", k, err.Error())
 		}
 
 		path, err := l.findSourcePath(base)
 		if err != nil {
-			return nil, nil, err
+			return nil, err
 		}
 		l.stderr.Verbosef("%s-- Adding key '%s' / '%s'\n", ls.getSpacer(depth), base, path)
 
-		pkg.pkg = p
+		pkg.Pkg = p
 		ls.pkgs[path] = pkg
 	}
 
-	pkg, ok := ls.pkgs[fpath]
-	if !ok {
-		return nil, nil, errors.New("Failed to find package with directory-eponymous name")
-	}
+	// pkg, ok := ls.pkgs[fpath]
+	// if !ok {
+	// 	return nil, errors.New("Failed to find package with directory-eponymous name")
+	// }
 
-	return pkg, pkg.pkg, nil
+	return &pkgs, nil
 }
 
 func (l *Loader) visitImports(ctx context.Context, p *types.Package, ls *loaderState, depth int) error {
@@ -190,7 +192,7 @@ func (l *Loader) visitImports(ctx context.Context, p *types.Package, ls *loaderS
 		}
 
 		l.stderr.Verbosef("%s** Checking for '%s' / '%s' processing...\n", ls.getSpacer(depth), id, path)
-		_, err = l.load(ctx, ls, path, id, depth+1)
+		err = l.load(ctx, ls, path, id, depth+1)
 		if err != nil {
 			return err
 		}
@@ -238,7 +240,7 @@ func cleanPath(path string) string {
 	return path
 }
 
-func makeAsts(pkg *ast.Package) *[]*ast.File {
+func getFileFlatlist(pkg *ast.Package) *[]*ast.File {
 	asts := make([]*ast.File, len(pkg.Files))
 	i := 0
 	for _, f := range pkg.Files {

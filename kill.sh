@@ -1,0 +1,1 @@
+kill $(ps aux | grep 'langd serve' | awk '{print $2}')

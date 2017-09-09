@@ -10,8 +10,9 @@ import (
 
 // Handler implements jsonrpc2.Handle
 type Handler struct {
-	fmap    map[string]handleFunc
-	program *langd.Program
+	conn      *jsonrpc2.Conn
+	fmap      map[string]handleFunc
+	workspace *langd.Workspace
 }
 
 type handleFunc func(ctx context.Context, conn *jsonrpc2.Conn, req *jsonrpc2.Request)
@@ -44,4 +45,9 @@ func (h *Handler) Handle(ctx context.Context, conn *jsonrpc2.Conn, req *jsonrpc2
 	}
 
 	f(ctx, conn, req)
+}
+
+// SetConn assigns a JSONRPC2 connection
+func (h *Handler) SetConn(conn *jsonrpc2.Conn) {
+	h.conn = conn
 }

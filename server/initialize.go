@@ -17,6 +17,9 @@ const (
 func (h *Handler) initialize(ctx context.Context, conn *jsonrpc2.Conn, req *jsonrpc2.Request) {
 	fmt.Printf("Got initialize method\n")
 
+	initParams := string(*req.Params)
+	fmt.Printf("Raw init params: %s\n", initParams)
+
 	var params InitializeParams
 	if err := json.Unmarshal(*req.Params, &params); err != nil {
 		return
@@ -31,8 +34,6 @@ func (h *Handler) initialize(ctx context.Context, conn *jsonrpc2.Conn, req *json
 	//   InitializationOptions: interface {}(nil),
 	//   Capabilities: server.ClientCapabilities{},
 	// }
-
-	go h.readRoot(string(params.RootURI))
 
 	results := &InitializeResult{
 		Capabilities: ServerCapabilities{
@@ -61,17 +62,28 @@ func (h *Handler) initialize(ctx context.Context, conn *jsonrpc2.Conn, req *json
 		fmt.Printf("Reply got error: %s\n", err.Error())
 	}
 	fmt.Printf("Responded to initialization request\n")
+
+	go h.readRoot(string(params.RootURI))
 }
 
 func (h *Handler) readRoot(root string) {
 	base := strings.TrimPrefix(root, "file://")
 
+	sm := &ShowMessageParams{
+		Type:    Info,
+		Message: fmt.Sprintf("Loading AST for '%s'", base),
+	}
+
+	if err := h.conn.Notify(context.Background(), "window/showMessage", sm); err != nil {
+		fmt.Printf("Failed to deliver message to client: %s\n", err.Error())
+	}
+
 	l := langd.NewLoader()
-	p, loadErr := l.Load(context.Background(), base)
+	w, loadErr := l.Load(context.Background(), base)
 	if loadErr != nil {
 		fmt.Printf("OHSHANP: %s\n", loadErr.Error())
 	}
-	fmt.Printf("Have %d imports...\n", len(p.Imports()))
+	fmt.Printf("Have %d imports...\n", len(w.Pkgs))
 
-	h.program = p
+	h.workspace = w
 }

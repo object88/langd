@@ -44,14 +44,17 @@ func InitializeService() error {
 
 			go func(c net.Conn) {
 				fmt.Printf("Got connection\n")
-				h := jsonrpc2.AsyncHandler(NewHandler())
+				h := NewHandler()
 
 				fmt.Printf("Created handler\n")
 				os := jsonrpc2.NewBufferedStream(c, jsonrpc2.VSCodeObjectCodec{})
 
 				fmt.Printf("Created object stream\n")
-				jsonrpc2.NewConn(context.Background(), os, h)
+				conn := jsonrpc2.NewConn(context.Background(), os, jsonrpc2.AsyncHandler(h))
 				fmt.Printf("Attached handler\n")
+
+				h.SetConn(conn)
+				fmt.Printf("Set connection on handler\n")
 
 				// // Shut down the connection.
 				// fmt.Printf("Closing down...\n")
