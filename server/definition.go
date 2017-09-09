@@ -57,8 +57,6 @@ func (h *Handler) definition(ctx context.Context, conn *jsonrpc2.Conn, req *json
 
 	fmt.Printf("Have package %s\n", pkg.Name)
 
-	fmt.Printf("Looking for offset %d\n", p.Offset)
-
 	ast.Inspect(f, func(n ast.Node) bool {
 		if n == nil {
 			return false
@@ -66,16 +64,39 @@ func (h *Handler) definition(ctx context.Context, conn *jsonrpc2.Conn, req *json
 		pStart := h.workspace.Fset.Position(n.Pos())
 		pEnd := h.workspace.Fset.Position(n.End())
 
-		// fmt.Printf("Start: %s; end: %s\n", pStart.String(), pEnd.String())
 		if withinPos(p, pStart, pEnd) {
 			fmt.Printf("** FOUND IT **: [%d:%d]-[%d:%d] %#v\n", pStart.Line, pStart.Column, pEnd.Line, pEnd.Column, n)
 			switch v := n.(type) {
 			case *ast.Ident:
+				if v.Obj == nil {
+					// We have an identifier, but it has no object reference.
+					// This may happen because the user has an incomplete program.
+					return false
+				}
 				fmt.Printf("Have identifier: %s, object %#v\n", v.String(), v.Obj.Decl)
 				switch v1 := v.Obj.Decl.(type) {
+				case *ast.Field:
+					declPosition := h.workspace.Fset.Position(v1.Pos())
+					fmt.Printf("Have field; declaration at %s\n", declPosition.String())
+					result := &Location{
+						URI: DocumentURI(fmt.Sprintf("file://%s", declPosition.Filename)),
+						Range: Range{
+							Start: Position{
+								Line:      declPosition.Line - 1,
+								Character: declPosition.Column - 1,
+							},
+							End: Position{
+								Line:      declPosition.Line - 1,
+								Character: declPosition.Column + len(v.Name) - 1,
+							},
+						},
+					}
+
+					conn.Reply(ctx, req.ID, result)
+
 				case *ast.TypeSpec:
 					declPosition := h.workspace.Fset.Position(v1.Pos())
-					fmt.Printf("Have declaration at %s\n", declPosition.String())
+					fmt.Printf("Have typespec; declaration at %s\n", declPosition.String())
 
 					result := &Location{
 						URI: DocumentURI(fmt.Sprintf("file://%s", declPosition.Filename)),
@@ -86,7 +107,7 @@ func (h *Handler) definition(ctx context.Context, conn *jsonrpc2.Conn, req *json
 							},
 							End: Position{
 								Line:      declPosition.Line - 1,
-								Character: declPosition.Column + len(v1.Name.Name) - 1,
+								Character: declPosition.Column + len(v.Name) - 1,
 							},
 						},
 					}
@@ -103,6 +124,9 @@ func (h *Handler) definition(ctx context.Context, conn *jsonrpc2.Conn, req *json
 		}
 		return false
 	})
+
+	// Didn't find what we were looking for.
+	conn.Reply(ctx, req.ID, nil)
 }
 
 func withinPos(pTarget, pStart, pEnd token.Position) bool {
