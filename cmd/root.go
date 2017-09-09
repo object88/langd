@@ -18,7 +18,7 @@ func InitializeCommands() *cobra.Command {
 
 func createRootCommand() *cobra.Command {
 	cmd := &cobra.Command{
-		Use:   "iso",
+		Use:   "langd",
 		Short: "langd exercises a client/server configuration as a single binary",
 		Run: func(cmd *cobra.Command, args []string) {
 			cmd.HelpFunc()(cmd, args)
