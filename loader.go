@@ -135,28 +135,32 @@ func (l *Loader) buildAstPackages(buildP *build.Package, ls *loaderState) map[st
 	astPkgs := map[string]*ast.Package{}
 
 	for _, v := range buildP.GoFiles {
-		fpath := path.Join(buildP.Dir, v)
-
-		astf, err := parser.ParseFile(ls.fset, fpath, nil, 0)
-		if err != nil {
-			l.stderr.Verbosef("Got error while parsing file '%s':\n%s\n", fpath, err.Error())
-		}
-
-		ls.files[fpath] = astf
-
-		name := astf.Name.Name
-		astPkg, found := astPkgs[name]
-		if !found {
-			astPkg = &ast.Package{
-				Name:  name,
-				Files: map[string]*ast.File{},
-			}
-			astPkgs[name] = astPkg
-		}
-		astPkg.Files[fpath] = astf
+		l.buildAstPackage(buildP, ls, astPkgs, v)
 	}
 
 	return astPkgs
+}
+
+func (l *Loader) buildAstPackage(buildP *build.Package, ls *loaderState, astPkgs map[string]*ast.Package, fpath string) {
+	fpath = path.Join(buildP.Dir, fpath)
+
+	astf, err := parser.ParseFile(ls.fset, fpath, nil, 0)
+	if err != nil {
+		l.stderr.Verbosef("Got error while parsing file '%s':\n%s\n", fpath, err.Error())
+	}
+
+	ls.files[fpath] = astf
+
+	name := astf.Name.Name
+	astPkg, found := astPkgs[name]
+	if !found {
+		astPkg = &ast.Package{
+			Name:  name,
+			Files: map[string]*ast.File{},
+		}
+		astPkgs[name] = astPkg
+	}
+	astPkg.Files[fpath] = astf
 }
 
 // func (l *Loader) buildPackages(ls *loaderState, fpath, base string, depth int) (*[]*Package, error) {
