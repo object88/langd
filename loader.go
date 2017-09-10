@@ -163,7 +163,6 @@ func (l *Loader) buildAstPackage(buildP *build.Package, ls *loaderState, astPkgs
 	astPkg.Files[fpath] = astf
 }
 
-// func (l *Loader) buildPackages(ls *loaderState, fpath, base string, depth int) (*[]*Package, error) {
 func (l *Loader) buildPackages(ls *loaderState, fpath, base string, depth int) (*[]*types.Package, error) {
 	buildP, err := build.ImportDir(fpath, 0)
 	if err != nil {
