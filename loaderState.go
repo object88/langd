@@ -2,18 +2,21 @@ package langd
 
 import (
 	"fmt"
+	"go/ast"
 	"go/build"
 	"go/token"
+	"go/types"
 	"strings"
 )
 
 type loaderState struct {
-	base    string
-	org     string
-	orgPath string
-	fset    *token.FileSet
-	pkgs    map[string]*Package
-	spacers *[]string
+	org      string
+	orgPath  string
+	fset     *token.FileSet
+	files    map[string]*ast.File
+	pkgNames map[string]bool
+	info     *types.Info
+	spacers  *[]string
 }
 
 func newLoaderState(pkgName string) *loaderState {
@@ -31,11 +34,16 @@ func newLoaderState(pkgName string) *loaderState {
 	}
 
 	ls := &loaderState{
-		pkgName,
 		org,
 		orgPath,
 		token.NewFileSet(),
-		map[string]*Package{},
+		map[string]*ast.File{},
+		map[string]bool{},
+		&types.Info{
+			Types: make(map[ast.Expr]types.TypeAndValue),
+			Defs:  make(map[*ast.Ident]types.Object),
+			Uses:  make(map[*ast.Ident]types.Object),
+		},
 		&spacers,
 	}
 
