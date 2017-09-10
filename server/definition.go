@@ -8,7 +8,6 @@ import (
 	"go/token"
 	"strings"
 
-	"github.com/object88/langd"
 	"github.com/sourcegraph/jsonrpc2"
 )
 
@@ -49,13 +48,11 @@ func (h *Handler) definition(ctx context.Context, conn *jsonrpc2.Conn, req *json
 
 	fmt.Printf("Searching for token at %#v\n", p)
 
-	pkg, f := h.locatePosition(p)
+	f := h.workspace.Files[p.Filename]
 	if f == nil {
 		// Failure response is failure.
 		return
 	}
-
-	fmt.Printf("Have package %s\n", pkg.Name)
 
 	ast.Inspect(f, func(n ast.Node) bool {
 		if n == nil {
@@ -143,16 +140,4 @@ func withinPos(pTarget, pStart, pEnd token.Position) bool {
 	}
 
 	return true
-}
-
-func (h *Handler) locatePosition(p token.Position) (*langd.Package, *ast.File) {
-	for _, v := range h.workspace.Pkgs {
-		for n, f := range v.AstPkg.Files {
-			if n == p.Filename {
-				fmt.Printf("Found %s\n", n)
-				return v, f
-			}
-		}
-	}
-	return nil, nil
 }

@@ -83,7 +83,7 @@ func (h *Handler) readRoot(root string) {
 	if loadErr != nil {
 		fmt.Printf("OHSHANP: %s\n", loadErr.Error())
 	}
-	fmt.Printf("Have %d imports...\n", len(w.Pkgs))
+	fmt.Printf("Have %d imports...\n", len(w.PkgNames))
 
 	h.workspace = w
 }
