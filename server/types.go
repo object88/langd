@@ -80,11 +80,17 @@ type InitializeParams struct {
 // 	"trace":"off"
 // }
 
+// InitializeResult is the response to the initialize request, and includes
+// information regarding the server's capabilities
 type InitializeResult struct {
+	// Capabilities describe what the server is capable of handling
 	Capabilities ServerCapabilities `json:"capabilities,omitempty"`
 }
 
+// SaveOptions includes options that the server can indicate to the client.
 type SaveOptions struct {
+	// IncludeText specifies whether the client should include file content
+	// on save
 	IncludeText bool `json:"includeText"`
 }
 
@@ -106,7 +112,9 @@ type ServerCapabilities struct {
 	RenameProvider                   bool                             `json:"renameProvider,omitempty"`
 }
 
+// SignatureHelpOptions specifies how the server can assist with signatures
 type SignatureHelpOptions struct {
+	// TriggerCharacters are characters that trigger signature help automatically
 	TriggerCharacters []string `json:"triggerCharacters,omitempty"`
 }
 
@@ -190,7 +198,23 @@ type TextDocumentClientCapabilities struct {
 	Rename *DynamicRegistration `json:"rename,omitempty"`
 }
 
+// TextDocumentSyncKind defines how the host (editor) should sync document
+// changes to the language server.
 type TextDocumentSyncKind int
+
+const (
+	// None specifies that documents should not be synced at all.
+	None TextDocumentSyncKind = iota
+
+	// Full specifies that documents are synced by always sending the full
+	// content of the document
+	Full
+
+	// Incremental specifies that documents are synced by sending the full
+	// content on open; after that only incremental updates to the document are
+	// send
+	Incremental
+)
 
 type TextDocumentSyncOptions struct {
 	OpenClose         bool                 `json:"openClose,omitempty"`
@@ -255,6 +279,17 @@ type DocumentURI string
 type Location struct {
 	URI   DocumentURI `json:"uri"`
 	Range Range       `json:"range"`
+}
+
+// LogMessageParams is used by the LogMessageNotification to send messages
+// from the server to the client.
+// https://github.com/Microsoft/language-server-protocol/blob/master/protocol.md#logmessage-notification
+type LogMessageParams struct {
+	// Type is the message type. See {@link MessageType}
+	Type MessageType `json:"type"`
+
+	// Message is the actual message
+	Message string `json:"message"`
 }
 
 // MessageType is the type of message
