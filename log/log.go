@@ -4,58 +4,59 @@ import (
 	"fmt"
 	"io"
 	"os"
-	"sync"
 )
 
 // Level is the logging level: None, Error, Warn, Info, Verbose, or Debug
 type Level int
 
 const (
-	// None means that the log should never write
-	None Level = iota
-
 	// Error means that only errors will be written
-	Error
+	// Maps to server.Error
+	Error Level = iota
 
 	// Warn means that errors and warnings will be written
+	// Maps to server.Warning
 	Warn
 
 	// Info logging writes info, warning, and error
+	// Maps to server.Info
 	Info
 
 	// Verbose logs everything bug debug-level messages
+	// Maps to server.Log
 	Verbose
 
 	// Debug logs every message
+	// Debug level messages will not be reported to the language server client
 	Debug
-
-	stdOutLogname = "__stdout"
-	stdErrLogname = "__stderr"
 )
-
-var m sync.RWMutex
-var ls = map[string]*Log{}
 
 // Log is a fairly basic logger
 type Log struct {
 	w   io.Writer
 	lvl Level
+	s   Sender
 }
 
-// GetLog will return a log for the given name, creating
+// CreateLog will return a log for the given name, creating
 // one with the provided writer as needed
-func GetLog(name string, w io.Writer) *Log {
-	return getLog(name, w)
+func CreateLog(w io.Writer) *Log {
+	return &Log{w: w, lvl: Error}
 }
 
 // Stderr gets the log for os.Stderr
 func Stderr() *Log {
-	return getLog(stdErrLogname, os.Stderr)
+	return CreateLog(os.Stderr)
 }
 
 // Stdout gets the log for os.Stdout
 func Stdout() *Log {
-	return getLog(stdOutLogname, os.Stdout)
+	return CreateLog(os.Stdout)
+}
+
+// AssignSender sets the Sender on a log
+func (l *Log) AssignSender(s Sender) {
+	l.s = s
 }
 
 // Debugf will write if the log level is at least Debug.
@@ -95,7 +96,7 @@ func (l *Log) Printf(msg string, v ...interface{}) {
 		l = Stdout()
 	}
 
-	l.write(msg, v...)
+	l.write(Debug, msg, v...)
 }
 
 // SetLevel will adjust the logger's level.  If the pointer receiver is nil,
@@ -128,43 +129,23 @@ func (l *Log) Warnf(msg string, v ...interface{}) {
 	l.writeIf(Warn, msg, v...)
 }
 
-func getLog(name string, w io.Writer) *Log {
-	m.RLock()
-
-	if l, ok := ls[name]; ok {
-		m.RUnlock()
-		return l
-	}
-
-	m.RUnlock()
-
-	m.Lock()
-
-	if l, ok := ls[name]; ok {
-		m.Unlock()
-		return l
-	}
-
-	l := &Log{w, Error}
-	ls[name] = l
-
-	m.Unlock()
-	return l
-}
-
-func (l *Log) write(msg string, v ...interface{}) {
-	if v == nil {
-		l.w.Write([]byte(msg))
-	} else {
-		m := fmt.Sprintf(msg, v...)
-		l.w.Write([]byte(m))
-	}
-}
-
 func (l *Log) writeIf(lvl Level, msg string, v ...interface{}) {
 	if l.lvl < lvl {
 		return
 	}
 
-	l.write(msg, v...)
+	l.write(lvl, msg, v...)
+}
+
+func (l *Log) write(lvl Level, msg string, v ...interface{}) {
+	m := msg
+	if v != nil {
+		m = fmt.Sprintf(m, v...)
+	}
+
+	l.w.Write([]byte(m))
+
+	if l.s != nil && lvl != Debug {
+		l.s.SendMessage(lvl, m)
+	}
 }

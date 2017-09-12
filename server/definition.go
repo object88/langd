@@ -18,7 +18,7 @@ const (
 // definition implements the `Goto Definition` request
 // https://github.com/Microsoft/language-server-protocol/blob/master/protocol.md#goto-definition-request
 func (h *Handler) definition(ctx context.Context, conn *jsonrpc2.Conn, req *jsonrpc2.Request) {
-	fmt.Printf("Got definition method\n")
+	h.log.Verbosef("Got definition method\n")
 
 	// Example:
 	// server.TextDocumentPositionParams {
@@ -36,7 +36,7 @@ func (h *Handler) definition(ctx context.Context, conn *jsonrpc2.Conn, req *json
 		return
 	}
 
-	fmt.Printf("Got parameters: %#v\n", params)
+	h.log.Verbosef("Got parameters: %#v\n", params)
 
 	path := strings.TrimPrefix(string(params.TextDocument.URI), "file://")
 
@@ -46,14 +46,16 @@ func (h *Handler) definition(ctx context.Context, conn *jsonrpc2.Conn, req *json
 		Column:   params.Position.Character,
 	}
 
-	fmt.Printf("Searching for token at %#v\n", p)
+	h.log.Verbosef("Searching for token at %#v\n", p)
 
 	f := h.workspace.Files[p.Filename]
 	if f == nil {
 		// Failure response is failure.
-		fmt.Printf("File %s isn't in our workspace\n", p.Filename)
+		h.log.Errorf("File %s isn't in our workspace\n", p.Filename)
 		return
 	}
+
+	found := false
 
 	ast.Inspect(f, func(n ast.Node) bool {
 		if n == nil {
@@ -63,7 +65,7 @@ func (h *Handler) definition(ctx context.Context, conn *jsonrpc2.Conn, req *json
 		pEnd := h.workspace.Fset.Position(n.End())
 
 		if withinPos(p, pStart, pEnd) {
-			fmt.Printf("** FOUND IT **: [%d:%d]-[%d:%d] %#v\n", pStart.Line, pStart.Column, pEnd.Line, pEnd.Column, n)
+			h.log.Verbosef("** FOUND IT **: [%d:%d]-[%d:%d] %#v\n", pStart.Line, pStart.Column, pEnd.Line, pEnd.Column, n)
 			switch v := n.(type) {
 			case *ast.Ident:
 				if v.Obj == nil {
@@ -71,11 +73,13 @@ func (h *Handler) definition(ctx context.Context, conn *jsonrpc2.Conn, req *json
 					// This may happen because the user has an incomplete program.
 					return false
 				}
-				fmt.Printf("Have identifier: %s, object %#v\n", v.String(), v.Obj.Decl)
+				h.log.Verbosef("Have identifier: %s, object %#v\n", v.String(), v.Obj.Decl)
 				switch v1 := v.Obj.Decl.(type) {
 				case *ast.Field:
 					declPosition := h.workspace.Fset.Position(v1.Pos())
-					fmt.Printf("Have field; declaration at %s\n", declPosition.String())
+					h.log.Verbosef("Have field; declaration at %s\n", declPosition.String())
+
+					found = true
 					result := &Location{
 						URI: DocumentURI(fmt.Sprintf("file://%s", declPosition.Filename)),
 						Range: Range{
@@ -94,8 +98,9 @@ func (h *Handler) definition(ctx context.Context, conn *jsonrpc2.Conn, req *json
 
 				case *ast.TypeSpec:
 					declPosition := h.workspace.Fset.Position(v1.Pos())
-					fmt.Printf("Have typespec; declaration at %s\n", declPosition.String())
+					h.log.Verbosef("Have typespec; declaration at %s\n", declPosition.String())
 
+					found = true
 					result := &Location{
 						URI: DocumentURI(fmt.Sprintf("file://%s", declPosition.Filename)),
 						Range: Range{
@@ -124,7 +129,9 @@ func (h *Handler) definition(ctx context.Context, conn *jsonrpc2.Conn, req *json
 	})
 
 	// Didn't find what we were looking for.
-	conn.Reply(ctx, req.ID, nil)
+	if !found {
+		conn.Reply(ctx, req.ID, nil)
+	}
 }
 
 func withinPos(pTarget, pStart, pEnd token.Position) bool {
