@@ -81,6 +81,8 @@ func (l *Loader) Load(ctx context.Context, base string) (*Workspace, error) {
 	ls := newLoaderState(pkgName)
 
 	for _, pkgDir := range dirs {
+		fmt.Printf("\nStarting to process '%s'\n", pkgDir)
+
 		pkgName := ""
 		for _, srcDir := range l.srcDirs {
 			if strings.HasPrefix(pkgDir, srcDir) {
@@ -91,25 +93,25 @@ func (l *Loader) Load(ctx context.Context, base string) (*Workspace, error) {
 			return nil, fmt.Errorf("Failed to find '%s'", base)
 		}
 
-		err = l.load(ctx, ls, pkgDir, pkgName, 0)
+		err = l.load(ctx, ls, pkgDir, 0)
 		if err != nil {
 			return nil, err
 		}
 	}
 
-	workspace := newWorkspace(ls.fset, ls.info, ls.pkgNames, ls.files)
+	workspace := newWorkspace(ls.fset, ls.info, ls.loadedPaths, ls.files)
 
 	return workspace, nil
 }
 
-func (l *Loader) load(ctx context.Context, ls *loaderState, fpath, base string, depth int) error {
+func (l *Loader) load(ctx context.Context, ls *loaderState, fpath string, depth int) error {
 	select {
 	case <-ctx.Done():
 		return context.Canceled
 	default:
 	}
 
-	typePkgs, err := l.buildPackages(ls, fpath, base, depth)
+	typePkgs, err := l.buildPackages(ls, fpath, depth)
 	if err != nil {
 		return err
 	}
@@ -119,10 +121,8 @@ func (l *Loader) load(ctx context.Context, ls *loaderState, fpath, base string, 
 		return nil
 	}
 
-	for _, v := range *typePkgs {
-		l.stderr.Verbosef("%sProcessing '%s' imports...\n", ls.getSpacer(depth), v.Path())
-
-		err = l.visitImports(ctx, v, ls, depth)
+	for _, typePkg := range *typePkgs {
+		err = l.visitImports(ctx, typePkg, ls, depth)
 		if err != nil {
 			return err
 		}
@@ -131,10 +131,50 @@ func (l *Loader) load(ctx context.Context, ls *loaderState, fpath, base string, 
 	return nil
 }
 
+func (l *Loader) buildPackages(ls *loaderState, fpath string, depth int) (*[]*types.Package, error) {
+	buildP, err := build.ImportDir(fpath, 0)
+	if err != nil {
+		if _, ok := err.(*build.NoGoError); ok {
+			// There isn't any Go code here.
+			return nil, nil
+		}
+		l.stderr.Errorf("Got error when attempting import on dir '%s': %s\n", fpath, err.Error())
+		return nil, err
+	}
+
+	astPackages := l.buildAstPackages(buildP, ls)
+	typePkgs := []*types.Package{}
+
+	ls.loadedPaths[fpath] = false
+
+	for k, v := range astPackages {
+		l.stderr.Verbosef("%s-- Adding package '%s'\n", ls.getSpacer(depth), k)
+
+		files := getFileFlatlist(v)
+		p, err := l.config.Check(k, ls.fset, *files, ls.info)
+		if err != nil {
+			l.stderr.Verbosef("Got error checking package '%s':\n%s\n", k, err.Error())
+		}
+
+		typePkgs = append(typePkgs, p)
+	}
+
+	l.stderr.Verbosef("%s++ Done with '%s'\n", ls.getSpacer(depth), fpath)
+	ls.loadedPaths[fpath] = true
+
+	return &typePkgs, nil
+}
+
 func (l *Loader) buildAstPackages(buildP *build.Package, ls *loaderState) map[string]*ast.Package {
 	astPkgs := map[string]*ast.Package{}
 
 	for _, v := range buildP.GoFiles {
+		fmt.Printf("GG '%s'\n", v)
+		l.buildAstPackage(buildP, ls, astPkgs, v)
+	}
+
+	for _, v := range buildP.TestGoFiles {
+		fmt.Printf("TT '%s'\n", v)
 		l.buildAstPackage(buildP, ls, astPkgs, v)
 	}
 
@@ -163,59 +203,25 @@ func (l *Loader) buildAstPackage(buildP *build.Package, ls *loaderState, astPkgs
 	astPkg.Files[fpath] = astf
 }
 
-func (l *Loader) buildPackages(ls *loaderState, fpath, base string, depth int) (*[]*types.Package, error) {
-	buildP, err := build.ImportDir(fpath, 0)
-	if err != nil {
-		if _, ok := err.(*build.NoGoError); ok {
-			// There isn't any Go code here.
-			return nil, nil
-		}
-		l.stderr.Errorf("Got error when attempting import on dir '%s': %s\n", fpath, err.Error())
-		return nil, err
-	}
-
-	typePkgs := []*types.Package{}
-
-	astPackages := l.buildAstPackages(buildP, ls)
-
-	for k, v := range astPackages {
-		files := getFileFlatlist(v)
-
-		p, err := l.config.Check(k, ls.fset, *files, ls.info)
-		if err != nil {
-			l.stderr.Verbosef("Got error checking package '%s':\n%s\n", k, err.Error())
-		}
-
-		path, err := l.findSourcePath(base)
-		if err != nil {
-			return nil, err
-		}
-		l.stderr.Verbosef("%s-- Adding key '%s' / '%s'\n", ls.getSpacer(depth), base, path)
-
-		ls.pkgNames[path] = true
-
-		typePkgs = append(typePkgs, p)
-	}
-
-	return &typePkgs, nil
-}
-
 func (l *Loader) visitImports(ctx context.Context, p *types.Package, ls *loaderState, depth int) error {
 	imports := p.Imports()
-	for _, v0 := range imports {
-		id := v0.Path()
-		path, err := l.findSourcePath(id)
+	for _, v := range imports {
+		path, err := l.findSourcePath(v.Path())
 		if err != nil {
 			return err
 		}
 
-		if _, ok := ls.pkgNames[path]; ok {
-			l.stderr.Verbosef("%s** Checking for '%s' / '%s' already parsed; skipping...\n", ls.getSpacer(depth), id, path)
+		if loaded, ok := ls.loadedPaths[path]; ok {
+			if loaded {
+				l.stderr.Verbosef("%s** Checking for %s'; in process...\n", ls.getSpacer(depth), path)
+			} else {
+				l.stderr.Verbosef("%s** Checking for %s'; already loaded; skipping...\n", ls.getSpacer(depth), path)
+			}
 			continue
 		}
 
-		l.stderr.Verbosef("%s** Checking for '%s' / '%s' processing...\n", ls.getSpacer(depth), id, path)
-		err = l.load(ctx, ls, path, id, depth+1)
+		l.stderr.Verbosef("%s** Checking for '%s'; processing...\n", ls.getSpacer(depth), path)
+		err = l.load(ctx, ls, path, depth+1)
 		if err != nil {
 			return err
 		}

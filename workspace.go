@@ -14,6 +14,6 @@ type Workspace struct {
 	Files    map[string]*ast.File
 }
 
-func newWorkspace(fset *token.FileSet, info *types.Info, pkgNames map[string]bool, files map[string]*ast.File) *Workspace {
-	return &Workspace{fset, info, pkgNames, files}
+func newWorkspace(fset *token.FileSet, info *types.Info, loadedPaths map[string]bool, files map[string]*ast.File) *Workspace {
+	return &Workspace{fset, info, loadedPaths, files}
 }

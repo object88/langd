@@ -10,13 +10,13 @@ import (
 )
 
 type loaderState struct {
-	org      string
-	orgPath  string
-	fset     *token.FileSet
-	files    map[string]*ast.File
-	pkgNames map[string]bool
-	info     *types.Info
-	spacers  *[]string
+	org         string
+	orgPath     string
+	fset        *token.FileSet
+	files       map[string]*ast.File
+	loadedPaths map[string]bool
+	info        *types.Info
+	spacers     *[]string
 }
 
 func newLoaderState(pkgName string) *loaderState {

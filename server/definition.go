@@ -51,6 +51,7 @@ func (h *Handler) definition(ctx context.Context, conn *jsonrpc2.Conn, req *json
 	f := h.workspace.Files[p.Filename]
 	if f == nil {
 		// Failure response is failure.
+		fmt.Printf("File %s isn't in our workspace\n", p.Filename)
 		return
 	}
 
