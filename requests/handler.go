@@ -1,4 +1,4 @@
-package server
+package requests
 
 import (
 	"context"
@@ -26,6 +26,7 @@ func NewHandler() *Handler {
 	h.fmap = map[string]handleFunc{
 		definitionMethod:             h.definition,
 		didChangeConfigurationMethod: h.didChangeConfiguration,
+		exitNotification:							h.exit,
 		initializeMethod:             h.initialize,
 		"initialized":                h.noopHandleFunc,
 		shutdownMethod:               h.shutdown,

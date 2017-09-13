@@ -1,4 +1,4 @@
-package server
+package requests
 
 import (
 	"context"
@@ -11,5 +11,7 @@ const (
 )
 
 func (h *Handler) shutdown(ctx context.Context, conn *jsonrpc2.Conn, req *jsonrpc2.Request) {
-	// Fill in here...
+	h.log.Debugf("Received shutdown request\n")
+	h.workspace = nil
+	conn.Reply(ctx, req.ID, nil)
 }

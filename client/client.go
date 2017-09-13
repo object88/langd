@@ -19,7 +19,7 @@ const (
 // Client is a wrapper for the gRPC client that handles connections
 type Client struct {
 	conn *grpc.ClientConn
-	c    proto.GeneratorClient
+	c    proto.LangdClient
 }
 
 // NewClient returns a new client
@@ -30,7 +30,7 @@ func NewClient() (*Client, error) {
 		return nil, err
 	}
 
-	c := proto.NewGeneratorClient(conn)
+	c := proto.NewLangdClient(conn)
 
 	return &Client{conn, c}, nil
 }
@@ -86,20 +86,4 @@ func (c *Client) RequestStartup() error {
 	}
 
 	return err
-}
-
-// GenerateUUID will create a new UUID
-func (c *Client) GenerateUUID() (string, bool) {
-	r, err := c.c.GenerateUUID(context.Background(), &proto.EmptyRequest{})
-	if err == nil {
-		return r.Uuid, true
-	}
-
-	s, ok := status.FromError(err)
-	if !ok {
-		return "", true
-	}
-
-	code := s.Code()
-	return "", code != codes.Unavailable
 }

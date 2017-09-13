@@ -2,8 +2,7 @@ syntax = "proto3";
 
 package proto;
 
-service Generator {
-  rpc GenerateUUID (EmptyRequest) returns (UUIDReply) {}
+service Langd {
   rpc Shutdown (EmptyRequest) returns (EmptyReply) {}
   rpc Startup (EmptyRequest) returns (EmptyReply) {}
 }
@@ -12,8 +11,4 @@ message EmptyRequest {
 }
 
 message EmptyReply {
-}
-
-message UUIDReply {
-  string uuid = 1;
 }
