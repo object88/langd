@@ -38,7 +38,8 @@ func (h *Handler) initialize(ctx context.Context, conn *jsonrpc2.Conn, req *json
 	results := &InitializeResult{
 		Capabilities: ServerCapabilities{
 			TextDocumentSync: TextDocumentSyncOptions{
-				Change: 0,
+				Change:    Incremental,
+				OpenClose: true,
 			},
 			HoverProvider:                    false,
 			CompletionProvider:               nil,

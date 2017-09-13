@@ -11,10 +11,11 @@ import (
 
 // Handler implements jsonrpc2.Handle
 type Handler struct {
-	conn      *jsonrpc2.Conn
-	fmap      map[string]handleFunc
-	workspace *langd.Workspace
-	log       *log.Log
+	conn        *jsonrpc2.Conn
+	fmap        map[string]handleFunc
+	workspace   *langd.Workspace
+	log         *log.Log
+	openedFiles map[string]bool
 }
 
 type handleFunc func(ctx context.Context, conn *jsonrpc2.Conn, req *jsonrpc2.Request)
@@ -24,16 +25,21 @@ func NewHandler() *Handler {
 	h := &Handler{}
 
 	h.fmap = map[string]handleFunc{
-		definitionMethod:             h.definition,
-		didChangeConfigurationMethod: h.didChangeConfiguration,
-		exitNotification:							h.exit,
-		initializeMethod:             h.initialize,
-		"initialized":                h.noopHandleFunc,
-		shutdownMethod:               h.shutdown,
+		definitionMethod:                  h.definition,
+		didChangeConfigurationMethod:      h.didChangeConfiguration,
+		didChangeTextDocumentNotification: h.didChangeTextDocument,
+		didCloseNotification:              h.didClose,
+		didOpenNotification:               h.didOpen,
+		exitNotification:                  h.exit,
+		initializeMethod:                  h.initialize,
+		"initialized":                     h.noopHandleFunc,
+		shutdownMethod:                    h.shutdown,
 	}
 
 	h.log = log.CreateLog(os.Stdout)
 	h.log.SetLevel(log.Verbose)
+
+	h.openedFiles = map[string]bool{}
 
 	return h
 }

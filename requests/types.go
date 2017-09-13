@@ -22,6 +22,41 @@ type CompletionOptions struct {
 	TriggerCharacters []string `json:"triggerCharacters,omitempty"`
 }
 
+// DidChangeTextDocumentParams is supplied by the client to describe the
+// change or changes made to a text document
+// https://github.com/Microsoft/language-server-protocol/blob/master/protocol.md#didchangetextdocument-notification
+type DidChangeTextDocumentParams struct {
+	/**
+	 * The document that did change. The version number points
+	 * to the version after all provided content changes have
+	 * been applied.
+	 */
+	TextDocument VersionedTextDocumentIdentifier `json:"textDocument"`
+
+	/**
+	 * The actual content changes. The content changes descibe single state changes
+	 * to the document. So if there are two content changes c1 and c2 for a document
+	 * in state S10 then c1 move the document to S11 and c2 to S12.
+	 */
+	ContentChanges []TextDocumentContentChangeEvent `json:"contentChanges"`
+}
+
+// DidCloseTextDocumentParams is sent from the client to the server when the
+// document got closed in the client
+// https://github.com/Microsoft/language-server-protocol/blob/master/protocol.md#didclosetextdocument-notification
+type DidCloseTextDocumentParams struct {
+	// TextDocument specifies the document that was closed.
+	TextDocument TextDocumentIdentifier `json:"textDocument"`
+}
+
+// DidOpenTextDocumentParams is supplied by the client to describe when a
+// document is opened in the editor
+// https://github.com/Microsoft/language-server-protocol/blob/master/protocol.md#didopentextdocument-notification
+type DidOpenTextDocumentParams struct {
+	// TextDocument is the document that was opened.
+	TextDocument TextDocumentItem `json:"textDocument"`
+}
+
 type DocumentOnTypeFormattingOptions struct {
 	FirstTriggerCharacter string   `json:"firstTriggerCharacter"`
 	MoreTriggerCharacter  []string `json:"moreTriggerCharacter,omitempty"`
@@ -198,6 +233,20 @@ type TextDocumentClientCapabilities struct {
 	Rename *DynamicRegistration `json:"rename,omitempty"`
 }
 
+// TextDocumentContentChangeEvent is an event describing a change to a text
+// document. If range and rangeLength are omitted the new text is considered
+// to be the full content of the document.
+type TextDocumentContentChangeEvent struct {
+	// Range states the range of the document that changed.
+	Range *Range `json:"range,omitempty"`
+
+	// RangeLength is the length of the range that got replaced.
+	RangeLength *int `json:"rangeLength,omitempty"`
+
+	// Text is the new text of the range/document.
+	Text string `json:"text"`
+}
+
 // TextDocumentSyncKind defines how the host (editor) should sync document
 // changes to the language server.
 type TextDocumentSyncKind int
@@ -216,12 +265,25 @@ const (
 	Incremental
 )
 
+// TextDocumentSyncOptions specify what the server can handle with regard to
+// changes to a text document
 type TextDocumentSyncOptions struct {
-	OpenClose         bool                 `json:"openClose,omitempty"`
-	Change            TextDocumentSyncKind `json:"change"`
-	WillSave          bool                 `json:"willSave,omitempty"`
-	WillSaveWaitUntil bool                 `json:"willSaveWaitUntil,omitempty"`
-	Save              *SaveOptions         `json:"save,omitempty"`
+	// OpenClose determine whether open & close notifications are sent to the
+	// server
+	OpenClose bool `json:"openClose,omitempty"`
+
+	// Change determines which type of change notifications are sent to the server
+	Change TextDocumentSyncKind `json:"change"`
+
+	// WillSave determine whether will-save notifications are sent to the server
+	WillSave bool `json:"willSave,omitempty"`
+
+	// WillSaveWaitUntil determines whether will-save-wait-until requests are
+	// sent to the server
+	WillSaveWaitUntil bool `json:"willSaveWaitUntil,omitempty"`
+
+	// Save specifies what data is sent along with a save notification
+	Save *SaveOptions `json:"save,omitempty"`
 }
 
 // WorkspaceClientCapabilities contains specific client capabilities.
@@ -367,6 +429,27 @@ type TextDocumentIdentifier struct {
 	URI DocumentURI `json:"uri"`
 }
 
+// TextDocumentItem is an item to trasnfer a text document from the client
+// to the server
+// https://github.com/Microsoft/language-server-protocol/blob/master/protocol.md#textdocumentitem
+type TextDocumentItem struct {
+	// URI is the text document's URI
+	URI DocumentURI `json:"uri"`
+
+	// LanguageID is the text document's language identifier
+	LanguageID string `json:"languageId"`
+
+	// Version is the version number of this document (it will increase after
+	// each change, including undo/redo)
+	Version int `json:"version"`
+
+	// Text is the content of the opened text document
+	Text string `json:"text"`
+}
+
+// TextDocumentPositionParams is a parameter literal used in requests to pass
+// a text document and a position inside that document.
+// https://github.com/Microsoft/language-server-protocol/blob/master/protocol.md#textdocumentpositionparams
 type TextDocumentPositionParams struct {
 	// TextDocument idenfities the document
 	TextDocument TextDocumentIdentifier `json:"textDocument"`
@@ -380,4 +463,14 @@ type TextDocumentRegistrationOptions struct {
 	// DocumentSelector is used to identify the scope of the registration. If set to null
 	// the document selector provided on the client side will be used.
 	DocumentSelector *DocumentSelector `json:"documentSelector,omitempty"`
+}
+
+// VersionedTextDocumentIdentifier is a TextDocumentIdenfigier with a
+// version number
+// NOTE: figure out how to do JSON marshalling so that the structure is flattened.
+type VersionedTextDocumentIdentifier struct {
+	TextDocumentIdentifier
+
+	// Version is the version number of this document.
+	Version int `json:"version"`
 }
