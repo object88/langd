@@ -10,8 +10,10 @@ const (
 	shutdownMethod = "shutdown"
 )
 
-func (h *Handler) shutdown(ctx context.Context, conn *jsonrpc2.Conn, req *jsonrpc2.Request) {
+func (h *Handler) shutdown(ctx context.Context, req *jsonrpc2.Request) handleFuncer {
 	h.log.Debugf("Received shutdown request\n")
 	h.workspace = nil
-	conn.Reply(ctx, req.ID, nil)
+	return func() {
+		h.conn.Reply(ctx, req.ID, nil)
+	}
 }

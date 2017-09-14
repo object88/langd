@@ -12,22 +12,21 @@ const (
 	didChangeTextDocumentNotification = "textDocument/didChange"
 )
 
-func (h *Handler) didChangeTextDocument(ctx context.Context, conn *jsonrpc2.Conn, req *jsonrpc2.Request) {
+func (h *Handler) didChangeTextDocument(ctx context.Context, req *jsonrpc2.Request) handleFuncer {
 	var params DidChangeTextDocumentParams
 	if err := json.Unmarshal(*req.Params, &params); err != nil {
-		return
+		return noopHandleFuncer
 	}
 
 	h.log.Verbosef("Got parameters: %#v\n", params)
 
 	uri := string(params.TextDocument.URI)
-	if opened, ok := h.openedFiles[uri]; !ok {
-		fmt.Printf("File %s was never opened\n", uri)
-	} else {
-		if opened {
-			fmt.Printf("File %s is opene\n", uri)
-		} else {
-			fmt.Printf("File %s is not opened\n", uri)
-		}
+	buf, ok := h.openedFiles[uri]
+	if !ok {
+		fmt.Printf("File %s is not opened\n", uri)
+		return noopHandleFuncer
 	}
+
+	fmt.Printf("File %s is open, len %d\n", uri, buf.Len())
+	return noopHandleFuncer
 }

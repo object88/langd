@@ -14,27 +14,40 @@ const (
 	initializeMethod = "initialize"
 )
 
-func (h *Handler) initialize(ctx context.Context, conn *jsonrpc2.Conn, req *jsonrpc2.Request) {
+type initializeHandler struct {
+	requestBase
+
+	rootURI string
+}
+
+func createInitializeHandler(ctx context.Context, h *Handler, req *jsonrpc2.Request) requestHandler {
+	ih := &initializeHandler{
+		requestBase: createRequestBase(ctx, h, req.ID),
+	}
+
+	return ih
+}
+
+func (ih *initializeHandler) preprocess(p *json.RawMessage) {
 	fmt.Printf("Got initialize method\n")
 
-	initParams := string(*req.Params)
+	initParams := string(*p)
 	fmt.Printf("Raw init params: %s\n", initParams)
 
 	var params InitializeParams
-	if err := json.Unmarshal(*req.Params, &params); err != nil {
+	if err := json.Unmarshal(*p, &params); err != nil {
 		return
 	}
 
+	ih.rootURI = string(params.RootURI)
 	fmt.Printf("Got parameters: %#v\n", params)
+}
 
-	// Example:
-	// server.InitializeParams {
-	//   ProcessID: 62151,
-	//   RootURI: "file:///Users/bropa18/work/src/github.com/object88/immutable",
-	//   InitializationOptions: interface {}(nil),
-	//   Capabilities: server.ClientCapabilities{},
-	// }
+func (ih *initializeHandler) work() {
+	go ih.readRoot(ih.rootURI)
+}
 
+func (ih *initializeHandler) reply() interface{} {
 	results := &InitializeResult{
 		Capabilities: ServerCapabilities{
 			TextDocumentSync: TextDocumentSyncOptions{
@@ -57,17 +70,10 @@ func (h *Handler) initialize(ctx context.Context, conn *jsonrpc2.Conn, req *json
 			RenameProvider:                   false,
 		},
 	}
-
-	err := conn.Reply(ctx, req.ID, results)
-	if err != nil {
-		fmt.Printf("Reply got error: %s\n", err.Error())
-	}
-	fmt.Printf("Responded to initialization request\n")
-
-	go h.readRoot(string(params.RootURI))
+	return results
 }
 
-func (h *Handler) readRoot(root string) {
+func (ih *initializeHandler) readRoot(root string) {
 	base := strings.TrimPrefix(root, "file://")
 
 	sm := &ShowMessageParams{
@@ -75,7 +81,7 @@ func (h *Handler) readRoot(root string) {
 		Message: fmt.Sprintf("Loading AST for '%s'", base),
 	}
 
-	if err := h.conn.Notify(context.Background(), "window/showMessage", sm); err != nil {
+	if err := ih.h.conn.Notify(context.Background(), "window/showMessage", sm); err != nil {
 		fmt.Printf("Failed to deliver message to client: %s\n", err.Error())
 	}
 
@@ -86,5 +92,5 @@ func (h *Handler) readRoot(root string) {
 	}
 	fmt.Printf("Have %d imports...\n", len(w.PkgNames))
 
-	h.workspace = w
+	ih.h.workspace = w
 }
