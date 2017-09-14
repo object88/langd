@@ -45,8 +45,8 @@ func (rh *requestBase) id() jsonrpc2.ID {
 }
 
 type requestHandler interface {
-	preprocess(p *json.RawMessage)
-	work()
+	preprocess(p *json.RawMessage) error
+	work() error
 
 	id() jsonrpc2.ID
 	ctx() context.Context
@@ -54,7 +54,7 @@ type requestHandler interface {
 
 type replyHandler interface {
 	requestHandler
-	reply() interface{}
+	reply() (interface{}, error)
 }
 
 type initializerFunc func(ctx context.Context, h *Handler, req *jsonrpc2.Request) requestHandler
@@ -99,13 +99,25 @@ func NewHandler() *Handler {
 		for {
 			select {
 			case work := <-h.incomingQueue:
-				work.work()
+				err := work.work()
+				if err != nil {
+					// Should we respond right away?  Set up with an auto-responder?
+					// TODO: Cannot do nothing here; if the request is a method,
+					// it wants a response.
+					h.log.Errorf(err.Error())
+					continue
+				}
 				if replier, ok := work.(replyHandler); ok {
 					h.outgoingQueue <- replier
 				}
 
 			case work := <-h.outgoingQueue:
-				result := work.reply()
+				result, err := work.reply()
+				if err != nil {
+					// TODO: fill in actual error.
+					h.conn.ReplyWithError(work.ctx(), work.id(), nil)
+					continue
+				}
 				h.conn.Reply(work.ctx(), work.id(), result)
 			}
 		}
@@ -138,7 +150,11 @@ func (h *Handler) Handle(ctx context.Context, _ *jsonrpc2.Conn, req *jsonrpc2.Re
 		h.log.Errorf("Request handler is not a reply handler, but client expects a reply for method '%s'", req.Method)
 	}
 
-	rh.preprocess(req.Params)
+	err := rh.preprocess(req.Params)
+	if err != nil {
+		// Bad news...
+		// TODO: determine what to do here.
+	}
 
 	h.incomingQueue <- rh
 }

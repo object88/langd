@@ -24,10 +24,12 @@ func createInitializedHandler(ctx context.Context, h *Handler, req *jsonrpc2.Req
 	return ih
 }
 
-func (ih *initializedHandler) preprocess(p *json.RawMessage) {
+func (ih *initializedHandler) preprocess(p *json.RawMessage) error {
 	fmt.Printf("Got initialized method\n")
+	return nil
 }
 
-func (ih *initializedHandler) work() {
+func (ih *initializedHandler) work() error {
 	fmt.Printf("Did initialized method\n")
+	return nil
 }

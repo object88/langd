@@ -32,7 +32,7 @@ func createDefinitionHandler(ctx context.Context, h *Handler, req *jsonrpc2.Requ
 	return rh
 }
 
-func (rh *definitionHandler) preprocess(params *json.RawMessage) {
+func (rh *definitionHandler) preprocess(params *json.RawMessage) error {
 	rh.h.log.Verbosef("Got definition method\n")
 
 	// Example:
@@ -48,7 +48,7 @@ func (rh *definitionHandler) preprocess(params *json.RawMessage) {
 
 	var typedParams TextDocumentPositionParams
 	if err := json.Unmarshal(*params, &typedParams); err != nil {
-		return
+		return err
 		// return noopHandleFuncer
 	}
 
@@ -63,14 +63,14 @@ func (rh *definitionHandler) preprocess(params *json.RawMessage) {
 	}
 
 	rh.p = p
+	return nil
 }
 
-func (rh *definitionHandler) work() {
+func (rh *definitionHandler) work() error {
 	f := rh.h.workspace.Files[rh.p.Filename]
 	if f == nil {
 		// Failure response is failure.
-		rh.h.log.Errorf("File %s isn't in our workspace\n", rh.p.Filename)
-		return
+		return fmt.Errorf("File %s isn't in our workspace\n", rh.p.Filename)
 	}
 
 	ast.Inspect(f, func(n ast.Node) bool {
@@ -142,10 +142,11 @@ func (rh *definitionHandler) work() {
 	// if !found {
 	// 	h.Respond(ctx, id, nil)
 	// }
+	return nil
 }
 
-func (rh *definitionHandler) reply() interface{} {
-	return rh.result
+func (rh *definitionHandler) reply() (interface{}, error) {
+	return rh.result, nil
 }
 
 func withinPos(pTarget, pStart, pEnd *token.Position) bool {

@@ -28,7 +28,7 @@ func createInitializeHandler(ctx context.Context, h *Handler, req *jsonrpc2.Requ
 	return ih
 }
 
-func (ih *initializeHandler) preprocess(p *json.RawMessage) {
+func (ih *initializeHandler) preprocess(p *json.RawMessage) error {
 	fmt.Printf("Got initialize method\n")
 
 	initParams := string(*p)
@@ -36,18 +36,20 @@ func (ih *initializeHandler) preprocess(p *json.RawMessage) {
 
 	var params InitializeParams
 	if err := json.Unmarshal(*p, &params); err != nil {
-		return
+		return err
 	}
 
 	ih.rootURI = string(params.RootURI)
 	fmt.Printf("Got parameters: %#v\n", params)
+	return nil
 }
 
-func (ih *initializeHandler) work() {
+func (ih *initializeHandler) work() error {
 	go ih.readRoot(ih.rootURI)
+	return nil
 }
 
-func (ih *initializeHandler) reply() interface{} {
+func (ih *initializeHandler) reply() (interface{}, error) {
 	results := &InitializeResult{
 		Capabilities: ServerCapabilities{
 			TextDocumentSync: TextDocumentSyncOptions{
@@ -70,7 +72,7 @@ func (ih *initializeHandler) reply() interface{} {
 			RenameProvider:                   false,
 		},
 	}
-	return results
+	return results, nil
 }
 
 func (ih *initializeHandler) readRoot(root string) {
