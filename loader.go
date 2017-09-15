@@ -169,12 +169,12 @@ func (l *Loader) buildAstPackages(buildP *build.Package, ls *loaderState) map[st
 	astPkgs := map[string]*ast.Package{}
 
 	for _, v := range buildP.GoFiles {
-		fmt.Printf("GG '%s'\n", v)
+		// fmt.Printf("GG '%s'\n", v)
 		l.buildAstPackage(buildP, ls, astPkgs, v)
 	}
 
 	for _, v := range buildP.TestGoFiles {
-		fmt.Printf("TT '%s'\n", v)
+		// fmt.Printf("TT '%s'\n", v)
 		l.buildAstPackage(buildP, ls, astPkgs, v)
 	}
 

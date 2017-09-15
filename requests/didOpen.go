@@ -15,36 +15,55 @@ const (
 	didOpenNotification = "textDocument/didOpen"
 )
 
-func (h *Handler) didOpen(ctx context.Context, req *jsonrpc2.Request) handleFuncer {
-	var params DidOpenTextDocumentParams
-	if err := json.Unmarshal(*req.Params, &params); err != nil {
-		return noopHandleFuncer
+type didOpenHandler struct {
+	requestBase
+
+	fpath string
+	text  *bytes.Buffer
+}
+
+func createDidOpenHandler(ctx context.Context, h *Handler, req *jsonrpc2.Request) requestHandler {
+	rh := &didOpenHandler{
+		requestBase: createRequestBase(ctx, h, req.ID),
 	}
 
-	fmt.Printf("Got parameters: %#v\n", params)
+	return rh
+}
 
-	uri := string(params.TextDocument.URI)
+func (rh *didOpenHandler) preprocess(params *json.RawMessage) error {
+	var typedParams DidOpenTextDocumentParams
+	if err := json.Unmarshal(*params, &typedParams); err != nil {
+		return fmt.Errorf("Failed to unmarshal params")
+		// return noopHandleFuncer
+	}
+
+	fmt.Printf("Got parameters: %#v\n", typedParams)
+
+	uri := string(typedParams.TextDocument.URI)
 	fpath := strings.TrimPrefix(uri, "file://")
 
-	buf := bytes.NewBufferString(params.TextDocument.Text)
+	buf := bytes.NewBufferString(typedParams.TextDocument.Text)
 
-	return func() {
-		h.openedFiles[fpath] = buf
+	rh.fpath = fpath
+	rh.text = buf
+	return nil
+}
 
-		if h.workspace == nil {
-			h.log.Errorf("FAILED: Workspace doesn't exist on handler\n")
-			return
-		}
+func (rh *didOpenHandler) work() error {
+	rh.h.openedFiles[rh.fpath] = rh.text
 
-		astFile, err := parser.ParseFile(h.workspace.Fset, fpath, buf, 0)
-		if err != nil {
-			h.log.Errorf("Failed to parse file as provided by didOpen: %s\n", err.Error())
-		}
-
-		h.workspace.Files[fpath] = astFile
-
-		h.log.Debugf("Shadowed file '%s'\n", fpath)
-
-		// This is a notification, so no response necessary.
+	if rh.h.workspace == nil {
+		return fmt.Errorf("FAILED: Workspace doesn't exist on handler")
 	}
+
+	astFile, err := parser.ParseFile(rh.h.workspace.Fset, rh.fpath, rh.text, 0)
+	if err != nil {
+		return fmt.Errorf("Failed to parse file as provided by didOpen: %s\n", err.Error())
+	}
+
+	rh.h.workspace.Files[rh.fpath] = astFile
+
+	rh.h.log.Debugf("Shadowed file '%s'\n", rh.fpath)
+
+	return nil
 }

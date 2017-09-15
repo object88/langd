@@ -14,34 +14,15 @@ import (
 // Handler implements jsonrpc2.Handle
 type Handler struct {
 	conn          *jsonrpc2.Conn
-	imap          map[string]initializerFunc
+	imap          map[string]InitializerFunc
 	workspace     *langd.Workspace
 	log           *log.Log
 	openedFiles   map[string]*bytes.Buffer
 	incomingQueue chan requestHandler
 	outgoingQueue chan replyHandler
-}
 
-type requestBase struct {
-	_ctx context.Context
-	_id  jsonrpc2.ID
-	h    *Handler
-}
-
-func createRequestBase(ctx context.Context, h *Handler, id jsonrpc2.ID) requestBase {
-	return requestBase{
-		_ctx: ctx,
-		_id:  id,
-		h:    h,
-	}
-}
-
-func (rh *requestBase) ctx() context.Context {
-	return rh._ctx
-}
-
-func (rh *requestBase) id() jsonrpc2.ID {
-	return rh._id
+	imf       *IniterMapFactory
+	initState initState
 }
 
 type requestHandler interface {
@@ -57,42 +38,48 @@ type replyHandler interface {
 	reply() (interface{}, error)
 }
 
-type initializerFunc func(ctx context.Context, h *Handler, req *jsonrpc2.Request) requestHandler
+type initState int
+
+const (
+	uninited initState = iota
+	initing
+	inited
+)
 
 type handleFunc func(ctx context.Context, req *jsonrpc2.Request) handleFuncer
 type handleFuncer func()
 
 // NewHandler creates a new Handler
-func NewHandler() *Handler {
-	h := &Handler{}
+func NewHandler(imf *IniterMapFactory) *Handler {
+	h := &Handler{
+		openedFiles: map[string]*bytes.Buffer{},
+
+		// Hopefully these queues are sufficiently deep.  Otherwise, the handler
+		// will start blocking.
+		incomingQueue: make(chan requestHandler, 1024),
+		outgoingQueue: make(chan replyHandler, 256),
+
+		imf:       imf,
+		initState: uninited,
+	}
 
 	// h.fmap = map[string]handleFunc{
-	// 	definitionMethod:                  h.definition,
 	// 	didChangeConfigurationMethod:      h.didChangeConfiguration,
 	// 	didChangeTextDocumentNotification: h.didChangeTextDocument,
-	// 	didCloseNotification:              h.didClose,
-	// 	didOpenNotification:               h.didOpen,
 	// 	exitNotification:                  h.exit,
-	// 	initializeMethod:                  h.initialize,
-	// 	"initialized":                     h.noopHandleFunc,
 	// 	shutdownMethod:                    h.shutdown,
 	// }
 
-	h.imap = map[string]initializerFunc{
+	h.imap = map[string]InitializerFunc{
 		definitionMethod:        createDefinitionHandler,
+		didCloseNotification:    createDidCloseHandler,
+		didOpenNotification:     createDidOpenHandler,
 		initializedNotification: createInitializedHandler,
 		initializeMethod:        createInitializeHandler,
 	}
 
 	h.log = log.CreateLog(os.Stdout)
 	h.log.SetLevel(log.Verbose)
-
-	h.openedFiles = map[string]*bytes.Buffer{}
-
-	// Hopefully these queues are sufficiently deep.  Otherwise, the handler
-	// will start blocking.
-	h.incomingQueue = make(chan requestHandler, 1024)
-	h.outgoingQueue = make(chan replyHandler, 256)
 
 	// Start a routine to process requests
 	go func() {
@@ -135,9 +122,15 @@ func (h *Handler) SetConn(conn *jsonrpc2.Conn) {
 
 // Handle invokes the correct method handler based on the JSONRPC2 method
 func (h *Handler) Handle(ctx context.Context, _ *jsonrpc2.Conn, req *jsonrpc2.Request) {
-	f, ok := h.imap[req.Method]
+	meth := req.Method
+
+	if h.initState == uninited && meth != initializeMethod {
+		// We are uninited; must reject or ignore method.
+	}
+
+	f, ok := h.imap[meth]
 	if !ok {
-		h.log.Verbosef("Unhandled method '%s'\n", req.Method)
+		h.log.Verbosef("Unhandled method '%s'\n", meth)
 		return
 	}
 
@@ -145,9 +138,9 @@ func (h *Handler) Handle(ctx context.Context, _ *jsonrpc2.Conn, req *jsonrpc2.Re
 
 	_, isReplyHandler := rh.(replyHandler)
 	if req.Notif && isReplyHandler {
-		h.log.Errorf("Request handler is also a reply handler, but client does not listen for replies for method '%s'", req.Method)
+		h.log.Errorf("Request handler is also a reply handler, but client does not listen for replies for method '%s'", meth)
 	} else if !req.Notif && !isReplyHandler {
-		h.log.Errorf("Request handler is not a reply handler, but client expects a reply for method '%s'", req.Method)
+		h.log.Errorf("Request handler is not a reply handler, but client expects a reply for method '%s'", meth)
 	}
 
 	err := rh.preprocess(req.Params)
