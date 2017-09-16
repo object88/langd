@@ -4,12 +4,15 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
+	"fmt"
 	"os"
 
 	"github.com/object88/langd"
 	"github.com/object88/langd/log"
 	"github.com/sourcegraph/jsonrpc2"
 )
+
+type handleReqFunc func(ctx context.Context, req *jsonrpc2.Request)
 
 // Handler implements jsonrpc2.Handle
 type Handler struct {
@@ -21,8 +24,7 @@ type Handler struct {
 	incomingQueue chan requestHandler
 	outgoingQueue chan replyHandler
 
-	imf       *IniterMapFactory
-	initState initState
+	hFunc handleReqFunc
 }
 
 type requestHandler interface {
@@ -38,17 +40,6 @@ type replyHandler interface {
 	reply() (interface{}, error)
 }
 
-type initState int
-
-const (
-	uninited initState = iota
-	initing
-	inited
-)
-
-type handleFunc func(ctx context.Context, req *jsonrpc2.Request) handleFuncer
-type handleFuncer func()
-
 // NewHandler creates a new Handler
 func NewHandler(imf *IniterMapFactory) *Handler {
 	h := &Handler{
@@ -59,33 +50,30 @@ func NewHandler(imf *IniterMapFactory) *Handler {
 		incomingQueue: make(chan requestHandler, 1024),
 		outgoingQueue: make(chan replyHandler, 256),
 
-		imf:       imf,
-		initState: uninited,
-	}
-
-	// h.fmap = map[string]handleFunc{
-	// 	didChangeConfigurationMethod:      h.didChangeConfiguration,
-	// 	didChangeTextDocumentNotification: h.didChangeTextDocument,
-	// 	exitNotification:                  h.exit,
-	// 	shutdownMethod:                    h.shutdown,
-	// }
-
-	h.imap = map[string]InitializerFunc{
-		definitionMethod:        createDefinitionHandler,
-		didCloseNotification:    createDidCloseHandler,
-		didOpenNotification:     createDidOpenHandler,
-		initializedNotification: createInitializedHandler,
-		initializeMethod:        createInitializeHandler,
+		imap: imf.Imap,
 	}
 
 	h.log = log.CreateLog(os.Stdout)
 	h.log.SetLevel(log.Verbose)
 
-	// Start a routine to process requests
+	h.hFunc = h.unintedHandler
+
+	return h
+}
+
+// SetConn assigns a JSONRPC2 connection and connects the handler
+// to its log
+func (h *Handler) SetConn(conn *jsonrpc2.Conn) {
+	h.conn = conn
+	h.log.AssignSender(h)
+}
+
+func (h *Handler) startProcessingQueue() {
 	go func() {
 		for {
 			select {
 			case work := <-h.incomingQueue:
+				fmt.Printf(">>>>> %s <<<<<<\n", work.id())
 				err := work.work()
 				if err != nil {
 					// Should we respond right away?  Set up with an auto-responder?
@@ -109,24 +97,45 @@ func NewHandler(imf *IniterMapFactory) *Handler {
 			}
 		}
 	}()
-
-	return h
-}
-
-// SetConn assigns a JSONRPC2 connection and connects the handler
-// to its log
-func (h *Handler) SetConn(conn *jsonrpc2.Conn) {
-	h.conn = conn
-	h.log.AssignSender(h)
 }
 
 // Handle invokes the correct method handler based on the JSONRPC2 method
 func (h *Handler) Handle(ctx context.Context, _ *jsonrpc2.Conn, req *jsonrpc2.Request) {
+	h.hFunc(ctx, req)
+}
+
+func (h *Handler) unintedHandler(ctx context.Context, req *jsonrpc2.Request) {
 	meth := req.Method
 
-	if h.initState == uninited && meth != initializeMethod {
-		// We are uninited; must reject or ignore method.
+	switch {
+	case meth == initializeMethod:
+		// The moment we've been waiting for; initialize.
+		result, err := h.processInit(req.Params)
+		if err != nil {
+			// TODO: set up jsonrpc2.Error{}
+			h.conn.ReplyWithError(ctx, req.ID, nil)
+			return
+		}
+		h.conn.Reply(ctx, req.ID, result)
+
+	case meth == exitNotification:
+		// Should close down this connection.
+		// TODO: handle exit
+	case req.Notif:
+		// Do nothing.
+	default:
+		// Respond with uninit'ed error.
+		msg := fmt.Sprintf("Request '%s' not allowed until connection is initialized", req.Method)
+		err := &jsonrpc2.Error{
+			Code:    -32002,
+			Message: msg,
+		}
+		h.conn.ReplyWithError(ctx, req.ID, err)
 	}
+}
+
+func (h *Handler) initedHandler(ctx context.Context, req *jsonrpc2.Request) {
+	meth := req.Method
 
 	f, ok := h.imap[meth]
 	if !ok {
@@ -134,19 +143,22 @@ func (h *Handler) Handle(ctx context.Context, _ *jsonrpc2.Conn, req *jsonrpc2.Re
 		return
 	}
 
+	fmt.Printf("***** (%s) Received '%s' *****\n", req.ID.String(), meth)
+
 	rh := f(ctx, h, req)
 
 	_, isReplyHandler := rh.(replyHandler)
 	if req.Notif && isReplyHandler {
-		h.log.Errorf("Request handler is also a reply handler, but client does not listen for replies for method '%s'", meth)
+		h.log.Errorf("Request handler is also a reply handler, but client does not listen for replies for method '%s'\n", meth)
 	} else if !req.Notif && !isReplyHandler {
-		h.log.Errorf("Request handler is not a reply handler, but client expects a reply for method '%s'", meth)
+		h.log.Errorf("Request handler is not a reply handler, but client expects a reply for method '%s'\n", meth)
 	}
 
 	err := rh.preprocess(req.Params)
 	if err != nil {
 		// Bad news...
 		// TODO: determine what to do here.
+		return
 	}
 
 	h.incomingQueue <- rh
@@ -173,13 +185,4 @@ func (h *Handler) SendMessage(lvl log.Level, message string) {
 	}
 
 	logMessage(ctx, h.conn, params)
-}
-
-func (h *Handler) noopHandleFunc(ctx context.Context, req *jsonrpc2.Request) handleFuncer {
-	// Nothing to do.
-	return noopHandleFuncer
-}
-
-func noopHandleFuncer() {
-	// Nothing to do here either.
 }

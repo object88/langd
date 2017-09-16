@@ -14,14 +14,14 @@ type uninitedMethodHandler struct {
 
 func createUninitedMethodHandler(ctx context.Context, h *Handler, req *jsonrpc2.Request) requestHandler {
 	rh := &uninitedMethodHandler{
-		requestBase: createRequestBase(ctx, h, req.ID),
+		requestBase: createRequestBase(ctx, h, req),
 	}
 
 	return rh
 }
 
 func (rh *uninitedMethodHandler) preprocess(params *json.RawMessage) error {
-	return nil
+	return errors.New("NOPE")
 }
 
 func (rh *uninitedMethodHandler) work() error {

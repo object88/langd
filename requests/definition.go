@@ -26,7 +26,7 @@ type definitionHandler struct {
 
 func createDefinitionHandler(ctx context.Context, h *Handler, req *jsonrpc2.Request) requestHandler {
 	rh := &definitionHandler{
-		requestBase: createRequestBase(ctx, h, req.ID),
+		requestBase: createRequestBase(ctx, h, req),
 	}
 
 	return rh

@@ -11,21 +11,31 @@ const (
 	didChangeConfigurationMethod = "workspace/didChangeConfiguration"
 )
 
-// DidChangeConfigurationParams contains all settings that have changed
-type DidChangeConfigurationParams struct {
-	// Settings are the changed settings
-	Settings map[string]interface{} `json:"settings"`
+type didChangeConfigurationHandler struct {
+	requestBase
 }
 
-func (h *Handler) didChangeConfiguration(ctx context.Context, req *jsonrpc2.Request) handleFuncer {
-	h.log.Verbosef("Got '%s'\n", didChangeConfigurationMethod)
-
-	var params DidChangeConfigurationParams
-	if err := json.Unmarshal(*req.Params, &params); err != nil {
-		return noopHandleFuncer
+func createDidChangeConfigurationHandler(ctx context.Context, h *Handler, req *jsonrpc2.Request) requestHandler {
+	rh := &didChangeConfigurationHandler{
+		requestBase: createRequestBase(ctx, h, req),
 	}
 
-	h.log.Verbosef("All changes: %#v\n", params)
+	return rh
+}
 
-	return noopHandleFuncer
+func (rh *didChangeConfigurationHandler) preprocess(params *json.RawMessage) error {
+	rh.h.log.Verbosef("Got '%s'\n", didChangeConfigurationMethod)
+
+	var typedParams DidChangeConfigurationParams
+	if err := json.Unmarshal(*params, &typedParams); err != nil {
+		return err
+	}
+
+	rh.h.log.Verbosef("All changes: %#v\n", typedParams)
+
+	return nil
+}
+
+func (rh *didChangeConfigurationHandler) work() error {
+	return nil
 }

@@ -22,6 +22,12 @@ type CompletionOptions struct {
 	TriggerCharacters []string `json:"triggerCharacters,omitempty"`
 }
 
+// DidChangeConfigurationParams contains all settings that have changed
+type DidChangeConfigurationParams struct {
+	// Settings are the changed settings
+	Settings map[string]interface{} `json:"settings"`
+}
+
 // DidChangeTextDocumentParams is supplied by the client to describe the
 // change or changes made to a text document
 // https://github.com/Microsoft/language-server-protocol/blob/master/protocol.md#didchangetextdocument-notification

@@ -2,6 +2,7 @@ package requests
 
 import (
 	"context"
+	"encoding/json"
 
 	"github.com/sourcegraph/jsonrpc2"
 )
@@ -10,10 +11,27 @@ const (
 	shutdownMethod = "shutdown"
 )
 
-func (h *Handler) shutdown(ctx context.Context, req *jsonrpc2.Request) handleFuncer {
-	h.log.Debugf("Received shutdown request\n")
-	h.workspace = nil
-	return func() {
-		h.conn.Reply(ctx, req.ID, nil)
+type shutdownHandler struct {
+	requestBase
+}
+
+func createShutdownHandler(ctx context.Context, h *Handler, req *jsonrpc2.Request) requestHandler {
+	rh := &shutdownHandler{
+		requestBase: createRequestBase(ctx, h, req),
 	}
+
+	return rh
+}
+
+func (rh *shutdownHandler) preprocess(params *json.RawMessage) error {
+	rh.h.log.Debugf("Received shutdown request\n")
+	return nil
+}
+
+func (rh *shutdownHandler) work() error {
+	return nil
+}
+
+func (rh *shutdownHandler) reply() (interface{}, error) {
+	return nil, nil
 }

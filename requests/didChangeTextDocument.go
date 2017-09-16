@@ -12,21 +12,37 @@ const (
 	didChangeTextDocumentNotification = "textDocument/didChange"
 )
 
-func (h *Handler) didChangeTextDocument(ctx context.Context, req *jsonrpc2.Request) handleFuncer {
-	var params DidChangeTextDocumentParams
-	if err := json.Unmarshal(*req.Params, &params); err != nil {
-		return noopHandleFuncer
+type didChangeTextDocumentHandler struct {
+	requestBase
+}
+
+func createDidChangeTextDocumentHandler(ctx context.Context, h *Handler, req *jsonrpc2.Request) requestHandler {
+	rh := &didChangeTextDocumentHandler{
+		requestBase: createRequestBase(ctx, h, req),
 	}
 
-	h.log.Verbosef("Got parameters: %#v\n", params)
+	return rh
+}
 
-	uri := string(params.TextDocument.URI)
-	buf, ok := h.openedFiles[uri]
+func (rh *didChangeTextDocumentHandler) preprocess(params *json.RawMessage) error {
+	var typedParams DidChangeTextDocumentParams
+	if err := json.Unmarshal(*params, &typedParams); err != nil {
+		return nil
+	}
+
+	rh.h.log.Verbosef("Got parameters: %#v\n", typedParams)
+
+	uri := string(typedParams.TextDocument.URI)
+	buf, ok := rh.h.openedFiles[uri]
 	if !ok {
 		fmt.Printf("File %s is not opened\n", uri)
-		return noopHandleFuncer
+		return nil
 	}
 
 	fmt.Printf("File %s is open, len %d\n", uri, buf.Len())
-	return noopHandleFuncer
+	return nil
+}
+
+func (rh *didChangeTextDocumentHandler) work() error {
+	return nil
 }

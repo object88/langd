@@ -7,28 +7,13 @@ import (
 	"strings"
 
 	"github.com/object88/langd"
-	"github.com/sourcegraph/jsonrpc2"
 )
 
 const (
 	initializeMethod = "initialize"
 )
 
-type initializeHandler struct {
-	requestBase
-
-	rootURI string
-}
-
-func createInitializeHandler(ctx context.Context, h *Handler, req *jsonrpc2.Request) requestHandler {
-	ih := &initializeHandler{
-		requestBase: createRequestBase(ctx, h, req.ID),
-	}
-
-	return ih
-}
-
-func (ih *initializeHandler) preprocess(p *json.RawMessage) error {
+func (h *Handler) processInit(p *json.RawMessage) (interface{}, error) {
 	fmt.Printf("Got initialize method\n")
 
 	initParams := string(*p)
@@ -36,20 +21,19 @@ func (ih *initializeHandler) preprocess(p *json.RawMessage) error {
 
 	var params InitializeParams
 	if err := json.Unmarshal(*p, &params); err != nil {
-		return err
+		return nil, err
 	}
 
-	ih.rootURI = string(params.RootURI)
+	rootURI := string(params.RootURI)
 	fmt.Printf("Got parameters: %#v\n", params)
-	return nil
-}
 
-func (ih *initializeHandler) work() error {
-	go ih.readRoot(ih.rootURI)
-	return nil
-}
+	h.hFunc = h.initedHandler
 
-func (ih *initializeHandler) reply() (interface{}, error) {
+	// Special case; normally we would want to start "work" in the `work`
+	// method, but since the queue processor isn't running yet, we can't
+	// queue up work.
+	go h.readRoot(rootURI)
+
 	results := &InitializeResult{
 		Capabilities: ServerCapabilities{
 			TextDocumentSync: TextDocumentSyncOptions{
@@ -75,7 +59,7 @@ func (ih *initializeHandler) reply() (interface{}, error) {
 	return results, nil
 }
 
-func (ih *initializeHandler) readRoot(root string) {
+func (h *Handler) readRoot(root string) {
 	base := strings.TrimPrefix(root, "file://")
 
 	sm := &ShowMessageParams{
@@ -83,7 +67,7 @@ func (ih *initializeHandler) readRoot(root string) {
 		Message: fmt.Sprintf("Loading AST for '%s'", base),
 	}
 
-	if err := ih.h.conn.Notify(context.Background(), "window/showMessage", sm); err != nil {
+	if err := h.conn.Notify(context.Background(), "window/showMessage", sm); err != nil {
 		fmt.Printf("Failed to deliver message to client: %s\n", err.Error())
 	}
 
@@ -94,5 +78,8 @@ func (ih *initializeHandler) readRoot(root string) {
 	}
 	fmt.Printf("Have %d imports...\n", len(w.PkgNames))
 
-	ih.h.workspace = w
+	h.workspace = w
+
+	// Start a routine to process requests
+	h.startProcessingQueue()
 }

@@ -18,7 +18,7 @@ type initializedHandler struct {
 
 func createInitializedHandler(ctx context.Context, h *Handler, req *jsonrpc2.Request) requestHandler {
 	ih := &initializedHandler{
-		requestBase: createRequestBase(ctx, h, req.ID),
+		requestBase: createRequestBase(ctx, h, req),
 	}
 
 	return ih

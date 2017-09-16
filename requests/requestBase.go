@@ -10,13 +10,15 @@ type requestBase struct {
 	_ctx context.Context
 	_id  jsonrpc2.ID
 	h    *Handler
+	meth string
 }
 
-func createRequestBase(ctx context.Context, h *Handler, id jsonrpc2.ID) requestBase {
+func createRequestBase(ctx context.Context, h *Handler, req *jsonrpc2.Request) requestBase {
 	return requestBase{
 		_ctx: ctx,
-		_id:  id,
+		_id:  req.ID,
 		h:    h,
+		meth: req.Method,
 	}
 }
 

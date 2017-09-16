@@ -24,7 +24,7 @@ type didOpenHandler struct {
 
 func createDidOpenHandler(ctx context.Context, h *Handler, req *jsonrpc2.Request) requestHandler {
 	rh := &didOpenHandler{
-		requestBase: createRequestBase(ctx, h, req.ID),
+		requestBase: createRequestBase(ctx, h, req),
 	}
 
 	return rh

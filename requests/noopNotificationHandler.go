@@ -13,7 +13,7 @@ type noopNotificationHandler struct {
 
 func createNoopNotificationHandler(ctx context.Context, h *Handler, req *jsonrpc2.Request) requestHandler {
 	rh := &noopNotificationHandler{
-		requestBase: createRequestBase(ctx, h, req.ID),
+		requestBase: createRequestBase(ctx, h, req),
 	}
 
 	return rh
