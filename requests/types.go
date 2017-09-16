@@ -1,5 +1,7 @@
 package requests
 
+import "fmt"
+
 // ClientCapabilities contains specific groups of capabilities of the client
 // https://github.com/Microsoft/language-server-protocol/blob/master/protocol.md#initialize-request
 type ClientCapabilities struct {
@@ -61,6 +63,18 @@ type DidCloseTextDocumentParams struct {
 type DidOpenTextDocumentParams struct {
 	// TextDocument is the document that was opened.
 	TextDocument TextDocumentItem `json:"textDocument"`
+}
+
+// DidSaveTextDocumentParams is supplied by the client when a file is written
+// to disk
+// https://github.com/Microsoft/language-server-protocol/blob/master/protocol.md#didsavetextdocument-notification
+type DidSaveTextDocumentParams struct {
+	// TextDocument is the document that was saved.
+	TextDocument TextDocumentIdentifier `json:"textDocument"`
+
+	// Text is the content when saved, and is optional. Depends on the
+	// includeText value when the save notifcation was requested.
+	Text *string `json:"text,omitempty"`
 }
 
 type DocumentOnTypeFormattingOptions struct {
@@ -253,6 +267,20 @@ type TextDocumentContentChangeEvent struct {
 	Text string `json:"text"`
 }
 
+func (tdcce *TextDocumentContentChangeEvent) String() string {
+	text := tdcce.Text
+	if len(text) > 32 {
+		text = fmt.Sprintf("%s...", text[:32])
+	}
+
+	if nil == tdcce.Range && nil == tdcce.RangeLength {
+		// Replacing the whole doc...
+		return fmt.Sprintf("whole doc: %s", text)
+	}
+
+	return fmt.Sprintf("%s: len: %d: %s", tdcce.Range.String(), *tdcce.RangeLength, text)
+}
+
 // TextDocumentSyncKind defines how the host (editor) should sync document
 // changes to the language server.
 type TextDocumentSyncKind int
@@ -398,6 +426,10 @@ type Range struct {
 
 	// End is the range's end position
 	End Position `json:"end"`
+}
+
+func (r *Range) String() string {
+	return fmt.Sprintf("[%d,%d:%d,%d]", r.Start.Line, r.Start.Character, r.End.Line, r.End.Character)
 }
 
 // Registration is used to register for a capability.

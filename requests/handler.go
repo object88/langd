@@ -1,7 +1,6 @@
 package requests
 
 import (
-	"bytes"
 	"context"
 	"encoding/json"
 	"fmt"
@@ -20,7 +19,7 @@ type Handler struct {
 	imap          IniterFuncMap
 	workspace     *langd.Workspace
 	log           *log.Log
-	openedFiles   map[string]*bytes.Buffer
+	openedFiles   map[string][]byte
 	incomingQueue chan requestHandler
 	outgoingQueue chan replyHandler
 
@@ -43,7 +42,7 @@ type replyHandler interface {
 // NewHandler creates a new Handler
 func NewHandler(imf *IniterMapFactory) *Handler {
 	h := &Handler{
-		openedFiles: map[string]*bytes.Buffer{},
+		openedFiles: map[string][]byte{},
 
 		// Hopefully these queues are sufficiently deep.  Otherwise, the handler
 		// will start blocking.

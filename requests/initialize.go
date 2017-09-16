@@ -16,8 +16,7 @@ const (
 func (h *Handler) processInit(p *json.RawMessage) (interface{}, error) {
 	fmt.Printf("Got initialize method\n")
 
-	initParams := string(*p)
-	fmt.Printf("Raw init params: %s\n", initParams)
+	// fmt.Printf("Raw init params: %s\n", string(*p))
 
 	var params InitializeParams
 	if err := json.Unmarshal(*p, &params); err != nil {
@@ -29,9 +28,6 @@ func (h *Handler) processInit(p *json.RawMessage) (interface{}, error) {
 
 	h.hFunc = h.initedHandler
 
-	// Special case; normally we would want to start "work" in the `work`
-	// method, but since the queue processor isn't running yet, we can't
-	// queue up work.
 	go h.readRoot(rootURI)
 
 	results := &InitializeResult{
@@ -39,6 +35,10 @@ func (h *Handler) processInit(p *json.RawMessage) (interface{}, error) {
 			TextDocumentSync: TextDocumentSyncOptions{
 				Change:    Incremental,
 				OpenClose: true,
+				Save: &SaveOptions{
+					IncludeText: true,
+				},
+				WillSave: true,
 			},
 			HoverProvider:                    false,
 			CompletionProvider:               nil,

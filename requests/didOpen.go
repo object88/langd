@@ -1,7 +1,6 @@
 package requests
 
 import (
-	"bytes"
 	"context"
 	"encoding/json"
 	"fmt"
@@ -19,7 +18,7 @@ type didOpenHandler struct {
 	requestBase
 
 	fpath string
-	text  *bytes.Buffer
+	text  []byte
 }
 
 func createDidOpenHandler(ctx context.Context, h *Handler, req *jsonrpc2.Request) requestHandler {
@@ -42,7 +41,7 @@ func (rh *didOpenHandler) preprocess(params *json.RawMessage) error {
 	uri := string(typedParams.TextDocument.URI)
 	fpath := strings.TrimPrefix(uri, "file://")
 
-	buf := bytes.NewBufferString(typedParams.TextDocument.Text)
+	buf := []byte(typedParams.TextDocument.Text)
 
 	rh.fpath = fpath
 	rh.text = buf
@@ -58,7 +57,7 @@ func (rh *didOpenHandler) work() error {
 
 	astFile, err := parser.ParseFile(rh.h.workspace.Fset, rh.fpath, rh.text, 0)
 	if err != nil {
-		return fmt.Errorf("Failed to parse file as provided by didOpen: %s\n", err.Error())
+		rh.h.log.Warnf("Failed to parse file as provided by didOpen: %s\n", err.Error())
 	}
 
 	rh.h.workspace.Files[rh.fpath] = astFile
