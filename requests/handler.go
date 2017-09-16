@@ -17,7 +17,7 @@ type handleReqFunc func(ctx context.Context, req *jsonrpc2.Request)
 // Handler implements jsonrpc2.Handle
 type Handler struct {
 	conn          *jsonrpc2.Conn
-	imap          map[string]InitializerFunc
+	imap          IniterFuncMap
 	workspace     *langd.Workspace
 	log           *log.Log
 	openedFiles   map[string]*bytes.Buffer
@@ -72,9 +72,8 @@ func (h *Handler) startProcessingQueue() {
 	go func() {
 		for {
 			select {
-			case work := <-h.incomingQueue:
-				fmt.Printf(">>>>> %s <<<<<<\n", work.id())
-				err := work.work()
+			case rh := <-h.incomingQueue:
+				err := rh.work()
 				if err != nil {
 					// Should we respond right away?  Set up with an auto-responder?
 					// TODO: Cannot do nothing here; if the request is a method,
@@ -82,18 +81,18 @@ func (h *Handler) startProcessingQueue() {
 					h.log.Errorf(err.Error())
 					continue
 				}
-				if replier, ok := work.(replyHandler); ok {
+				if replier, ok := rh.(replyHandler); ok {
 					h.outgoingQueue <- replier
 				}
 
-			case work := <-h.outgoingQueue:
-				result, err := work.reply()
+			case rh := <-h.outgoingQueue:
+				result, err := rh.reply()
 				if err != nil {
 					// TODO: fill in actual error.
-					h.conn.ReplyWithError(work.ctx(), work.id(), nil)
+					h.conn.ReplyWithError(rh.ctx(), rh.id(), nil)
 					continue
 				}
-				h.conn.Reply(work.ctx(), work.id(), result)
+				h.conn.Reply(rh.ctx(), rh.id(), result)
 			}
 		}
 	}()
@@ -142,8 +141,6 @@ func (h *Handler) initedHandler(ctx context.Context, req *jsonrpc2.Request) {
 		h.log.Verbosef("Unhandled method '%s'\n", meth)
 		return
 	}
-
-	fmt.Printf("***** (%s) Received '%s' *****\n", req.ID.String(), meth)
 
 	rh := f(ctx, h, req)
 
