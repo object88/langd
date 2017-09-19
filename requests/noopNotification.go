@@ -7,6 +7,11 @@ import (
 	"github.com/sourcegraph/jsonrpc2"
 )
 
+const (
+	initializedNotification = "initialized"
+	willSaveNotification    = "textDocument/willSave"
+)
+
 type noopNotificationHandler struct {
 	requestBase
 }

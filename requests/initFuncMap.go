@@ -31,6 +31,7 @@ func CreateIniterMapFactory() *IniterMapFactory {
 		exitNotification:                  createEditHandler,
 		initializedNotification:           createNoopNotificationHandler,
 		shutdownMethod:                    createShutdownHandler,
+		willSaveNotification:              createNoopNotificationHandler,
 	}
 
 	return &IniterMapFactory{
