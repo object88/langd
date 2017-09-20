@@ -54,12 +54,14 @@ func (rh *didSaveHandler) work() error {
 	f := rh.h.openedFiles[rh.fpath]
 	if len(f) != len(rh.text) {
 		// Not the same length, different file.
+		fmt.Printf("in-memory:\n%s\nprovided:\n%s\n", f, rh.text)
 		return fmt.Errorf("%s: In-memory does not match client version; different length: %d/%d", rh.fpath, len(f), len(rh.text))
 	}
 
 	for i := 0; i < len(f); i++ {
 		if f[i] != rh.text[i] {
 			// Different byte; different file.
+			fmt.Printf("in-memory:\n%s\nprovided:\n%s\n", f, rh.text)
 			return fmt.Errorf("%s: In-memory does not match client version; starting at %d", rh.fpath, i)
 		}
 	}

@@ -278,7 +278,7 @@ func (tdcce *TextDocumentContentChangeEvent) String() string {
 		return fmt.Sprintf("whole doc: %s", text)
 	}
 
-	return fmt.Sprintf("%s: len: %d: %s", tdcce.Range.String(), *tdcce.RangeLength, text)
+	return fmt.Sprintf("%s: len: %d: '%s'", tdcce.Range.String(), *tdcce.RangeLength, text)
 }
 
 // TextDocumentSyncKind defines how the host (editor) should sync document
