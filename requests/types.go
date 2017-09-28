@@ -1,6 +1,8 @@
 package requests
 
-import "fmt"
+import (
+	"fmt"
+)
 
 // ClientCapabilities contains specific groups of capabilities of the client
 // https://github.com/Microsoft/language-server-protocol/blob/master/protocol.md#initialize-request

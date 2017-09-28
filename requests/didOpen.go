@@ -7,6 +7,7 @@ import (
 	"go/parser"
 	"strings"
 
+	"github.com/object88/rope"
 	"github.com/sourcegraph/jsonrpc2"
 )
 
@@ -18,7 +19,7 @@ type didOpenHandler struct {
 	requestBase
 
 	fpath string
-	text  []byte
+	text  string
 }
 
 func createDidOpenHandler(ctx context.Context, h *Handler, req *jsonrpc2.Request) requestHandler {
@@ -41,15 +42,13 @@ func (rh *didOpenHandler) preprocess(params *json.RawMessage) error {
 	uri := string(typedParams.TextDocument.URI)
 	fpath := strings.TrimPrefix(uri, "file://")
 
-	buf := []byte(typedParams.TextDocument.Text)
-
 	rh.fpath = fpath
-	rh.text = buf
+	rh.text = typedParams.TextDocument.Text
 	return nil
 }
 
 func (rh *didOpenHandler) work() error {
-	rh.h.openedFiles[rh.fpath] = rh.text
+	rh.h.openedFiles[rh.fpath] = rope.CreateRope(rh.text)
 
 	if rh.h.workspace == nil {
 		return fmt.Errorf("FAILED: Workspace doesn't exist on handler")

@@ -8,6 +8,7 @@ import (
 
 	"github.com/object88/langd"
 	"github.com/object88/langd/log"
+	"github.com/object88/rope"
 	"github.com/sourcegraph/jsonrpc2"
 )
 
@@ -19,7 +20,7 @@ type Handler struct {
 	imap          IniterFuncMap
 	workspace     *langd.Workspace
 	log           *log.Log
-	openedFiles   map[string][]byte
+	openedFiles   map[string]*rope.Rope
 	incomingQueue chan requestHandler
 	outgoingQueue chan replyHandler
 
@@ -42,7 +43,7 @@ type replyHandler interface {
 // NewHandler creates a new Handler
 func NewHandler(imf *IniterMapFactory) *Handler {
 	h := &Handler{
-		openedFiles: map[string][]byte{},
+		openedFiles: map[string]*rope.Rope{},
 
 		// Hopefully these queues are sufficiently deep.  Otherwise, the handler
 		// will start blocking.
