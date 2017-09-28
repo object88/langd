@@ -63,13 +63,15 @@ func (rh *didChangeTextDocumentHandler) work() error {
 		} else {
 			// Have position (line, character), need to transform into offset into file
 			// Then replace starting from there.
-			startOffset, err := langd.CalculateOffsetForPosition(buf, v.Range.Start.Line, v.Range.Start.Character)
+			r1 := buf.NewReader()
+			startOffset, err := langd.CalculateOffsetForPosition(r1, v.Range.Start.Line, v.Range.Start.Character)
 			if err != nil {
 				// Crap crap crap crap.
 				fmt.Printf("Error from start: %s", err.Error())
 			}
 
-			endOffset, err := langd.CalculateOffsetForPosition(buf, v.Range.End.Line, v.Range.End.Character)
+			r2 := buf.NewReader()
+			endOffset, err := langd.CalculateOffsetForPosition(r2, v.Range.End.Line, v.Range.End.Character)
 			if err != nil {
 				// Crap crap crap crap.
 				fmt.Printf("Error from end: %s", err.Error())
