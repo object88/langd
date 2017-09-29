@@ -34,3 +34,15 @@ After the client has sent an `initialize` request, the client is expected to not
 The server may return an `InitializeResult` response before it is ready to process requests.  This is the `initializing` state.  During this time, the client may send requests, and the server must queue them up for processing.  The queue is _not_ being processed at this time.
 
 Once internal initialization is complete, the server is in the `initialized` stage, and will begin processing the queue.  New requests are still queued up, but the server is free to process them.
+
+### Processing requests
+
+Incoming requests are asynchronously processed by a connection handler.  A connection handler has two queues: `incomingQueue` and `outgoingQueue`. As requests are received from the JSONRPC2 server, they are handed off to the connection handler, which looks up and instantiates a request handler by method name. The request handler immediately performs some preprocessing on the request to unmarshal arguments and perform any other setup. Once the preprocessing is complete, the request handler is placed on the `incomingQueue`.
+
+The `incomingQueue` and `outgoingQueue` are processed in a own GoRoutine. When an request handler is pulled off the `incomingQueue`, the `work` method is invoked, which is expected to perform the processing of the actual request. Once this is complete, the request handler is checked to see if it is also a reply handler, and if so, the request / reply handler is placed on the `outgoingQueue`. Notifications do not reply, so those requests are not placed on the `outgoingQueue`.
+
+Replies are supposed to be sent in same order as the requests. However, if the requests are processed asynchronously and some are faster to complete than others, then there is potenial for out-of-order replies. Additionally, some requests may require some inherent synchronous processing. For example, if the client sends a sequence of `didChange` notifications, those will need to be processed in order, and before a `definition` request is processed (as the `didChange` may have some bearing on the request of a definition).
+
+The connection handler may need a RWMutex to handle requests. Requests which do not alter state (`textDocument/definition`, `textDocument/references`, etc) enter with a Read lock, allowing any other non-altering requests to enter as well. Once a request which would alter state is processed (`textDocument/didChange`, `textDocument/rename`, etc), a Write lock is requested. All currently running read operations will need to complete before the write can proceed, and each write operation will need to proceed synchronously. (Conceivably, some write operations could be performed asynchronously, but that is out of scope for an initial implementation.)
+
+Because replies may be generated out of order with asynchronous processing, they must be queued up in the `outgoingQueue`.

@@ -56,7 +56,7 @@ func NewHandler(imf *IniterMapFactory) *Handler {
 	h.log = log.CreateLog(os.Stdout)
 	h.log.SetLevel(log.Verbose)
 
-	h.hFunc = h.unintedHandler
+	h.hFunc = h.uninitedHandler
 
 	return h
 }
@@ -103,7 +103,7 @@ func (h *Handler) Handle(ctx context.Context, _ *jsonrpc2.Conn, req *jsonrpc2.Re
 	h.hFunc(ctx, req)
 }
 
-func (h *Handler) unintedHandler(ctx context.Context, req *jsonrpc2.Request) {
+func (h *Handler) uninitedHandler(ctx context.Context, req *jsonrpc2.Request) {
 	meth := req.Method
 
 	switch {

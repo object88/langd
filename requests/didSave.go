@@ -34,7 +34,6 @@ func (rh *didSaveHandler) preprocess(params *json.RawMessage) error {
 	var typedParams DidSaveTextDocumentParams
 	if err := json.Unmarshal(*params, &typedParams); err != nil {
 		return fmt.Errorf("Failed to unmarshal params")
-		// return noopHandleFuncer
 	}
 
 	fmt.Printf("Got parameters: %#v\n", typedParams)
