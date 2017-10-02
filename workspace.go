@@ -19,6 +19,7 @@ type Workspace struct {
 	rwm         sync.RWMutex
 }
 
+// CreateWorkspace returns a new instance of the Workspace struct
 func CreateWorkspace() *Workspace {
 	openedFiles := map[string]*rope.Rope{}
 
@@ -27,6 +28,7 @@ func CreateWorkspace() *Workspace {
 	}
 }
 
+// AssignAST will inform the workspace of its file set, info, paths, etc.
 func (w *Workspace) AssignAST(fset *token.FileSet, info *types.Info, loadedPaths map[string]bool, files map[string]*ast.File) {
 	w.Fset = fset
 	w.Info = info

@@ -138,10 +138,6 @@ func (rh *definitionHandler) work() error {
 		return false
 	})
 
-	// // Didn't find what we were looking for.
-	// if !found {
-	// 	h.Respond(ctx, id, nil)
-	// }
 	return nil
 }
 

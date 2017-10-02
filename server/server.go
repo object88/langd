@@ -65,7 +65,7 @@ func socketService() {
 			h := requests.NewHandler(imf)
 			os := jsonrpc2.NewBufferedStream(c, jsonrpc2.VSCodeObjectCodec{})
 			conn := jsonrpc2.NewConn(context.Background(), os, h)
-			h.SetConn(conn)
+			h.SetConnection(conn)
 
 			// // Shut down the connection.
 			// fmt.Printf("Closing down...\n")

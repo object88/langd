@@ -30,6 +30,8 @@ type Handler struct {
 	// client to this handler
 	ccount int
 
+	// hFunc will be either uninitedHandler or initedHandler, depending on
+	// whether the connection's `initialize` request has been made.
 	hFunc handleReqFunc
 }
 
@@ -37,13 +39,13 @@ type requestHandler interface {
 	preprocess(p *json.RawMessage) error
 	work() error
 
+	Ctx() context.Context
 	ID() int
-	ctx() context.Context
 	Params() *json.RawMessage
+	Method() string
 	Replies() bool
-	reqID() jsonrpc2.ID
-	method() string
-	requireWriteLock() bool
+	ReqID() jsonrpc2.ID
+	RequireWriteLock() bool
 }
 
 type replyHandler interface {
@@ -85,9 +87,9 @@ func (h *Handler) NextCid() int {
 	return cid
 }
 
-// SetConn assigns a JSONRPC2 connection and connects the handler
+// SetConnection assigns a JSONRPC2 connection and connects the handler
 // to its log
-func (h *Handler) SetConn(conn *jsonrpc2.Conn) {
+func (h *Handler) SetConnection(conn *jsonrpc2.Conn) {
 	h.conn = conn
 	h.log.AssignSender(h)
 }
@@ -104,10 +106,10 @@ func (h *Handler) startProcessingQueue() {
 				result, err := rr.reply()
 				if err != nil {
 					// TODO: fill in actual error.
-					h.conn.ReplyWithError(rh.ctx(), rh.reqID(), nil)
+					h.conn.ReplyWithError(rh.Ctx(), rh.ReqID(), nil)
 					continue
 				}
-				h.conn.Reply(rh.ctx(), rh.reqID(), result)
+				h.conn.Reply(rh.Ctx(), rh.ReqID(), result)
 
 				delete(h.rm, rhid)
 			}
@@ -171,6 +173,10 @@ func (h *Handler) initedHandler(ctx context.Context, req *jsonrpc2.Request) {
 		h.log.Errorf("Request handler is not a reply handler, but client expects a reply for method '%s'\n", meth)
 	}
 
+	// We are queueing up here because when the server has received its init,
+	// it will respond immediately and asynchronously start processing the source
+	// code.  The client can start sending more requests, and we need to keep
+	// them on hand for after our source loading has completed.
 	h.incomingQueue <- rh
 }
 
@@ -186,7 +192,7 @@ func (h *Handler) startProcessing(rh requestHandler) {
 		h.sq.WaitOn(rh.ID())
 	}
 
-	h.workspace.Lock(rh.requireWriteLock())
+	h.workspace.Lock(rh.RequireWriteLock())
 
 	go h.finishProcessing(rh)
 }
@@ -194,7 +200,7 @@ func (h *Handler) startProcessing(rh requestHandler) {
 func (h *Handler) finishProcessing(rh requestHandler) {
 	err := rh.work()
 
-	h.workspace.Unlock(rh.requireWriteLock())
+	h.workspace.Unlock(rh.RequireWriteLock())
 
 	if err != nil {
 		// Should we respond right away?  Set up with an auto-responder?
