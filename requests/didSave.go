@@ -22,7 +22,7 @@ type didSaveHandler struct {
 
 func createDidSaveHandler(ctx context.Context, h *Handler, req *jsonrpc2.Request) requestHandler {
 	rh := &didSaveHandler{
-		requestBase: createRequestBase(ctx, h, req),
+		requestBase: createRequestBase(ctx, h, req, true),
 	}
 
 	return rh
@@ -50,7 +50,7 @@ func (rh *didSaveHandler) work() error {
 	// Sanity check: is our in-memory document different from the one that
 	// the client is saving?
 
-	r := rh.h.openedFiles[rh.fpath]
+	r := rh.h.workspace.OpenedFiles[rh.fpath]
 	if r.ByteLength() != len(rh.text) {
 		// Not the same length, different file.
 		fmt.Printf("in-memory:\n%s\nprovided:\n%s\n", r.String(), rh.text)

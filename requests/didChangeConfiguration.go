@@ -17,7 +17,7 @@ type didChangeConfigurationHandler struct {
 
 func createDidChangeConfigurationHandler(ctx context.Context, h *Handler, req *jsonrpc2.Request) requestHandler {
 	rh := &didChangeConfigurationHandler{
-		requestBase: createRequestBase(ctx, h, req),
+		requestBase: createRequestBase(ctx, h, req, false),
 	}
 
 	return rh

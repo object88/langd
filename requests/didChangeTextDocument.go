@@ -24,7 +24,7 @@ type didChangeTextDocumentHandler struct {
 
 func createDidChangeTextDocumentHandler(ctx context.Context, h *Handler, req *jsonrpc2.Request) requestHandler {
 	rh := &didChangeTextDocumentHandler{
-		requestBase: createRequestBase(ctx, h, req),
+		requestBase: createRequestBase(ctx, h, req, true),
 	}
 
 	return rh
@@ -49,7 +49,7 @@ func (rh *didChangeTextDocumentHandler) work() error {
 	// Wait in this until we have a way to validate the edits.
 	uri := rh.uri
 
-	buf, ok := rh.h.openedFiles[uri]
+	buf, ok := rh.h.workspace.OpenedFiles[uri]
 	if !ok {
 		return fmt.Errorf("File %s is not opened\n", uri)
 	}
@@ -83,7 +83,7 @@ func (rh *didChangeTextDocumentHandler) work() error {
 		}
 	}
 
-	rh.h.openedFiles[uri] = buf
+	rh.h.workspace.OpenedFiles[uri] = buf
 
 	return nil
 }

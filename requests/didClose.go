@@ -22,7 +22,7 @@ type didCloseHandler struct {
 
 func createDidCloseHandler(ctx context.Context, h *Handler, req *jsonrpc2.Request) requestHandler {
 	rh := &didCloseHandler{
-		requestBase: createRequestBase(ctx, h, req),
+		requestBase: createRequestBase(ctx, h, req, true),
 	}
 
 	return rh
@@ -44,14 +44,14 @@ func (rh *didCloseHandler) preprocess(params *json.RawMessage) error {
 }
 
 func (rh *didCloseHandler) work() error {
-	_, ok := rh.h.openedFiles[rh.fpath]
+	_, ok := rh.h.workspace.OpenedFiles[rh.fpath]
 	if !ok {
 		rh.h.log.Warnf("File %s is not opened\n", rh.fpath)
 		return nil
 	}
 
 	rh.h.log.Debugf("File %s is open...\n", rh.fpath)
-	delete(rh.h.openedFiles, rh.fpath)
+	delete(rh.h.workspace.OpenedFiles, rh.fpath)
 
 	astFile, err := parser.ParseFile(rh.h.workspace.Fset, rh.fpath, nil, 0)
 	if err != nil {

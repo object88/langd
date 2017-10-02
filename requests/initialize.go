@@ -72,13 +72,11 @@ func (h *Handler) readRoot(root string) {
 	}
 
 	l := langd.NewLoader()
-	w, loadErr := l.Load(context.Background(), base)
+	loadErr := l.Load(context.Background(), h.workspace, base)
 	if loadErr != nil {
 		fmt.Printf("OHSHANP: %s\n", loadErr.Error())
 	}
-	fmt.Printf("Have %d imports...\n", len(w.PkgNames))
-
-	h.workspace = w
+	fmt.Printf("Have %d imports...\n", len(h.workspace.PkgNames))
 
 	// Start a routine to process requests
 	h.startProcessingQueue()

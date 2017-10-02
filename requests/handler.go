@@ -8,7 +8,7 @@ import (
 
 	"github.com/object88/langd"
 	"github.com/object88/langd/log"
-	"github.com/object88/rope"
+	"github.com/object88/langd/sigqueue"
 	"github.com/sourcegraph/jsonrpc2"
 )
 
@@ -20,9 +20,15 @@ type Handler struct {
 	imap          IniterFuncMap
 	workspace     *langd.Workspace
 	log           *log.Log
-	openedFiles   map[string]*rope.Rope
 	incomingQueue chan requestHandler
-	outgoingQueue chan replyHandler
+	outgoingQueue <-chan int
+
+	rm map[int]requestHandler
+	sq *sigqueue.Sigqueue
+
+	// call count; a monotonically increasing counter of calls made from the
+	// client to this handler
+	ccount int
 
 	hFunc handleReqFunc
 }
@@ -31,8 +37,13 @@ type requestHandler interface {
 	preprocess(p *json.RawMessage) error
 	work() error
 
-	id() jsonrpc2.ID
+	ID() int
 	ctx() context.Context
+	Params() *json.RawMessage
+	Replies() bool
+	reqID() jsonrpc2.ID
+	method() string
+	requireWriteLock() bool
 }
 
 type replyHandler interface {
@@ -42,15 +53,21 @@ type replyHandler interface {
 
 // NewHandler creates a new Handler
 func NewHandler(imf *IniterMapFactory) *Handler {
+	// Hopefully this queue is sufficiently deep.  Otherwise, the handler
+	// will start blocking.
+	incomingQueue := make(chan requestHandler, 1024)
+	outgoingQueue := make(chan int, 256)
+	sq := sigqueue.CreateSigqueue(outgoingQueue)
 	h := &Handler{
-		openedFiles: map[string]*rope.Rope{},
+		incomingQueue: incomingQueue,
+		outgoingQueue: outgoingQueue,
 
-		// Hopefully these queues are sufficiently deep.  Otherwise, the handler
-		// will start blocking.
-		incomingQueue: make(chan requestHandler, 1024),
-		outgoingQueue: make(chan replyHandler, 256),
+		rm: map[int]requestHandler{},
+		sq: sq,
 
 		imap: imf.Imap,
+
+		workspace: langd.CreateWorkspace(),
 	}
 
 	h.log = log.CreateLog(os.Stdout)
@@ -59,6 +76,13 @@ func NewHandler(imf *IniterMapFactory) *Handler {
 	h.hFunc = h.uninitedHandler
 
 	return h
+}
+
+// NextCid returns the next call id
+func (h *Handler) NextCid() int {
+	cid := h.ccount
+	h.ccount++
+	return cid
 }
 
 // SetConn assigns a JSONRPC2 connection and connects the handler
@@ -73,26 +97,19 @@ func (h *Handler) startProcessingQueue() {
 		for {
 			select {
 			case rh := <-h.incomingQueue:
-				err := rh.work()
-				if err != nil {
-					// Should we respond right away?  Set up with an auto-responder?
-					// TODO: Cannot do nothing here; if the request is a method,
-					// it wants a response.
-					h.log.Errorf(err.Error())
-					continue
-				}
-				if replier, ok := rh.(replyHandler); ok {
-					h.outgoingQueue <- replier
-				}
-
-			case rh := <-h.outgoingQueue:
-				result, err := rh.reply()
+				h.startProcessing(rh)
+			case rhid := <-h.outgoingQueue:
+				rh := h.rm[rhid]
+				rr := rh.(replyHandler)
+				result, err := rr.reply()
 				if err != nil {
 					// TODO: fill in actual error.
-					h.conn.ReplyWithError(rh.ctx(), rh.id(), nil)
+					h.conn.ReplyWithError(rh.ctx(), rh.reqID(), nil)
 					continue
 				}
-				h.conn.Reply(rh.ctx(), rh.id(), result)
+				h.conn.Reply(rh.ctx(), rh.reqID(), result)
+
+				delete(h.rm, rhid)
 			}
 		}
 	}()
@@ -143,7 +160,10 @@ func (h *Handler) initedHandler(ctx context.Context, req *jsonrpc2.Request) {
 	}
 
 	rh := f(ctx, h, req)
+	h.rm[rh.ID()] = rh
 
+	// NOTE: This should probably be removed after all handlers have been
+	// implemented.
 	_, isReplyHandler := rh.(replyHandler)
 	if req.Notif && isReplyHandler {
 		h.log.Errorf("Request handler is also a reply handler, but client does not listen for replies for method '%s'\n", meth)
@@ -151,14 +171,43 @@ func (h *Handler) initedHandler(ctx context.Context, req *jsonrpc2.Request) {
 		h.log.Errorf("Request handler is not a reply handler, but client expects a reply for method '%s'\n", meth)
 	}
 
-	err := rh.preprocess(req.Params)
+	h.incomingQueue <- rh
+}
+
+func (h *Handler) startProcessing(rh requestHandler) {
+	err := rh.preprocess(rh.Params())
 	if err != nil {
 		// Bad news...
 		// TODO: determine what to do here.
 		return
 	}
 
-	h.incomingQueue <- rh
+	if rh.Replies() {
+		h.sq.WaitOn(rh.ID())
+	}
+
+	h.workspace.Lock(rh.requireWriteLock())
+
+	go h.finishProcessing(rh)
+}
+
+func (h *Handler) finishProcessing(rh requestHandler) {
+	err := rh.work()
+
+	h.workspace.Unlock(rh.requireWriteLock())
+
+	if err != nil {
+		// Should we respond right away?  Set up with an auto-responder?
+		// TODO: Cannot do nothing here; if the request is a method,
+		// it wants a response.
+		h.log.Errorf(err.Error())
+		return
+	}
+	if rh.Replies() {
+		h.sq.Ready(rh.ID())
+	} else {
+		delete(h.rm, rh.ID())
+	}
 }
 
 // SendMessage implements log.SendMessage, so that the server can

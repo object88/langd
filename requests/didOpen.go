@@ -24,7 +24,7 @@ type didOpenHandler struct {
 
 func createDidOpenHandler(ctx context.Context, h *Handler, req *jsonrpc2.Request) requestHandler {
 	rh := &didOpenHandler{
-		requestBase: createRequestBase(ctx, h, req),
+		requestBase: createRequestBase(ctx, h, req, true),
 	}
 
 	return rh
@@ -48,7 +48,7 @@ func (rh *didOpenHandler) preprocess(params *json.RawMessage) error {
 }
 
 func (rh *didOpenHandler) work() error {
-	rh.h.openedFiles[rh.fpath] = rope.CreateRope(rh.text)
+	rh.h.workspace.OpenedFiles[rh.fpath] = rope.CreateRope(rh.text)
 
 	if rh.h.workspace == nil {
 		return fmt.Errorf("FAILED: Workspace doesn't exist on handler")

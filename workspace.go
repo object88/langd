@@ -4,16 +4,50 @@ import (
 	"go/ast"
 	"go/token"
 	"go/types"
+	"sync"
+
+	"github.com/object88/rope"
 )
 
 // Workspace is a mass of code
 type Workspace struct {
-	Fset     *token.FileSet
-	Info     *types.Info
-	PkgNames map[string]bool
-	Files    map[string]*ast.File
+	Fset        *token.FileSet
+	Info        *types.Info
+	PkgNames    map[string]bool
+	Files       map[string]*ast.File
+	OpenedFiles map[string]*rope.Rope
+	rwm         sync.RWMutex
 }
 
-func newWorkspace(fset *token.FileSet, info *types.Info, loadedPaths map[string]bool, files map[string]*ast.File) *Workspace {
-	return &Workspace{fset, info, loadedPaths, files}
+func CreateWorkspace() *Workspace {
+	openedFiles := map[string]*rope.Rope{}
+
+	return &Workspace{
+		OpenedFiles: openedFiles,
+	}
+}
+
+func (w *Workspace) AssignAST(fset *token.FileSet, info *types.Info, loadedPaths map[string]bool, files map[string]*ast.File) {
+	w.Fset = fset
+	w.Info = info
+	w.PkgNames = loadedPaths
+	w.Files = files
+}
+
+// Lock will synchronize access to the workspace for read or write access
+func (w *Workspace) Lock(write bool) {
+	if write {
+		w.rwm.Lock()
+	} else {
+		w.rwm.RLock()
+	}
+}
+
+// Unlock will synchronize access to the workspace for read or write access
+func (w *Workspace) Unlock(write bool) {
+	if write {
+		w.rwm.Unlock()
+	} else {
+		w.rwm.RUnlock()
+	}
 }

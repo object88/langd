@@ -14,7 +14,7 @@ type uninitedMethodHandler struct {
 
 func createUninitedMethodHandler(ctx context.Context, h *Handler, req *jsonrpc2.Request) requestHandler {
 	rh := &uninitedMethodHandler{
-		requestBase: createRequestBase(ctx, h, req),
+		requestBase: createRequestBase(ctx, h, req, false),
 	}
 
 	return rh

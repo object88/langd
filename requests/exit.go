@@ -15,9 +15,9 @@ type exitHandler struct {
 	requestBase
 }
 
-func createEditHandler(ctx context.Context, h *Handler, req *jsonrpc2.Request) requestHandler {
+func createExitHandler(ctx context.Context, h *Handler, req *jsonrpc2.Request) requestHandler {
 	rh := &exitHandler{
-		requestBase: createRequestBase(ctx, h, req),
+		requestBase: createRequestBase(ctx, h, req, false),
 	}
 
 	return rh

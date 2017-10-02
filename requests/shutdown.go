@@ -17,7 +17,7 @@ type shutdownHandler struct {
 
 func createShutdownHandler(ctx context.Context, h *Handler, req *jsonrpc2.Request) requestHandler {
 	rh := &shutdownHandler{
-		requestBase: createRequestBase(ctx, h, req),
+		requestBase: createRequestBase(ctx, h, req, false),
 	}
 
 	return rh

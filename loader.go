@@ -39,22 +39,22 @@ func NewLoader() *Loader {
 }
 
 // Load reads in the AST
-func (l *Loader) Load(ctx context.Context, base string) (*Workspace, error) {
+func (l *Loader) Load(ctx context.Context, w *Workspace, base string) error {
 	if l == nil {
-		return nil, errors.New("No pointer receiver")
+		return errors.New("No pointer receiver")
 	}
 
 	abs, err := filepath.Abs(base)
 	if err != nil {
-		return nil, err
+		return err
 	}
 
 	fi, err := os.Stat(abs)
 	if err != nil {
-		return nil, err
+		return err
 	}
 	if !fi.IsDir() {
-		return nil, fmt.Errorf("Provided path '%s' must be a directory", base)
+		return fmt.Errorf("Provided path '%s' must be a directory", base)
 	}
 
 	dirs := []string{}
@@ -75,7 +75,7 @@ func (l *Loader) Load(ctx context.Context, base string) (*Workspace, error) {
 		}
 	}
 	if pkgName == "" {
-		return nil, fmt.Errorf("Failed to find '%s'", base)
+		return fmt.Errorf("Failed to find '%s'", base)
 	}
 
 	ls := newLoaderState(pkgName)
@@ -90,18 +90,18 @@ func (l *Loader) Load(ctx context.Context, base string) (*Workspace, error) {
 			}
 		}
 		if pkgName == "" {
-			return nil, fmt.Errorf("Failed to find '%s'", base)
+			return fmt.Errorf("Failed to find '%s'", base)
 		}
 
 		err = l.load(ctx, ls, pkgDir, 0)
 		if err != nil {
-			return nil, err
+			return err
 		}
 	}
 
-	workspace := newWorkspace(ls.fset, ls.info, ls.loadedPaths, ls.files)
+	w.AssignAST(ls.fset, ls.info, ls.loadedPaths, ls.files)
 
-	return workspace, nil
+	return nil
 }
 
 func (l *Loader) load(ctx context.Context, ls *loaderState, fpath string, depth int) error {
