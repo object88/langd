@@ -3,7 +3,6 @@ package requests
 import (
 	"context"
 	"encoding/json"
-	"fmt"
 	"go/ast"
 	"go/token"
 	"strings"
@@ -36,11 +35,11 @@ func (rh *definitionHandler) preprocess(params *json.RawMessage) error {
 	rh.h.log.Verbosef("Got definition method\n")
 
 	// Example:
-	// server.TextDocumentPositionParams {
-	//   TextDocument: server.TextDocumentIdentifier {
+	// requests.TextDocumentPositionParams {
+	//   TextDocument: requests.TextDocumentIdentifier {
 	// 		 URI: "file:///Users/bropa18/work/src/github.com/object88/immutable/memory/types.go",
 	//   },
-	// 	 Position: server.Position {
+	// 	 Position: requests.Position {
 	//     Line: 7,
 	//     Character: 15,
 	//   }
@@ -49,7 +48,6 @@ func (rh *definitionHandler) preprocess(params *json.RawMessage) error {
 	var typedParams TextDocumentPositionParams
 	if err := json.Unmarshal(*params, &typedParams); err != nil {
 		return err
-		// return noopHandleFuncer
 	}
 
 	rh.h.log.Verbosef("Got parameters: %#v\n", typedParams)
@@ -67,96 +65,35 @@ func (rh *definitionHandler) preprocess(params *json.RawMessage) error {
 }
 
 func (rh *definitionHandler) work() error {
-	f := rh.h.workspace.Files[rh.p.Filename]
-	if f == nil {
-		// Failure response is failure.
-		return fmt.Errorf("File %s isn't in our workspace\n", rh.p.Filename)
+	x, err := rh.h.workspace.LocateIdent(rh.p)
+	if err != nil {
+		return err
 	}
 
-	ast.Inspect(f, func(n ast.Node) bool {
-		if n == nil {
-			return false
-		}
-		pStart := rh.h.workspace.Fset.Position(n.Pos())
-		pEnd := rh.h.workspace.Fset.Position(n.End())
+	if x.Obj == nil {
+		// We have an identifier, but it has no object reference.
+		// This may happen because the user has an incomplete program.
+		return nil
+	}
+	rh.h.log.Verbosef("Have identifier: %s, object %#v\n", x.String(), x.Obj.Decl)
+	switch v1 := x.Obj.Decl.(type) {
+	case *ast.Field:
+		declPosition := rh.h.workspace.Fset.Position(v1.Pos())
+		rh.h.log.Verbosef("Have field; declaration at %s\n", declPosition.String())
+		rh.result = LocationFromPosition(x.Name, &declPosition)
 
-		if withinPos(rh.p, &pStart, &pEnd) {
-			rh.h.log.Verbosef("** FOUND IT **: [%d:%d]-[%d:%d] %#v\n", pStart.Line, pStart.Column, pEnd.Line, pEnd.Column, n)
-			switch v := n.(type) {
-			case *ast.Ident:
-				if v.Obj == nil {
-					// We have an identifier, but it has no object reference.
-					// This may happen because the user has an incomplete program.
-					return false
-				}
-				rh.h.log.Verbosef("Have identifier: %s, object %#v\n", v.String(), v.Obj.Decl)
-				switch v1 := v.Obj.Decl.(type) {
-				case *ast.Field:
-					declPosition := rh.h.workspace.Fset.Position(v1.Pos())
-					rh.h.log.Verbosef("Have field; declaration at %s\n", declPosition.String())
+	case *ast.TypeSpec:
+		declPosition := rh.h.workspace.Fset.Position(v1.Pos())
+		rh.h.log.Verbosef("Have typespec; declaration at %s\n", declPosition.String())
+		rh.result = LocationFromPosition(x.Name, &declPosition)
 
-					rh.result = &Location{
-						URI: DocumentURI(fmt.Sprintf("file://%s", declPosition.Filename)),
-						Range: Range{
-							Start: Position{
-								Line:      declPosition.Line - 1,
-								Character: declPosition.Column - 1,
-							},
-							End: Position{
-								Line:      declPosition.Line - 1,
-								Character: declPosition.Column + len(v.Name) - 1,
-							},
-						},
-					}
-
-				case *ast.TypeSpec:
-					declPosition := rh.h.workspace.Fset.Position(v1.Pos())
-					rh.h.log.Verbosef("Have typespec; declaration at %s\n", declPosition.String())
-
-					rh.result = &Location{
-						URI: DocumentURI(fmt.Sprintf("file://%s", declPosition.Filename)),
-						Range: Range{
-							Start: Position{
-								Line:      declPosition.Line - 1,
-								Character: declPosition.Column - 1,
-							},
-							End: Position{
-								Line:      declPosition.Line - 1,
-								Character: declPosition.Column + len(v.Name) - 1,
-							},
-						},
-					}
-
-				default:
-					// No-op
-				}
-			default:
-				// No-op
-			}
-			return true
-		}
-		return false
-	})
+	default:
+		// No-op
+	}
 
 	return nil
 }
 
 func (rh *definitionHandler) reply() (interface{}, error) {
 	return rh.result, nil
-}
-
-func withinPos(pTarget, pStart, pEnd *token.Position) bool {
-	if pTarget.Line < pStart.Line || pTarget.Line > pEnd.Line {
-		return false
-	}
-
-	if pTarget.Line == pStart.Line && pTarget.Column < pStart.Column {
-		return false
-	}
-
-	if pTarget.Line == pEnd.Line && pTarget.Column >= pEnd.Column {
-		return false
-	}
-
-	return true
 }

@@ -55,8 +55,6 @@ func (rh *didChangeTextDocumentHandler) work() error {
 	}
 
 	for k, v := range rh.changes {
-		fmt.Printf("%d: %s\n", k, v.String())
-
 		if v.Range == nil || v.RangeLength == nil {
 			// Replace the entire document
 			buf = rope.CreateRope(v.Text)
@@ -77,7 +75,7 @@ func (rh *didChangeTextDocumentHandler) work() error {
 				fmt.Printf("Error from end: %s", err.Error())
 			}
 
-			fmt.Printf("offsets: [%d:%d]\n", startOffset, endOffset)
+			fmt.Printf("%d: offsets: [%d:%d]; %s\n", k, startOffset, endOffset, v.String())
 
 			buf.Alter(startOffset, endOffset, v.Text)
 		}

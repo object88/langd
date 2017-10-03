@@ -2,6 +2,8 @@ package requests
 
 import (
 	"fmt"
+	"go/token"
+	"unicode/utf8"
 )
 
 // ClientCapabilities contains specific groups of capabilities of the client
@@ -142,6 +144,22 @@ type InitializeParams struct {
 type InitializeResult struct {
 	// Capabilities describe what the server is capable of handling
 	Capabilities ServerCapabilities `json:"capabilities,omitempty"`
+}
+
+// ReferenceContext is included in ReferenceParams for the `Find References`
+// request
+type ReferenceContext struct {
+	// IncludeDeclaration determines whether to include the declaration of the
+	// current symbol.
+	IncludeDeclaration bool `json:"includeDeclaration"`
+}
+
+// ReferenceParams supports the `Find References` request
+type ReferenceParams struct {
+	TextDocumentPositionParams
+
+	// Context contains contextual options for this request
+	Context *ReferenceContext `json:"context"`
 }
 
 // SaveOptions includes options that the server can indicate to the client.
@@ -377,6 +395,24 @@ type DocumentURI string
 type Location struct {
 	URI   DocumentURI `json:"uri"`
 	Range Range       `json:"range"`
+}
+
+// LocationFromPosition returns a Location for a given block of text and
+// and starting poistion
+func LocationFromPosition(text string, p *token.Position) *Location {
+	return &Location{
+		URI: DocumentURI(fmt.Sprintf("file://%s", p.Filename)),
+		Range: Range{
+			Start: Position{
+				Line:      p.Line - 1,
+				Character: p.Column - 1,
+			},
+			End: Position{
+				Line:      p.Line - 1,
+				Character: p.Column + utf8.RuneCountInString(text) - 1,
+			},
+		},
+	}
 }
 
 // LogMessageParams is used by the LogMessageNotification to send messages

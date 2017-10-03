@@ -2,6 +2,7 @@ package langd
 
 import (
 	"fmt"
+	"go/token"
 	"io"
 	"unicode/utf8"
 )
@@ -92,4 +93,20 @@ func CalculateOffsetForPosition(read io.Reader, line, character int) (int, error
 			}
 		}
 	}
+}
+
+func WithinPosition(target, start, end *token.Position) bool {
+	if target.Line < start.Line || target.Line > end.Line {
+		return false
+	}
+
+	if target.Line == start.Line && target.Column < start.Column {
+		return false
+	}
+
+	if target.Line == end.Line && target.Column >= end.Column {
+		return false
+	}
+
+	return true
 }

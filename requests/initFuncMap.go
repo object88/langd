@@ -30,6 +30,7 @@ func CreateIniterMapFactory() *IniterMapFactory {
 		didSaveNotification:               createDidSaveHandler,
 		exitNotification:                  createExitHandler,
 		initializedNotification:           createNoopNotificationHandler,
+		referencesMethod:                  createReferencesHandler,
 		shutdownMethod:                    createShutdownHandler,
 		willSaveNotification:              createNoopNotificationHandler,
 	}

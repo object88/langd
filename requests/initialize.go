@@ -44,7 +44,7 @@ func (h *Handler) processInit(p *json.RawMessage) (interface{}, error) {
 			CompletionProvider:               nil,
 			SignatureHelpProvider:            nil,
 			DefinitionProvider:               true,
-			ReferencesProvider:               false,
+			ReferencesProvider:               true,
 			DocumentHighlightProvider:        false,
 			DocumentSymbolProvider:           false,
 			WorkspaceSymbolProvider:          false,
