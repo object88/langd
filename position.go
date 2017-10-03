@@ -48,6 +48,10 @@ func (oe *OverrunError) Error() string {
 // CalculateOffsetForPosition scans a rope to get to the rune offset at the
 // given line and character
 func CalculateOffsetForPosition(read io.Reader, line, character int) (int, error) {
+	if line == 0 && character == 0 {
+		return 0, nil
+	}
+
 	c := 0
 	l := 0
 	offset := 0
@@ -71,10 +75,6 @@ func CalculateOffsetForPosition(read io.Reader, line, character int) (int, error
 
 		o := 0
 		for o < n {
-			if l == line && c == character {
-				return offset, nil
-			}
-
 			r, s := utf8.DecodeRune(bytes[o:n])
 			o += s
 			offset += s
@@ -86,6 +86,10 @@ func CalculateOffsetForPosition(read io.Reader, line, character int) (int, error
 				}
 			}
 			c++
+
+			if l == line && c == character {
+				return offset, nil
+			}
 		}
 	}
 }

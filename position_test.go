@@ -25,6 +25,18 @@ func Test_Position(t *testing.T) {
 	}
 }
 
+func Test_Position_LastRowAndColumn(t *testing.T) {
+	r := strings.NewReader(test_program)
+
+	n, err := CalculateOffsetForPosition(r, 4, 0)
+	if err != nil {
+		t.Errorf("Unexpected error: %s", err.Error())
+	}
+	if n != 39 {
+		t.Errorf("Incorrect position returned: %d", n)
+	}
+}
+
 func Test_Position_Overrun_Column(t *testing.T) {
 	r := strings.NewReader(test_program)
 
