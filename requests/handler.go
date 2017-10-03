@@ -20,7 +20,7 @@ type Handler struct {
 	imap          IniterFuncMap
 	workspace     *langd.Workspace
 	log           *log.Log
-	incomingQueue chan requestHandler
+	incomingQueue chan int
 	outgoingQueue <-chan int
 
 	rm map[int]requestHandler
@@ -57,7 +57,7 @@ type replyHandler interface {
 func NewHandler(imf *IniterMapFactory) *Handler {
 	// Hopefully this queue is sufficiently deep.  Otherwise, the handler
 	// will start blocking.
-	incomingQueue := make(chan requestHandler, 1024)
+	incomingQueue := make(chan int, 1024)
 	outgoingQueue := make(chan int, 256)
 	sq := sigqueue.CreateSigqueue(outgoingQueue)
 	h := &Handler{
@@ -98,20 +98,10 @@ func (h *Handler) startProcessingQueue() {
 	go func() {
 		for {
 			select {
-			case rh := <-h.incomingQueue:
-				h.startProcessing(rh)
+			case rhid := <-h.incomingQueue:
+				h.startProcessing(rhid)
 			case rhid := <-h.outgoingQueue:
-				rh := h.rm[rhid]
-				rr := rh.(replyHandler)
-				result, err := rr.reply()
-				if err != nil {
-					// TODO: fill in actual error.
-					h.conn.ReplyWithError(rh.Ctx(), rh.ReqID(), nil)
-					continue
-				}
-				h.conn.Reply(rh.Ctx(), rh.ReqID(), result)
-
-				delete(h.rm, rhid)
+				h.startResponding(rhid)
 			}
 		}
 	}()
@@ -177,10 +167,12 @@ func (h *Handler) initedHandler(ctx context.Context, req *jsonrpc2.Request) {
 	// it will respond immediately and asynchronously start processing the source
 	// code.  The client can start sending more requests, and we need to keep
 	// them on hand for after our source loading has completed.
-	h.incomingQueue <- rh
+	h.incomingQueue <- rh.ID()
 }
 
-func (h *Handler) startProcessing(rh requestHandler) {
+func (h *Handler) startProcessing(rhid int) {
+	rh := h.rm[rhid]
+
 	err := rh.preprocess(rh.Params())
 	if err != nil {
 		// Bad news...
@@ -214,6 +206,20 @@ func (h *Handler) finishProcessing(rh requestHandler) {
 	} else {
 		delete(h.rm, rh.ID())
 	}
+}
+
+func (h *Handler) startResponding(rhid int) {
+	rh := h.rm[rhid]
+	rr := rh.(replyHandler)
+	result, err := rr.reply()
+	if err != nil {
+		// TODO: fill in actual error.
+		h.conn.ReplyWithError(rh.Ctx(), rh.ReqID(), nil)
+		return
+	}
+	h.conn.Reply(rh.Ctx(), rh.ReqID(), result)
+
+	delete(h.rm, rhid)
 }
 
 // SendMessage implements log.SendMessage, so that the server can
