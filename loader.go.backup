@@ -1,0 +1,374 @@
+package langd
+
+import (
+	"context"
+	"errors"
+	"fmt"
+	"go/ast"
+	"go/build"
+	"go/importer"
+	"go/parser"
+	"go/types"
+	"os"
+	"path"
+	"path/filepath"
+	"strings"
+
+	"github.com/object88/langd/collections"
+	"github.com/object88/langd/log"
+)
+
+// Loader will load code into an AST
+type Loader struct {
+	config  *types.Config
+	srcDirs []string
+	stderr  *log.Log
+}
+
+// NewLoader constructs a new Loader struct
+func NewLoader() *Loader {
+	l := log.Stderr()
+	l.SetLevel(log.Verbose)
+	config := &types.Config{
+		Error: func(e error) {
+			l.Warnf("%s\n", e.Error())
+		},
+		Importer: importer.Default(),
+	}
+	srcDirs := build.Default.SrcDirs()
+	return &Loader{config, srcDirs, l}
+}
+
+// Load reads in the AST
+func (l *Loader) Load(ctx context.Context, w *Workspace, base string) error {
+	if l == nil {
+		return errors.New("No pointer receiver")
+	}
+
+	abs, err := validateInitialPath(base)
+	if err != nil {
+		return err
+	}
+
+	pkgName := ""
+	for _, v := range l.srcDirs {
+		if strings.HasPrefix(abs, v) {
+			pkgName = abs[len(v)+1:]
+		}
+	}
+	if pkgName == "" {
+		return fmt.Errorf("Failed to find '%s'", base)
+	}
+
+	ls := newLoaderState(pkgName)
+	filepath.Walk(base, func(path string, info os.FileInfo, err error) error {
+		if info.IsDir() {
+			if strings.HasPrefix(filepath.Base(info.Name()), ".") {
+				return filepath.SkipDir
+			}
+			fmt.Printf("Queueing up %s\n", path)
+			ls.fileQueue.In() <- &path
+		}
+		return nil
+	})
+	fmt.Printf("Walked all file paths")
+
+	if err := l.processImports(ctx, ls); err != nil {
+		fmt.Printf("Fatal failure: %s\n", err.Error())
+		return err
+	}
+
+	// scope := ast.NewScope(nil)
+	// for k, v := range ls.loadedPackages {
+	// 	loadedPkg, err := ast.NewPackage(ls.fset, v.Files, importer2, scope)
+	// 	if err != nil {
+	// 		fmt.Printf("Got error processing '%s':\n%s\n", k, err.Error())
+	// 	}
+	// 	ls.loadedPackages[k] = loadedPkg
+	// }
+
+	fmt.Printf("** Starting check\n")
+	l.check(ctx, ls)
+	fmt.Printf("** Ended check\n")
+
+	w.AssignAST(ls.fset, ls.info, ls.loadedPaths, ls.files)
+
+	return nil
+}
+
+// func importer2(imports map[string]*ast.Object, path string) (*ast.Object, error) {
+// 	pkg := imports[path]
+// 	if pkg == nil {
+// 		name := path[strings.LastIndex(path, "/")+1:]
+// 		pkg = ast.NewObj(ast.Pkg, name)
+// 		pkg.Data = ast.NewScope(nil) // required by ast.NewPackage for dot-import
+// 		imports[path] = pkg
+// 	}
+// 	return pkg, nil
+// }
+
+func (l *Loader) processImports(ctx context.Context, ls *loaderState) error {
+	fmt.Printf("Entered processImports\n")
+	done := make(chan bool)
+	packageCompleted := make(chan bool)
+
+	go func() {
+		fmt.Printf("Starting to process packages...\n")
+		for {
+			select {
+			case <-packageCompleted:
+				complete := ls.fileQueue.Len() == 0
+
+				if complete {
+					ls.filesm.Lock()
+					for k, v := range ls.loadedPkgs {
+						if !v {
+							fmt.Printf("Found unprocessed %s\n", k)
+							complete = false
+							break
+						}
+					}
+					ls.filesm.Unlock()
+				}
+
+				if complete {
+					fmt.Printf("All are processed\n")
+					done <- true
+				}
+			case pd := <-ls.fileQueue.Out():
+				d := *pd
+				fmt.Printf("Checking to see if started %s\n", d)
+
+				ls.filesm.Lock()
+				_, ok := ls.loadedPkgs[d]
+
+				if !ok {
+					fmt.Printf("Starting to process\n")
+					ls.loadedPkgs[d] = false
+					// ls.packs.Insert(&pack{path: d})
+
+					go func() {
+						// Do something with the directory
+						err := l.load(ls, d)
+						if err != nil {
+							ls.errs = append(ls.errs, err)
+						}
+						ls.filesm.Lock()
+						ls.loadedPkgs[d] = true
+						ls.filesm.Unlock()
+						packageCompleted <- true
+					}()
+				}
+
+				ls.filesm.Unlock()
+
+			case <-ctx.Done():
+				// Context was interupted
+				fmt.Printf("->->->DONE!\n")
+				done <- false
+			}
+		}
+	}()
+
+	completedState := <-done
+	if !completedState {
+		return errors.New("Context broken")
+	}
+
+	fmt.Printf("******* Processed all\n")
+	return nil
+}
+
+func (l *Loader) load(ls *loaderState, fpath string) error {
+	buildPkgNames, err := l.buildPackages(ls, fpath)
+	if err != nil {
+		return err
+	}
+
+	if buildPkgNames == nil || len(buildPkgNames) == 0 {
+		// There were no packages in `fpath`; this is OK.
+		return nil
+	}
+
+	for _, buildPkgName := range buildPkgNames {
+		err = l.visitImport(buildPkgName, ls)
+		if err != nil {
+			return err
+		}
+	}
+
+	return nil
+}
+
+func (l *Loader) buildPackages(ls *loaderState, fpath string) ([]string, error) {
+	buildP, err := build.ImportDir(fpath, 0)
+	if err != nil {
+		if _, ok := err.(*build.NoGoError); ok {
+			// There isn't any Go code here.
+			return nil, nil
+		}
+		l.stderr.Errorf("Got error when attempting import on dir '%s': %s\n", fpath, err.Error())
+		return nil, err
+	}
+
+	l.buildAstPackages(buildP, ls)
+
+	// for k, v := range buildP.Imports {
+	// 	fmt.Printf("%002d: %s\n", k, v)
+	// }
+
+	return buildP.Imports, nil
+}
+
+func (l *Loader) buildAstPackages(buildP *build.Package, ls *loaderState) {
+	for _, v := range buildP.GoFiles {
+		// fmt.Printf("GG '%s'\n", v)
+		l.buildAstPackage(buildP, ls, v)
+	}
+
+	for _, v := range buildP.TestGoFiles {
+		// fmt.Printf("TT '%s'\n", v)
+		l.buildAstPackage(buildP, ls, v)
+	}
+}
+
+func (l *Loader) buildAstPackage(buildP *build.Package, ls *loaderState, fpath string) {
+	fpath = path.Join(buildP.Dir, fpath)
+
+	astf, err := parser.ParseFile(ls.fset, fpath, nil, 0)
+	if err != nil {
+		l.stderr.Verbosef("Got error while parsing file '%s':\n%s\n", fpath, err.Error())
+	}
+
+	ls.filesm.Lock()
+	ls.files[fpath] = astf
+	ls.filesm.Unlock()
+
+	name := astf.Name.Name
+	astPkg, found := ls.loadedPackages[name]
+	if !found {
+		astPkg = &ast.Package{
+			Name:  name,
+			Files: map[string]*ast.File{},
+		}
+		ls.loadedPackages[name] = astPkg
+	}
+	astPkg.Files[fpath] = astf
+}
+
+func (l *Loader) visitImport(buildPkgName string, ls *loaderState) error {
+	path, err := l.findSourcePath(buildPkgName)
+	if err != nil {
+		return err
+	}
+
+	if loaded, ok := ls.loadedPaths[path]; ok {
+		if loaded {
+			l.stderr.Verbosef("** Checking for %s; already loaded; skipping...\n", path)
+		} else {
+			l.stderr.Verbosef("** Checking for %s; in process...\n", path)
+		}
+		return nil
+	}
+
+	ls.fileQueue.In() <- &path
+
+	return nil
+}
+
+func (l *Loader) check(ctx context.Context, ls *loaderState) error {
+	// for k, v := range ls.loadedPackages {
+	// 	files := getFileFlatlist(v)
+
+	// 	// fmt.Printf("For package '%s'...\n", k)
+	// 	// for _, f := range *files {
+	// 	// 	fmt.Printf("\t%s\n", f.Name.Name)
+	// 	// }
+	// 	// fmt.Printf("\n")
+
+	// 	_, err := l.config.Check(k, ls.fset, *files, ls.info)
+	// 	if err != nil {
+	// 		fmt.Printf("Err: %s\n", err.Error())
+	// 	}
+	// }
+
+	ls.packs.Walk(collections.WalkUp, func(k collections.Keyer, isRoot, isLeaf bool) {
+		p := k.(*pack)
+		files := getFileFlatlist(p.pkg)
+		key := p.path
+		_, err := l.config.Check(key, ls.fset, *files, ls.info)
+		if err != nil {
+			fmt.Printf("Err: %s\n", err.Error())
+		}
+	})
+
+	return nil
+}
+
+func (l *Loader) findSourcePath(pkgName string) (string, error) {
+	if pkgName == "." {
+		p, err := os.Getwd()
+		if err != nil {
+			return "", err
+		}
+		l.stderr.Verbosef("Got '.'; using '%s'\n", p)
+
+		return p, nil
+	}
+
+	for _, v := range l.srcDirs {
+		fpath := path.Join(v, pkgName)
+		isDir := false
+		if build.Default.IsDir != nil {
+			isDir = build.Default.IsDir(fpath)
+		} else {
+			s, err := os.Stat(fpath)
+			if err != nil {
+				continue
+			}
+			isDir = s.IsDir()
+		}
+		if isDir {
+			return fpath, nil
+		}
+	}
+
+	return "", fmt.Errorf("Failed to locate package '%s'", pkgName)
+}
+
+func cleanPath(path string) string {
+	idx := strings.LastIndex(path, "vendor")
+	if idx != -1 {
+		path = path[idx+len("vendor")+1:]
+	}
+	return path
+}
+
+func getFileFlatlist(pkg *ast.Package) *[]*ast.File {
+	asts := make([]*ast.File, len(pkg.Files))
+	i := 0
+	for _, f := range pkg.Files {
+		f0 := f
+		asts[i] = f0
+		i++
+	}
+
+	return &asts
+}
+
+func validateInitialPath(p string) (string, error) {
+	abs, err := filepath.Abs(p)
+	if err != nil {
+		return "", err
+	}
+
+	fi, err := os.Stat(abs)
+	if err != nil {
+		return "", err
+	}
+	if !fi.IsDir() {
+		return "", fmt.Errorf("Provided path '%s' must be a directory", p)
+	}
+
+	return abs, nil
+}

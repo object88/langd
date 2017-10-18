@@ -70,7 +70,7 @@ func (rh *definitionHandler) work() error {
 		return err
 	}
 
-	if x.Obj == nil {
+	if x == nil || x.Obj == nil {
 		// We have an identifier, but it has no object reference.
 		// This may happen because the user has an incomplete program.
 		return nil

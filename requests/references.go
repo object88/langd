@@ -3,6 +3,7 @@ package requests
 import (
 	"context"
 	"encoding/json"
+	"fmt"
 	"go/token"
 	"strings"
 
@@ -18,8 +19,9 @@ const (
 type referencesHandler struct {
 	requestBase
 
-	p      *token.Position
-	result *[]Location
+	p       *token.Position
+	options *ReferenceContext
+	result  *[]Location
 }
 
 func createReferencesHandler(ctx context.Context, h *Handler, req *jsonrpc2.Request) requestHandler {
@@ -39,12 +41,14 @@ func (rh *referencesHandler) preprocess(params *json.RawMessage) error {
 	// 		TextDocument:requests.TextDocumentIdentifier {
 	// 			URI:"file:///Users/bropa18/work/src/github.com/object88/immutable/intToStringHashmap.go"
 	// 		},
-	// 		Position: requests.Position{
+	// 		Position: requests.Position {
 	// 			Line: 11,
 	// 			Character: 14
 	// 		}
 	// 	},
-	// 	Context: (*requests.ReferenceContext)
+	// 	Context: requests.ReferenceContext {
+	//		IncludeDeclaration: true
+	// 	}
 	// }
 	var typedParams ReferenceParams
 	if err := json.Unmarshal(*params, &typedParams); err != nil {
@@ -62,11 +66,29 @@ func (rh *referencesHandler) preprocess(params *json.RawMessage) error {
 		Column:   typedParams.Position.Character,
 	}
 
+	rh.options = typedParams.Context
 	rh.p = p
 	return nil
 }
 
 func (rh *referencesHandler) work() error {
+	x, err := rh.h.workspace.LocateIdent(rh.p)
+	if err != nil {
+		return err
+	}
+
+	if x.Obj == nil {
+		return nil
+	}
+
+	if rh.options.IncludeDeclaration {
+
+	}
+
+	fmt.Printf("X:\n%#v\n", x.Obj)
+	foo := rh.h.workspace.Info.Uses[x]
+	fmt.Printf("Uses:\n%#v\n", foo)
+
 	return nil
 }
 

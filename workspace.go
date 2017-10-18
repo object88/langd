@@ -18,14 +18,18 @@ type Workspace struct {
 	Files       map[string]*ast.File
 	OpenedFiles map[string]*rope.Rope
 	rwm         sync.RWMutex
+
+	Loader *Loader
 }
 
 // CreateWorkspace returns a new instance of the Workspace struct
 func CreateWorkspace() *Workspace {
+	loader := NewLoader()
 	openedFiles := map[string]*rope.Rope{}
 
 	return &Workspace{
 		OpenedFiles: openedFiles,
+		Loader:      loader,
 	}
 }
 
@@ -37,6 +41,8 @@ func (w *Workspace) AssignAST(fset *token.FileSet, info *types.Info, loadedPaths
 	w.Files = files
 }
 
+// LocateIdent scans the loaded fset for the identifier at the requested
+// position
 func (w *Workspace) LocateIdent(p *token.Position) (*ast.Ident, error) {
 	if _, ok := w.OpenedFiles[p.Filename]; ok {
 		// Force reprocessing the AST before we can continue.

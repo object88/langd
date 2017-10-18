@@ -57,6 +57,15 @@ func CreateCaravan() *Caravan {
 	}
 }
 
+// Find returns the element with the given key
+func (c *Caravan) Find(key Key) (Keyer, bool) {
+	n, ok := c.nodes[key]
+	if !ok {
+		return nil, false
+	}
+	return n.k, true
+}
+
 // Insert adds an element to the catavan at the root level
 func (c *Caravan) Insert(k Keyer) {
 	key := k.Key()

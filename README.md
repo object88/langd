@@ -35,6 +35,14 @@ The server may return an `InitializeResult` response before it is ready to proce
 
 Once internal initialization is complete, the server is in the `initialized` stage, and will begin processing the queue.  New requests are still queued up, but the server is free to process them.
 
+### Loading the workspace
+
+The `initialize` request points to a filesystem path, which will be the root of the workspace.  That path and every directory under it will be scanned for Go code.  Additionally, and imported packages are loaded, down to the standard library.
+
+During the loading process, the loader keeps a map of discovered packages.  Each time that a package is encountered, the map be checked, and if the entry is missing, a goroutine will be started to load the AST.
+
+Once all imports have been discovered and loaded, the complete map is iterated over and fed to `config.Check` to build the map os uses, definitions, etc.
+
 ### Processing requests
 
 Incoming requests are asynchronously processed by a connection handler.  A connection handler has two queues: `incomingQueue` and `outgoingQueue`. As requests are received from the JSONRPC2 server, they are handed off to the connection handler, which looks up and instantiates a request handler by method name. The request handler immediately performs some preprocessing on the request to unmarshal arguments and perform any other setup. Once the preprocessing is complete, the request handler is placed on the `incomingQueue`.
