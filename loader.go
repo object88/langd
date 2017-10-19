@@ -28,13 +28,14 @@ type Loader struct {
 
 	importer types.ImporterFrom
 
-	m           sync.Mutex
-	filesInDir  map[string][]string
+	m sync.Mutex
+	// filesInDir  map[string][]string
 	directories map[string]*Directory
 }
 
 type Directory struct {
 	buildPkg *build.Package
+	files    []string
 }
 
 // NewLoader constructs a new Loader struct
@@ -47,16 +48,17 @@ func NewLoader() *Loader {
 		},
 		Importer: importer.Default(),
 	}
+
 	srcDirs := build.Default.SrcDirs()
 
 	importer := config.Importer.(types.ImporterFrom)
 
 	return &Loader{
-		config:      config,
-		srcDirs:     srcDirs,
-		stderr:      l,
-		importer:    importer,
-		filesInDir:  map[string][]string{},
+		config:   config,
+		srcDirs:  srcDirs,
+		stderr:   l,
+		importer: importer,
+		// filesInDir:  map[string][]string{},
 		directories: map[string]*Directory{},
 	}
 }
@@ -140,14 +142,14 @@ func (l *Loader) checkAndQueueDirectory(dpath string, info os.FileInfo, _ error)
 
 	l.m.Lock()
 
-	if _, ok := l.filesInDir[dpath]; ok {
+	if _, ok := l.directories[dpath]; ok {
 		fmt.Printf("Already processed '%s'\n", dpath)
 		l.m.Unlock()
 		return nil
 	}
 
 	fmt.Printf("Starting to process %s\n", dpath)
-	l.filesInDir[dpath] = nil
+	l.directories[dpath] = &Directory{}
 
 	l.m.Unlock()
 
@@ -162,7 +164,7 @@ func (l *Loader) processDirectory(dpath string) {
 	if err != nil {
 		if _, ok := err.(*build.NoGoError); ok {
 			// There isn't any Go code here.
-			fmt.Printf("No go code in %s; skipping\n", dpath)
+			fmt.Printf("NO GO CODE: %s\n", dpath)
 			return
 		}
 		l.stderr.Errorf("Got error when attempting import on dir '%s': %s\n", dpath, err.Error())
@@ -170,25 +172,7 @@ func (l *Loader) processDirectory(dpath string) {
 		return
 	}
 
-	l.m.Lock()
-
-	l.directories[dpath] = &Directory{
-		buildPkg: buildP,
-	}
-
-	count := len(buildP.GoFiles) + len(buildP.TestGoFiles)
-	filesInDir := make([]string, 0, count)
-
-	for _, v := range buildP.GoFiles {
-		filesInDir = append(filesInDir, l.queueFile(buildP, v))
-	}
-
-	for _, v := range buildP.TestGoFiles {
-		filesInDir = append(filesInDir, l.queueFile(buildP, v))
-	}
-
-	l.filesInDir[dpath] = filesInDir
-	l.m.Unlock()
+	l.queueFilesFromBuildPackage(dpath, buildP)
 }
 
 // queueFile assumes that the lock has already been aquired.
@@ -209,20 +193,10 @@ func (l *Loader) queueFile(buildP *build.Package, filename string) string {
 	return fpath
 }
 
-// LoadFile reads in a single file
+// LoadFile reads in a single file.  Is assumes that this file is new and has
+// not already been added to a package.
 func (l *Loader) LoadFile(fpath string, done chan<- *Package) {
-	// l.m.Lock()
-	// _, ok := l.ls.files[fpath]
-	// if !ok {
-	// 	l.ls.files[fpath] = nil
-	// }
-	// l.m.Unlock()
-
-	// if ok {
-	// 	return
-	// }
-
-	fmt.Printf("Processing %s\n", fpath)
+	fmt.Printf("PROCESSING: %s\n", fpath)
 
 	dpath := filepath.Dir(fpath)
 	astf, err := parser.ParseFile(l.ls.fset, fpath, nil, 0)
@@ -254,19 +228,20 @@ func (l *Loader) LoadFile(fpath string, done chan<- *Package) {
 	pkg.astPkg.Files[fpath] = astf
 
 	// Check to see if this was the last file for this package to need processing
-	files := l.filesInDir[dpath]
+	directory := l.directories[dpath]
 	// fmt.Printf("In package %s, checking through %d files\n", dpath, len(files))
-	ready := true
-	for _, v := range files {
+	tcount := len(directory.files)
+	nrcount := 0
+	for _, v := range directory.files {
 		if _, ok := pkg.astPkg.Files[v]; !ok {
-			fmt.Printf("In package %s, file %s is not ready\n", dpath, v)
-			ready = false
-			break
+			nrcount++
 		}
 	}
-	if ready {
-		fmt.Printf("Completed %s\n", pkg.path)
+	if nrcount == 0 {
+		fmt.Printf("COMPLETED %s\n", pkg.path)
 		done <- pkg
+	} else {
+		fmt.Printf("INCOMPLETE: %03d of %03d: %s\n", tcount-nrcount, tcount, pkg.path)
 	}
 
 	l.m.Unlock()
@@ -300,32 +275,50 @@ func (l *Loader) LoadImports(pkg *Package) {
 	for _, astf := range pkg.astPkg.Files {
 		scanImports(imports, astf)
 	}
+	for dpath := range imports {
+		l.directories[dpath] = &Directory{}
+	}
 	l.m.Unlock()
 
 	for dpath := range imports {
+		l.m.Lock()
+		_, ok := l.directories[dpath]
+		l.m.Unlock()
+
+		if ok {
+			// This directory has already been scanned.
+			continue
+		}
+
 		buildP, err := build.Default.Import(dpath, pkg.path, 0)
 		if err != nil {
 			fmt.Printf("Error: %s\n", err.Error())
 			continue
 		}
 
-		l.m.Lock()
-
-		count := len(buildP.GoFiles) + len(buildP.TestGoFiles)
-		filesInDir := make([]string, 0, count)
-
-		for _, v := range buildP.GoFiles {
-			filesInDir = append(filesInDir, l.queueFile(buildP, v))
-		}
-
-		for _, v := range buildP.TestGoFiles {
-			filesInDir = append(filesInDir, l.queueFile(buildP, v))
-		}
-
-		l.filesInDir[dpath] = filesInDir
-
-		l.m.Unlock()
+		l.queueFilesFromBuildPackage(dpath, buildP)
 	}
+}
+
+func (l *Loader) queueFilesFromBuildPackage(dpath string, buildP *build.Package) {
+	l.m.Lock()
+
+	l.directories[dpath].buildPkg = buildP
+
+	count := len(buildP.GoFiles) + len(buildP.TestGoFiles)
+	filesInDir := make([]string, 0, count)
+
+	for _, v := range buildP.GoFiles {
+		filesInDir = append(filesInDir, l.queueFile(buildP, v))
+	}
+
+	for _, v := range buildP.TestGoFiles {
+		filesInDir = append(filesInDir, l.queueFile(buildP, v))
+	}
+
+	l.directories[dpath].files = filesInDir
+
+	l.m.Unlock()
 }
 
 func validateInitialPath(p string) (string, error) {
