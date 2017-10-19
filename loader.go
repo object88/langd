@@ -94,7 +94,6 @@ func (l *Loader) Start(base string) (chan<- bool, error) {
 				go l.LoadImports(pkg)
 
 			case fpath := <-l.ls.fileQueue.Out():
-				fmt.Printf("Checking to see if started %s\n", *fpath)
 				go l.LoadFile(*fpath, packLoaded)
 
 			case <-done:
@@ -181,27 +180,50 @@ func (l *Loader) processDirectory(dpath string) {
 	filesInDir := make([]string, 0, count)
 
 	for _, v := range buildP.GoFiles {
-		filesInDir = append(filesInDir, l.processFile(buildP, v))
+		filesInDir = append(filesInDir, l.queueFile(buildP, v))
 	}
 
 	for _, v := range buildP.TestGoFiles {
-		filesInDir = append(filesInDir, l.processFile(buildP, v))
+		filesInDir = append(filesInDir, l.queueFile(buildP, v))
 	}
 
 	l.filesInDir[dpath] = filesInDir
 	l.m.Unlock()
 }
 
-func (l *Loader) processFile(buildP *build.Package, filename string) string {
+// queueFile assumes that the lock has already been aquired.
+func (l *Loader) queueFile(buildP *build.Package, filename string) string {
 	fpath := path.Join(buildP.Dir, filename)
-	fmt.Printf("Dir %s, adding %s\n", buildP.Dir, fpath)
-	l.ls.files[fpath] = nil
+	// fmt.Printf("Dir %s, adding %s\n", buildP.Dir, fpath)
+
+	_, ok := l.ls.files[fpath]
+	if !ok {
+		l.ls.files[fpath] = nil
+	}
+
+	if ok {
+		return fpath
+	}
+
 	l.ls.fileQueue.In() <- &fpath
 	return fpath
 }
 
 // LoadFile reads in a single file
 func (l *Loader) LoadFile(fpath string, done chan<- *Package) {
+	// l.m.Lock()
+	// _, ok := l.ls.files[fpath]
+	// if !ok {
+	// 	l.ls.files[fpath] = nil
+	// }
+	// l.m.Unlock()
+
+	// if ok {
+	// 	return
+	// }
+
+	fmt.Printf("Processing %s\n", fpath)
+
 	dpath := filepath.Dir(fpath)
 	astf, err := parser.ParseFile(l.ls.fset, fpath, nil, 0)
 	if err != nil {
@@ -237,12 +259,13 @@ func (l *Loader) LoadFile(fpath string, done chan<- *Package) {
 	ready := true
 	for _, v := range files {
 		if _, ok := pkg.astPkg.Files[v]; !ok {
-			// fmt.Printf("In package %s, file %s is not ready\n", dpath, v)
+			fmt.Printf("In package %s, file %s is not ready\n", dpath, v)
 			ready = false
 			break
 		}
 	}
 	if ready {
+		fmt.Printf("Completed %s\n", pkg.path)
 		done <- pkg
 	}
 
@@ -251,21 +274,21 @@ func (l *Loader) LoadFile(fpath string, done chan<- *Package) {
 
 func scanImports(imports map[string]bool, file *ast.File) {
 	for _, decl := range file.Decls {
-		if decl, ok := decl.(*ast.GenDecl); ok && decl.Tok == token.IMPORT {
-			for _, spec := range decl.Specs {
-				spec := spec.(*ast.ImportSpec)
+		decl, ok := decl.(*ast.GenDecl)
+		if !ok || decl.Tok != token.IMPORT {
+			continue
+		}
 
-				// NB: do not assume the program is well-formed!
-				path, err := strconv.Unquote(spec.Path.Value)
-				if err != nil {
-					continue // quietly ignore the error
-				}
-				if path == "C" {
-					continue // skip pseudopackage
-				}
-				fmt.Printf("Have import %s\n", path)
-				imports[path] = true
+		for _, spec := range decl.Specs {
+			spec := spec.(*ast.ImportSpec)
+
+			// NB: do not assume the program is well-formed!
+			path, err := strconv.Unquote(spec.Path.Value)
+			if err != nil || path == "C" {
+				// Ignore the error and skip the C psuedo package
+				continue
 			}
+			imports[path] = true
 		}
 	}
 }
@@ -279,8 +302,8 @@ func (l *Loader) LoadImports(pkg *Package) {
 	}
 	l.m.Unlock()
 
-	for impt := range imports {
-		p, err := build.Default.Import(impt, pkg.path, 0)
+	for dpath := range imports {
+		buildP, err := build.Default.Import(dpath, pkg.path, 0)
 		if err != nil {
 			fmt.Printf("Error: %s\n", err.Error())
 			continue
@@ -288,13 +311,18 @@ func (l *Loader) LoadImports(pkg *Package) {
 
 		l.m.Lock()
 
-		for _, v := range p.GoFiles {
-			l.processFile(p, v)
+		count := len(buildP.GoFiles) + len(buildP.TestGoFiles)
+		filesInDir := make([]string, 0, count)
+
+		for _, v := range buildP.GoFiles {
+			filesInDir = append(filesInDir, l.queueFile(buildP, v))
 		}
 
-		for _, v := range p.TestGoFiles {
-			l.processFile(p, v)
+		for _, v := range buildP.TestGoFiles {
+			filesInDir = append(filesInDir, l.queueFile(buildP, v))
 		}
+
+		l.filesInDir[dpath] = filesInDir
 
 		l.m.Unlock()
 	}
