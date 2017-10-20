@@ -21,11 +21,9 @@ type loaderState struct {
 	// loadedPackages map[string]*ast.Package
 	// loadedPaths    map[string]bool
 
-	// m sync.Mutex
 	// map of file paths to astFile
 	// is this necessary?
-	files map[string]*ast.File
-	// loadedPkgs map[string]bool
+	files     map[string]*ast.File
 	fileQueue *packageQueue
 	errs      []error
 	packs     *collections.Caravan

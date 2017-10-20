@@ -66,7 +66,7 @@ func NewLoader() *Loader {
 // Start initializes the dispatcher for file and directory load events.  The
 // dispatch is stopped by passing a bool (any value) into the returned
 // channel.
-func (l *Loader) Start(base string) (chan<- bool, error) {
+func (l *Loader) Start(base string) (<-chan bool, error) {
 	abs, err := validateInitialPath(base)
 	if err != nil {
 		return nil, err
@@ -86,21 +86,30 @@ func (l *Loader) Start(base string) (chan<- bool, error) {
 
 	done := make(chan bool)
 	packLoaded := make(chan *Package)
+	importsDone := make(chan bool)
 
 	go func() {
 		for {
 			select {
 			case pkg := <-packLoaded:
 				// A pack is loaded.  Check for imports and process.
-				fmt.Printf("Got message that %s id ready to check imports\n", pkg.path)
-				go l.LoadImports(pkg)
+				go l.LoadImports(pkg, importsDone)
 
 			case fpath := <-l.ls.fileQueue.Out():
 				go l.LoadFile(*fpath, packLoaded)
 
-			case <-done:
-				close(packLoaded)
-				break
+			case <-importsDone:
+				fmt.Printf("*** Reported imports done...\n")
+				ready := true
+				l.ls.packs.Walk(collections.WalkDown, func(k collections.Keyer, isRoot, isLeaf bool) {
+					if k.(*Package).astPkg == nil {
+						ready = false
+					}
+				})
+				if ready {
+					fmt.Printf("*** *** Completely done\n")
+					done <- true
+				}
 			}
 		}
 	}()
@@ -112,10 +121,9 @@ func (l *Loader) Start(base string) (chan<- bool, error) {
 // it will read in nested directories.  LoadDirectory will not read directories
 // that begin with a "." (i.e., ".git"), and it will not follow symbolic
 // links.
-func (l *Loader) LoadDirectory(dpath string, recurse bool) <-chan bool {
-	done := make(chan bool)
-
+func (l *Loader) LoadDirectory(dpath string, recurse bool) {
 	if recurse {
+		fmt.Printf("Walking all file paths...\n")
 		filepath.Walk(dpath, l.checkAndQueueDirectory)
 		fmt.Printf("Walked all file paths\n")
 	} else {
@@ -127,7 +135,6 @@ func (l *Loader) LoadDirectory(dpath string, recurse bool) <-chan bool {
 		}
 		l.checkAndQueueDirectory(dpath, info, nil)
 	}
-	return done
 }
 
 func (l *Loader) checkAndQueueDirectory(dpath string, info os.FileInfo, _ error) error {
@@ -153,44 +160,23 @@ func (l *Loader) checkAndQueueDirectory(dpath string, info os.FileInfo, _ error)
 
 	l.m.Unlock()
 
-	go l.processDirectory(dpath)
-
-	return nil
-}
-
-func (l *Loader) processDirectory(dpath string) {
-	// Do something with the directory
-	buildP, err := build.ImportDir(dpath, 0)
-	if err != nil {
-		if _, ok := err.(*build.NoGoError); ok {
-			// There isn't any Go code here.
-			fmt.Printf("NO GO CODE: %s\n", dpath)
+	go func() {
+		buildP, err := build.ImportDir(dpath, 0)
+		if err != nil {
+			if _, ok := err.(*build.NoGoError); ok {
+				// There isn't any Go code here.
+				fmt.Printf("NO GO CODE: %s\n", dpath)
+				return
+			}
+			l.stderr.Errorf("Got error when attempting import on dir '%s': %s\n", dpath, err.Error())
+			l.ls.errs = append(l.ls.errs, err)
 			return
 		}
-		l.stderr.Errorf("Got error when attempting import on dir '%s': %s\n", dpath, err.Error())
-		l.ls.errs = append(l.ls.errs, err)
-		return
-	}
 
-	l.queueFilesFromBuildPackage(dpath, buildP)
-}
+		l.queueFilesFromBuildPackage(dpath, buildP)
+	}()
 
-// queueFile assumes that the lock has already been aquired.
-func (l *Loader) queueFile(buildP *build.Package, filename string) string {
-	fpath := path.Join(buildP.Dir, filename)
-	// fmt.Printf("Dir %s, adding %s\n", buildP.Dir, fpath)
-
-	_, ok := l.ls.files[fpath]
-	if !ok {
-		l.ls.files[fpath] = nil
-	}
-
-	if ok {
-		return fpath
-	}
-
-	l.ls.fileQueue.In() <- &fpath
-	return fpath
+	return nil
 }
 
 // LoadFile reads in a single file.  Is assumes that this file is new and has
@@ -238,7 +224,7 @@ func (l *Loader) LoadFile(fpath string, done chan<- *Package) {
 		}
 	}
 	if nrcount == 0 {
-		fmt.Printf("COMPLETED %s\n", pkg.path)
+		fmt.Printf("COMPLETED: %s\n", pkg.path)
 		done <- pkg
 	} else {
 		fmt.Printf("INCOMPLETE: %03d of %03d: %s\n", tcount-nrcount, tcount, pkg.path)
@@ -247,39 +233,39 @@ func (l *Loader) LoadFile(fpath string, done chan<- *Package) {
 	l.m.Unlock()
 }
 
-func scanImports(imports map[string]bool, file *ast.File) {
-	for _, decl := range file.Decls {
-		decl, ok := decl.(*ast.GenDecl)
-		if !ok || decl.Tok != token.IMPORT {
-			continue
-		}
-
-		for _, spec := range decl.Specs {
-			spec := spec.(*ast.ImportSpec)
-
-			// NB: do not assume the program is well-formed!
-			path, err := strconv.Unquote(spec.Path.Value)
-			if err != nil || path == "C" {
-				// Ignore the error and skip the C psuedo package
-				continue
-			}
-			imports[path] = true
-		}
-	}
-}
-
-func (l *Loader) LoadImports(pkg *Package) {
+// LoadImports will scan through the ast.Files in the ast.Package in `pkg`
+// and determine imports.  If all imports have been processed, then the
+// provided done channel will be signaled.
+func (l *Loader) LoadImports(pkg *Package, done chan<- bool) {
 	imports := map[string]bool{}
 
 	l.m.Lock()
 	for _, astf := range pkg.astPkg.Files {
-		scanImports(imports, astf)
+		for _, decl := range astf.Decls {
+			decl, ok := decl.(*ast.GenDecl)
+			if !ok || decl.Tok != token.IMPORT {
+				continue
+			}
+
+			for _, spec := range decl.Specs {
+				spec := spec.(*ast.ImportSpec)
+
+				// NB: do not assume the program is well-formed!
+				path, err := strconv.Unquote(spec.Path.Value)
+				if err != nil || path == "C" {
+					// Ignore the error and skip the C psuedo package
+					continue
+				}
+				imports[path] = true
+			}
+		}
 	}
 	for dpath := range imports {
 		l.directories[dpath] = &Directory{}
 	}
 	l.m.Unlock()
 
+	ready := true
 	for dpath := range imports {
 		l.m.Lock()
 		_, ok := l.directories[dpath]
@@ -290,6 +276,8 @@ func (l *Loader) LoadImports(pkg *Package) {
 			continue
 		}
 
+		ready = false
+
 		buildP, err := build.Default.Import(dpath, pkg.path, 0)
 		if err != nil {
 			fmt.Printf("Error: %s\n", err.Error())
@@ -297,6 +285,10 @@ func (l *Loader) LoadImports(pkg *Package) {
 		}
 
 		l.queueFilesFromBuildPackage(dpath, buildP)
+	}
+
+	if ready {
+		done <- true
 	}
 }
 
@@ -319,6 +311,23 @@ func (l *Loader) queueFilesFromBuildPackage(dpath string, buildP *build.Package)
 	l.directories[dpath].files = filesInDir
 
 	l.m.Unlock()
+}
+
+// queueFile assumes that the lock has already been aquired.
+func (l *Loader) queueFile(buildP *build.Package, filename string) string {
+	fpath := path.Join(buildP.Dir, filename)
+
+	_, ok := l.ls.files[fpath]
+	if !ok {
+		l.ls.files[fpath] = nil
+	}
+
+	if ok {
+		return fpath
+	}
+
+	l.ls.fileQueue.In() <- &fpath
+	return fpath
 }
 
 func validateInitialPath(p string) (string, error) {

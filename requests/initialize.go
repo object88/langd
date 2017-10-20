@@ -70,13 +70,19 @@ func (h *Handler) readRoot(root string) {
 	}
 
 	// l := langd.NewLoader()
-	h.workspace.Loader.Start(base)
-	done := h.workspace.Loader.LoadDirectory(base, true)
+	done, err := h.workspace.Loader.Start(base)
+	if err != nil {
+		fmt.Printf("OHSHANP: %s\n", err.Error())
+	}
+
+	fmt.Printf("About to load %s\n", base)
+	h.workspace.Loader.LoadDirectory(base, true)
 	// if loadErr != nil {
 	// 	fmt.Printf("OHSHANP: %s\n", loadErr.Error())
 	// }
 
 	// NOTE: We are not doing anything with this, so... BLOCKED.
+	fmt.Printf("Waiting...")
 	<-done
 
 	fmt.Printf("Have %d imports...\n", len(h.workspace.PkgNames))
