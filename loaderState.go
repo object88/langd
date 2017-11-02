@@ -23,10 +23,9 @@ type loaderState struct {
 
 	// map of file paths to astFile
 	// is this necessary?
-	files     map[string]*ast.File
-	fileQueue *packageQueue
-	errs      []error
-	packs     *collections.Caravan
+	files map[string]*ast.File
+	errs  []error
+	packs *collections.Caravan
 }
 
 func newLoaderState(pkgName string) *loaderState {
@@ -55,9 +54,8 @@ func newLoaderState(pkgName string) *loaderState {
 		// loadedPaths:    map[string]bool{},
 
 		// loadedPkgs: map[string]bool{},
-		fileQueue: createPackageQueue(),
-		errs:      []error{},
-		packs:     collections.CreateCaravan(),
+		errs:  []error{},
+		packs: collections.CreateCaravan(),
 	}
 
 	return ls
