@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"go/build"
 	"go/importer"
+	"go/token"
 	"go/types"
 	"os"
 	"path/filepath"
@@ -23,12 +24,16 @@ type Loader struct {
 	config  *types.Config
 	srcDirs []string
 	stderr  *log.Log
-	ls      *loaderState
+
+	fset  *token.FileSet
+	packs *collections.Caravan
 
 	dirQueue *collections.InfiniteQueue
 
 	m           sync.Mutex
 	directories map[string]*Directory
+
+	done chan bool
 }
 
 // NewLoader constructs a new Loader struct
@@ -48,8 +53,11 @@ func NewLoader() *Loader {
 		config:      config,
 		srcDirs:     srcDirs,
 		stderr:      l,
+		fset:        token.NewFileSet(),
+		packs:       collections.CreateCaravan(),
 		dirQueue:    collections.CreateInfiniteQueue(),
 		directories: map[string]*Directory{},
+		done:        make(chan bool),
 	}
 }
 
@@ -107,14 +115,17 @@ func (l *Loader) Start(base string) (<-chan bool, error) {
 		return nil, fmt.Errorf("Failed to find '%s'", base)
 	}
 
-	l.ls = newLoaderState(pkgName)
-
 	done := make(chan bool)
 	importsDone := make(chan bool)
 
 	go func() {
 		for {
 			select {
+			case _, ok := <-l.done:
+				if !ok {
+					return
+				}
+
 			case pimportDir := <-l.dirQueue.Out():
 				imp := pimportDir.(*importDir)
 				l.processDir(imp)
@@ -122,7 +133,7 @@ func (l *Loader) Start(base string) (<-chan bool, error) {
 			case <-importsDone:
 				fmt.Printf("*** Reported imports done...\n")
 				ready := true
-				l.ls.packs.Walk(collections.WalkDown, func(k collections.Keyer, _, _ bool) {
+				l.packs.Walk(collections.WalkDown, func(k collections.Keyer, _, _ bool) {
 					if k.(*Package).astPkg == nil {
 						ready = false
 					}
@@ -136,6 +147,11 @@ func (l *Loader) Start(base string) (<-chan bool, error) {
 	}()
 
 	return done, nil
+}
+
+// Close will stop monitoring the files
+func (l *Loader) Close() {
+	close(l.done)
 }
 
 func (l *Loader) processDir(imp *importDir) {
@@ -153,7 +169,7 @@ func (l *Loader) processDir(imp *importDir) {
 
 	l.m.Unlock()
 
-	go d.Scan(l.ls.fset, l.dirQueue.In())
+	go d.Scan(l.fset, l.dirQueue.In())
 }
 
 func findPackagePath(path, src string) string {

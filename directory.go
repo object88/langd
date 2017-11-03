@@ -31,7 +31,6 @@ func CreateDirectory(path string) *Directory {
 
 // Scan imports the files in a directory and processes the files
 func (d *Directory) Scan(fset *token.FileSet, dirQueue chan<- interface{}) {
-	// buildPkg, err := build.Import(d.root, d.path, 0)
 	buildPkg, err := build.ImportDir(d.path, 0)
 	if err != nil {
 		if _, ok := err.(*build.NoGoError); ok {
@@ -39,7 +38,6 @@ func (d *Directory) Scan(fset *token.FileSet, dirQueue chan<- interface{}) {
 			fmt.Printf("NO GO CODE: %s\n", d.path)
 			return
 		}
-		// fmt.Printf("Oh dear:\n\t%s\n\t%s\n\t%s\n", d.root, d.path, err.Error())
 		fmt.Printf("Oh dear:\n\t%s\n\t%s\n", d.path, err.Error())
 	}
 	d.buildPkg = buildPkg
@@ -76,6 +74,7 @@ func (d *Directory) processFile(imports map[string]bool, fset *token.FileSet, fp
 	if err != nil {
 		fmt.Printf("Got error while parsing file '%s':\n\t%s\n", fpath, err.Error())
 		// l.ls.errs = append(l.ls.errs, err)
+		wg.Done()
 		return
 	}
 
