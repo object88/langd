@@ -1,6 +1,9 @@
 package collections
 
-import "errors"
+import (
+	"errors"
+	"sync"
+)
 
 const (
 	// WalkUp indicates that the walk function will start with leaves, and
@@ -32,6 +35,7 @@ type CaravanWalker func(k Keyer, isRoot, isLeaf bool)
 type Caravan struct {
 	nodes map[Key]*Node
 	roots map[Key]*Node
+	m     sync.Mutex
 }
 
 // Node is an element in a caravan graph
@@ -59,7 +63,9 @@ func CreateCaravan() *Caravan {
 
 // Find returns the element with the given key
 func (c *Caravan) Find(key Key) (Keyer, bool) {
+	c.m.Lock()
 	n, ok := c.nodes[key]
+	c.m.Unlock()
 	if !ok {
 		return nil, false
 	}
@@ -69,8 +75,10 @@ func (c *Caravan) Find(key Key) (Keyer, bool) {
 // Insert adds an element to the catavan at the root level
 func (c *Caravan) Insert(k Keyer) {
 	key := k.Key()
+	c.m.Lock()
 	if _, ok := c.nodes[key]; ok {
 		// Node already exists.
+		c.m.Unlock()
 		return
 	}
 
@@ -81,6 +89,8 @@ func (c *Caravan) Insert(k Keyer) {
 	}
 	c.nodes[key] = n
 	c.roots[key] = n
+
+	c.m.Unlock()
 }
 
 // Connect establishes an edge between two elements
@@ -90,17 +100,22 @@ func (c *Caravan) Connect(from, to Keyer) error {
 	var ok bool
 	var fromNode, toNode *Node
 
+	c.m.Lock()
+
 	fromNode, ok = c.nodes[fromKey]
 	if !ok {
+		c.m.Unlock()
 		return errors.New("Element `from` not in caravan")
 	}
 
 	toNode, ok = c.nodes[toKey]
 	if !ok {
+		c.m.Unlock()
 		return errors.New("Element `to` not in caravan")
 	}
 
 	if _, ok = fromNode.descendants[toKey]; ok {
+		c.m.Unlock()
 		return errors.New("`to` is already a direct descendent of `from`")
 	}
 
@@ -112,6 +127,7 @@ func (c *Caravan) Connect(from, to Keyer) error {
 		}
 	})
 	if circular {
+		c.m.Unlock()
 		return errors.New("Connect would create circular loop")
 	}
 
@@ -122,6 +138,7 @@ func (c *Caravan) Connect(from, to Keyer) error {
 	fromNode.descendants[toKey] = toNode
 	toNode.ascendants[fromKey] = fromNode
 
+	c.m.Unlock()
 	return nil
 }
 
@@ -138,6 +155,8 @@ func (c *Caravan) Connect(from, to Keyer) error {
 func (c *Caravan) Walk(direction WalkDirection, walker CaravanWalker) {
 	visits := map[Key]bool{}
 
+	c.m.Lock()
+
 	if direction == WalkDown {
 		for _, v := range c.roots {
 			c.walkNodeDown(visits, v, walker)
@@ -147,6 +166,8 @@ func (c *Caravan) Walk(direction WalkDirection, walker CaravanWalker) {
 			c.walkNodeUp(visits, v, walker)
 		}
 	}
+
+	c.m.Unlock()
 }
 
 func (c *Caravan) walkNodeDown(visits map[Key]bool, node *Node, walker CaravanWalker) {
