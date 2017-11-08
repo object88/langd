@@ -6,7 +6,7 @@
 			"type": "extensionHost",
 			"request": "launch",
 			"runtimeExecutable": "${execPath}",
-			"args": [ "--extensionDevelopmentPath=${workspaceRoot}/../langd-vscode", "${workspaceRoot}/../cprofile" ],
+			"args": [ "--extensionDevelopmentPath=${workspaceRoot}/../langd-vscode", "${workspaceRoot}/examples/echo" ],
 			"stopOnEntry": false,
 			"sourceMaps": true,
 			"outFiles": [ "${workspaceRoot}/../langd-vscode/out/src/**/*.js" ]

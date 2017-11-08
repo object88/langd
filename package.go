@@ -15,7 +15,8 @@ type Package struct {
 	checked bool
 }
 
-// Key returns the Key to support the collections.Caravan
+// Key returns the Key to support the collections.Caravan.  The Key is a
+// colon-seperated concatination of the package name and the path.
 func (p *Package) Key() collections.Key {
 	key := buildKey(p.pkgName, p.path)
 	return key

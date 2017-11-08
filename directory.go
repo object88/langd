@@ -1,13 +1,7 @@
 package langd
 
 import (
-	"fmt"
-	"go/ast"
 	"go/build"
-	"go/parser"
-	"go/token"
-	"path/filepath"
-	"strconv"
 	"sync"
 )
 
@@ -18,6 +12,8 @@ type Directory struct {
 	pkgs     []*Package
 	files    []string
 	m        sync.Mutex
+
+	ready chan struct{}
 }
 
 // CreateDirectory creates a new Directory struct
@@ -29,99 +25,116 @@ func CreateDirectory(path string) *Directory {
 	}
 }
 
-// Scan imports the files in a directory and processes the files
-func (d *Directory) Scan(fset *token.FileSet, dirQueue chan<- interface{}) {
-	buildPkg, err := build.ImportDir(d.path, 0)
-	if err != nil {
-		if _, ok := err.(*build.NoGoError); ok {
-			// There isn't any Go code here.
-			fmt.Printf("NO GO CODE: %s\n", d.path)
-			return
-		}
-		fmt.Printf("Oh dear:\n\t%s\n\t%s\n", d.path, err.Error())
-	}
-	d.buildPkg = buildPkg
+// // Scan imports the files in a directory and processes the files
+// func (d *Directory) Scan(fset *token.FileSet, packs *collections.Caravan, dirQueue chan<- interface{}) {
+// 	buildPkg, err := build.ImportDir(d.path, 0)
+// 	if err != nil {
+// 		if _, ok := err.(*build.NoGoError); ok {
+// 			// There isn't any Go code here.
+// 			fmt.Printf("NO GO CODE: %s\n", d.path)
+// 			return
+// 		}
+// 		fmt.Printf("Oh dear:\n\t%s\n\t%s\n", d.path, err.Error())
+// 	}
+// 	d.buildPkg = buildPkg
 
-	var wg sync.WaitGroup
-	imports := map[string]bool{}
+// 	var wg sync.WaitGroup
+// 	imports := importMap{}
 
-	count := len(buildPkg.GoFiles) + len(buildPkg.TestGoFiles)
-	wg.Add(count)
+// 	count := len(buildPkg.GoFiles) + len(buildPkg.TestGoFiles)
+// 	wg.Add(count)
 
-	for _, v := range buildPkg.GoFiles {
-		fpath := filepath.Join(buildPkg.Dir, v)
-		go d.processFile(imports, fset, fpath, &wg)
-	}
+// 	for _, v := range buildPkg.GoFiles {
+// 		fpath := filepath.Join(buildPkg.Dir, v)
+// 		go d.processFile(imports, fset, packs, fpath, &wg)
+// 	}
 
-	for _, v := range buildPkg.TestGoFiles {
-		fpath := filepath.Join(buildPkg.Dir, v)
-		go d.processFile(imports, fset, fpath, &wg)
-	}
+// 	for _, v := range buildPkg.TestGoFiles {
+// 		fpath := filepath.Join(buildPkg.Dir, v)
+// 		go d.processFile(imports, fset, packs, fpath, &wg)
+// 	}
 
-	wg.Wait()
+// 	wg.Wait()
 
-	// Take all the imports, and announce them back for processing
-	for dpath := range imports {
-		absPath := findPackagePath(dpath, buildPkg.ImportPath)
-		dirQueue <- &importDir{
-			path: absPath,
-		}
-	}
-}
+// 	fmt.Printf("Scanned %s\n", d.path)
 
-func (d *Directory) processFile(imports map[string]bool, fset *token.FileSet, fpath string, wg *sync.WaitGroup) {
-	astf, err := parser.ParseFile(fset, fpath, nil, 0)
-	if err != nil {
-		fmt.Printf("Got error while parsing file '%s':\n\t%s\n", fpath, err.Error())
-		// l.ls.errs = append(l.ls.errs, err)
-		wg.Done()
-		return
-	}
+// 	// Take all the imports, and announce them back for processing
+// 	for src, imps := range imports {
+// 		for imp := range imps {
+// 			absPath := findPackagePath(imp, buildPkg.ImportPath)
+// 			dirQueue <- &importDir{
+// 				imp:  imp,
+// 				path: absPath,
+// 				src:  src,
+// 			}
+// 		}
+// 	}
+// }
 
-	pkgName := astf.Name.Name
-	key := buildKey(pkgName, fpath)
+// func (d *Directory) processFile(imports importMap, fset *token.FileSet, packs *collections.Caravan, fpath string, wg *sync.WaitGroup) {
+// 	astf, err := parser.ParseFile(fset, fpath, nil, 0)
+// 	if err != nil {
+// 		fmt.Printf("Got error while parsing file '%s':\n\t%s\n", fpath, err.Error())
+// 		// l.ls.errs = append(l.ls.errs, err)
+// 		wg.Done()
+// 		return
+// 	}
 
-	d.m.Lock()
+// 	absPath := filepath.Dir(fpath)
+// 	pkgName := astf.Name.Name
 
-	var pkg *Package
-	for _, v := range d.pkgs {
-		if v.Key() == key {
-			pkg = v
-			break
-		}
-	}
-	if pkg == nil {
-		pkg = &Package{
-			astPkg: &ast.Package{
-				Name:  pkgName,
-				Files: map[string]*ast.File{},
-			},
-			path:    fpath,
-			pkgName: pkgName,
-		}
-		d.pkgs = append(d.pkgs, pkg)
-	}
+// 	d.m.Lock()
 
-	for _, decl := range astf.Decls {
-		decl, ok := decl.(*ast.GenDecl)
-		if !ok || decl.Tok != token.IMPORT {
-			continue
-		}
+// 	var pkg *Package
+// 	for _, v := range d.pkgs {
+// 		if v.path == absPath && v.pkgName == pkgName {
+// 			pkg = v
+// 			break
+// 		}
+// 	}
+// 	if pkg == nil {
+// 		pkg = &Package{
+// 			astPkg: &ast.Package{
+// 				Name:  pkgName,
+// 				Files: map[string]*ast.File{},
+// 			},
+// 			path:    absPath,
+// 			pkgName: pkgName,
+// 		}
+// 		packs.Insert(pkg)
+// 		d.pkgs = append(d.pkgs, pkg)
+// 	}
 
-		for _, spec := range decl.Specs {
-			spec := spec.(*ast.ImportSpec)
+// 	src := &importKey{
+// 		pkgName: pkgName,
+// 		absPath: absPath,
+// 	}
 
-			// NB: do not assume the program is well-formed!
-			path, err := strconv.Unquote(spec.Path.Value)
-			if err != nil || path == "C" {
-				// Ignore the error and skip the C psuedo package
-				continue
-			}
-			imports[path] = true
-		}
-	}
+// 	for _, decl := range astf.Decls {
+// 		decl, ok := decl.(*ast.GenDecl)
+// 		if !ok || decl.Tok != token.IMPORT {
+// 			continue
+// 		}
 
-	d.m.Unlock()
+// 		for _, spec := range decl.Specs {
+// 			spec := spec.(*ast.ImportSpec)
 
-	wg.Done()
-}
+// 			// NB: do not assume the program is well-formed!
+// 			path, err := strconv.Unquote(spec.Path.Value)
+// 			if err != nil || path == "C" {
+// 				// Ignore the error and skip the C psuedo package
+// 				continue
+// 			}
+// 			destMap, ok := imports[src]
+// 			if !ok {
+// 				destMap = map[string]bool{}
+// 				imports[src] = destMap
+// 			}
+// 			destMap[path] = true
+// 		}
+// 	}
+
+// 	d.m.Unlock()
+
+// 	wg.Done()
+// }
