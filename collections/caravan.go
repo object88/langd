@@ -20,7 +20,7 @@ const (
 type WalkDirection int
 
 // CaravanWalker function is the callback for the `Walk` function
-type CaravanWalker func(k Keyer, isRoot, isLeaf bool)
+type CaravanWalker func(node *Node)
 
 // Caravan is a collection of independent directed acyclic graphs (DAGs).
 // Items are inserted into a caravan, and the graph structure is constructed.
@@ -121,8 +121,9 @@ func (c *Caravan) Connect(from, to Keyer) error {
 
 	circular := false
 	visited := map[Key]bool{}
-	c.walkNodeDown(visited, toNode, func(k Keyer, isRoot, isLeaf bool) {
-		if fromNode.k == k {
+	fromNodeKey := fromNode.k.Key()
+	c.walkNodeDown(visited, toNode, func(node *Node) {
+		if fromNodeKey == node.k.Key() {
 			circular = true
 		}
 	})
@@ -178,12 +179,9 @@ func (c *Caravan) walkNodeDown(visits map[Key]bool, node *Node, walker CaravanWa
 		}
 	}
 
-	isRoot := len(node.ascendants) == 0
-	isLeaf := len(node.descendants) == 0
-
 	visits[node.k.Key()] = true
 
-	walker(node.k, isRoot, isLeaf)
+	walker(node)
 
 	for _, v := range node.descendants {
 		if _, ok := visits[v.k.Key()]; ok {
@@ -195,9 +193,6 @@ func (c *Caravan) walkNodeDown(visits map[Key]bool, node *Node, walker CaravanWa
 }
 
 func (c *Caravan) walkNodeUp(visits map[Key]bool, node *Node, walker CaravanWalker) {
-	isRoot := len(node.ascendants) == 0
-	isLeaf := len(node.descendants) == 0
-
 	visits[node.k.Key()] = true
 
 	for _, v := range node.descendants {
@@ -215,5 +210,5 @@ func (c *Caravan) walkNodeUp(visits map[Key]bool, node *Node, walker CaravanWalk
 		}
 	}
 
-	walker(node.k, isRoot, isLeaf)
+	walker(node)
 }

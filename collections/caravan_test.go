@@ -218,15 +218,17 @@ func Test_Caravan_Walk_Linear(t *testing.T) {
 			}
 
 			i := 0
-			c.Walk(tc.dir, func(k Keyer, isRoot, isLeaf bool) {
+			c.Walk(tc.dir, func(n *Node) {
+				isRoot := len(n.ascendants) == 0
+				isLeaf := len(n.descendants) == 0
 				if isRoot != (i == tc.rootNode) {
 					t.Errorf("Got isRoot for non-root")
 				}
 				if isLeaf != (i == tc.leafNode) {
 					t.Error("Got isLeaf for non-leaf")
 				}
-				if k != foos[tc.offset(i)] {
-					t.Errorf("Got wrong foo: expected %s, got %s", foos[tc.offset(i)].key, k.Key())
+				if n.k != foos[tc.offset(i)] {
+					t.Errorf("Got wrong foo: expected %s, got %s", foos[tc.offset(i)].key, n.k.Key())
 				}
 				i++
 			})
@@ -290,9 +292,9 @@ func Test_Caravan_Walk_Flatten(t *testing.T) {
 
 					i := 0
 					visited := map[Key]bool{}
-					c.Walk(tc.dir, func(k Keyer, isRoot, isLeaf bool) {
+					c.Walk(tc.dir, func(n *Node) {
 						// Use this to test the fan-in, fan out, etc.
-						key := k.Key()
+						key := n.k.Key()
 						if _, ok := visited[key]; ok {
 							t.Errorf("Revisiting node %s", key)
 						}
@@ -354,11 +356,11 @@ func Test_Caravan_Walk_Diamond(t *testing.T) {
 			i := 0
 			walkedNodes := []Keyer{}
 
-			c.Walk(tc.dir, func(k Keyer, isRoot, isLeaf bool) {
-				if i == 0 && k.Key() != tc.first {
-					t.Errorf("Wrong first element; expected %s, got %s", tc.first, k.Key())
+			c.Walk(tc.dir, func(n *Node) {
+				if i == 0 && n.k.Key() != tc.first {
+					t.Errorf("Wrong first element; expected %s, got %s", tc.first, n.k.Key())
 				}
-				walkedNodes = append(walkedNodes, k)
+				walkedNodes = append(walkedNodes, n.k)
 				i++
 			})
 
