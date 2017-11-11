@@ -72,7 +72,7 @@ func (c *Caravan) Find(key Key) (Keyer, bool) {
 	return n.k, true
 }
 
-// Insert adds an element to the catavan at the root level
+// Insert adds an element to the caravan at the root level
 func (c *Caravan) Insert(k Keyer) {
 	key := k.Key()
 	c.m.Lock()
@@ -210,7 +210,7 @@ func (c *Caravan) walkNodeUp(visits map[Key]bool, node *Node, walker CaravanWalk
 
 	for _, v := range node.descendants {
 		if _, ok := visits[v.k.Key()]; !ok {
-			// An ascendent hasn't been visited; can't process this node yet.
+			// An descendent hasn't been visited; can't process this node yet.
 			return
 		}
 	}
