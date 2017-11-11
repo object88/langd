@@ -84,7 +84,7 @@ func Test_Caravan_Insert(t *testing.T) {
 				if n, ok := c.nodes[v.key]; !ok {
 					t.Errorf("Internal nodes does not include key '%s'", v.key)
 				} else {
-					if n.k != v {
+					if n.Element != v {
 						t.Errorf("Incorrect reference for key '%s'", v.key)
 					}
 				}
@@ -94,7 +94,7 @@ func Test_Caravan_Insert(t *testing.T) {
 				if n, ok := c.roots[v.key]; !ok {
 					t.Errorf("Internal roots does not include key '%s'", v.key)
 				} else {
-					if n.k != v {
+					if n.Element != v {
 						t.Errorf("Incorrect reference for key '%s'", v.key)
 					}
 				}
@@ -156,7 +156,7 @@ func Test_Caravan_Connect(t *testing.T) {
 				if n, ok := c.nodes[v.key]; !ok {
 					t.Errorf("Internal nodes does not include key '%s'", v.key)
 				} else {
-					if n.k != v {
+					if n.Element != v {
 						t.Errorf("Incorrect reference for key '%s'", v.key)
 					}
 				}
@@ -166,7 +166,7 @@ func Test_Caravan_Connect(t *testing.T) {
 				if n, ok := c.roots[v.key]; !ok {
 					t.Errorf("Internal roots does not include key '%s'", v.key)
 				} else {
-					if n.k != v {
+					if n.Element != v {
 						t.Errorf("Incorrect reference for key '%s'", v.key)
 					}
 				}
@@ -219,16 +219,16 @@ func Test_Caravan_Walk_Linear(t *testing.T) {
 
 			i := 0
 			c.Walk(tc.dir, func(n *Node) {
-				isRoot := len(n.ascendants) == 0
-				isLeaf := len(n.descendants) == 0
+				isRoot := len(n.Ascendants) == 0
+				isLeaf := len(n.Descendants) == 0
 				if isRoot != (i == tc.rootNode) {
 					t.Errorf("Got isRoot for non-root")
 				}
 				if isLeaf != (i == tc.leafNode) {
 					t.Error("Got isLeaf for non-leaf")
 				}
-				if n.k != foos[tc.offset(i)] {
-					t.Errorf("Got wrong foo: expected %s, got %s", foos[tc.offset(i)].key, n.k.Key())
+				if n.Element != foos[tc.offset(i)] {
+					t.Errorf("Got wrong foo: expected %s, got %s", foos[tc.offset(i)].key, n.Element.Key())
 				}
 				i++
 			})
@@ -294,7 +294,7 @@ func Test_Caravan_Walk_Flatten(t *testing.T) {
 					visited := map[Key]bool{}
 					c.Walk(tc.dir, func(n *Node) {
 						// Use this to test the fan-in, fan out, etc.
-						key := n.k.Key()
+						key := n.Element.Key()
 						if _, ok := visited[key]; ok {
 							t.Errorf("Revisiting node %s", key)
 						}
@@ -357,10 +357,10 @@ func Test_Caravan_Walk_Diamond(t *testing.T) {
 			walkedNodes := []Keyer{}
 
 			c.Walk(tc.dir, func(n *Node) {
-				if i == 0 && n.k.Key() != tc.first {
-					t.Errorf("Wrong first element; expected %s, got %s", tc.first, n.k.Key())
+				if i == 0 && n.Element.Key() != tc.first {
+					t.Errorf("Wrong first element; expected %s, got %s", tc.first, n.Element.Key())
 				}
-				walkedNodes = append(walkedNodes, n.k)
+				walkedNodes = append(walkedNodes, n.Element)
 				i++
 			})
 
