@@ -70,13 +70,13 @@ func (h *Handler) readRoot(root string) {
 	}
 
 	// l := langd.NewLoader()
-	done, err := h.workspace.Loader.Start()
-	if err != nil {
-		fmt.Printf("OHSHANP: %s\n", err.Error())
-	}
+	done := h.workspace.Loader.Start()
+	// if err != nil {
+	// 	fmt.Printf("OHSHANP: %s\n", err.Error())
+	// }
 
 	fmt.Printf("About to load %s\n", base)
-	h.workspace.Loader.LoadDirectories(base)
+	h.workspace.Loader.LoadDirectory(base)
 	// if loadErr != nil {
 	// 	fmt.Printf("OHSHANP: %s\n", loadErr.Error())
 	// }

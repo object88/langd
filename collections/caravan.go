@@ -2,6 +2,7 @@ package collections
 
 import (
 	"errors"
+	"fmt"
 	"sync"
 )
 
@@ -62,14 +63,14 @@ func CreateCaravan() *Caravan {
 }
 
 // Find returns the element with the given key
-func (c *Caravan) Find(key Key) (Keyer, bool) {
+func (c *Caravan) Find(key Key) (*Node, bool) {
 	c.m.Lock()
 	n, ok := c.nodes[key]
 	c.m.Unlock()
 	if !ok {
 		return nil, false
 	}
-	return n.Element, true
+	return n, true
 }
 
 // Insert adds an element to the caravan at the root level
@@ -119,17 +120,17 @@ func (c *Caravan) Connect(from, to Keyer) error {
 		return errors.New("`to` is already a direct descendent of `from`")
 	}
 
-	circular := false
-	visited := map[Key]bool{}
-	fromNodeKey := fromNode.Element.Key()
-	c.walkNodeDown(visited, toNode, func(node *Node) {
-		if fromNodeKey == node.Element.Key() {
-			circular = true
-		}
-	})
-	if circular {
+	// circular := false
+	// visited := map[Key]bool{}
+	err := checkLoop(fromKey, toNode)
+	// c.walkNodeDown(visited, toNode, func(node *Node) {
+	// 	if fromKey == node.Element.Key() {
+	// 		circular = true
+	// 	}
+	// })
+	if err != nil {
 		c.m.Unlock()
-		return errors.New("Connect would create circular loop")
+		return fmt.Errorf("Connect would create circular loop:\n\t%s", err.Error())
 	}
 
 	if _, ok := c.roots[toKey]; ok {
@@ -141,6 +142,32 @@ func (c *Caravan) Connect(from, to Keyer) error {
 
 	c.m.Unlock()
 	return nil
+}
+
+func checkLoop(fromKey Key, n *Node) error {
+	key := n.Element.Key()
+	if fromKey == key {
+		return fmt.Errorf("Found loop:\n\t%s", key)
+	}
+
+	for _, v := range n.Descendants {
+		if err := checkLoop(fromKey, v); err != nil {
+			return fmt.Errorf("%s\n\t%s", err.Error(), key)
+		}
+	}
+
+	return nil
+}
+
+func (c *Caravan) Iter() <-chan Keyer {
+	ch := make(chan Keyer)
+	go func() {
+		for _, v := range c.nodes {
+			ch <- v.Element
+		}
+		close(ch)
+	}()
+	return ch
 }
 
 // Walk will traverse the caravan structure, calling the provided `walker`
@@ -172,8 +199,8 @@ func (c *Caravan) Walk(direction WalkDirection, walker CaravanWalker) {
 }
 
 func (c *Caravan) walkNodeDown(visits map[Key]bool, node *Node, walker CaravanWalker) {
-	for _, v := range node.Ascendants {
-		if _, ok := visits[v.Element.Key()]; !ok {
+	for k := range node.Ascendants {
+		if _, ok := visits[k]; !ok {
 			// An ascendent hasn't been visited; can't process this node yet.
 			return
 		}
@@ -183,8 +210,8 @@ func (c *Caravan) walkNodeDown(visits map[Key]bool, node *Node, walker CaravanWa
 
 	walker(node)
 
-	for _, v := range node.Descendants {
-		if _, ok := visits[v.Element.Key()]; ok {
+	for k, v := range node.Descendants {
+		if _, ok := visits[k]; ok {
 			// This node was already visited
 			continue
 		}
@@ -195,20 +222,20 @@ func (c *Caravan) walkNodeDown(visits map[Key]bool, node *Node, walker CaravanWa
 func (c *Caravan) walkNodeUp(visits map[Key]bool, node *Node, walker CaravanWalker) {
 	visits[node.Element.Key()] = true
 
-	for _, v := range node.Descendants {
-		if _, ok := visits[v.Element.Key()]; ok {
+	for k, v := range node.Descendants {
+		if _, ok := visits[k]; ok {
 			// This node was already visited
 			continue
 		}
 		c.walkNodeUp(visits, v, walker)
 	}
 
-	for _, v := range node.Descendants {
-		if _, ok := visits[v.Element.Key()]; !ok {
-			// An descendent hasn't been visited; can't process this node yet.
-			return
-		}
-	}
+	// for _, v := range node.Descendants {
+	// 	if _, ok := visits[v.Element.Key()]; !ok {
+	// 		// A descendant hasn't been visited; can't process this node yet.
+	// 		return
+	// 	}
+	// }
 
 	walker(node)
 }

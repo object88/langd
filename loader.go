@@ -1,91 +1,118 @@
 package langd
 
 import (
+	"errors"
 	"fmt"
 	"go/ast"
 	"go/build"
 	"go/parser"
 	"go/token"
+	"go/types"
 	"os"
 	"path/filepath"
 	"strconv"
 	"strings"
-	"sync"
-	"time"
 
 	"github.com/object88/langd/collections"
 )
 
-type importDir struct {
-	buildPkg *build.Package
-	imp      string
-	path     string
-	src      *importKey
+// Directory is the collection of packages in a directory
+type Directory struct {
+	absPath  string
+	packages map[string]*Package
 }
 
-type importKey struct {
-	pkgName string
+type importDirective struct {
 	absPath string
+	// sourcePackage     *Package
+	// targetPackageName string
 }
 
-func (ik *importKey) Key() collections.Key {
-	k := fmt.Sprintf("%s:%s", ik.pkgName, ik.absPath)
-	return collections.Key(k)
-}
-
-// importMap tracks the imports of a directory
-type importMap map[*importKey]map[string]bool
-
+// Loader is a Go code loader
 type Loader struct {
-	srcDirs     []string
-	fset        *token.FileSet
+	ready chan bool
+
+	conf    *types.Config
+	context *build.Context
+	fset    *token.FileSet
+	info    *types.Info
+
+	directories map[string]*Directory
 	importGraph *collections.Caravan
-	dirs        map[string]*dir
 }
 
-type dir struct {
+// Package is the contents of a package
+type Package struct {
+	// absPath is the cardinal location of this package
 	absPath string
-	loaded  bool
-	m       sync.Mutex
+
+	// files contains the map from files names to parsed ast Files
+	files map[string]*ast.File
+
+	// name is the package name
+	name string
+
+	// astPkg is the native ast Package
+	typesPkg *types.Package
+
+	// checked indicates whether this package has been checked
+	checked bool
 }
 
+// Key returns the collections.Key for the package, indexing it in a caravan
+func (p *Package) Key() collections.Key {
+	return collections.Key(fmt.Sprintf("%s:%s", p.absPath, p.name))
+}
+
+type packageMap map[string]*packageMapItem
+
+type packageMapItem struct {
+	files   map[string]*ast.File
+	imports map[string]bool
+	p       *Package
+}
+
+// NewLoader creates a new loader
 func NewLoader() *Loader {
-	return &Loader{
-		dirs:        map[string]*dir{},
+	ctx := build.Default
+	fmt.Printf("&build.Default = %p\n", &build.Default)
+	fmt.Printf("&ctx = %p\n", &ctx)
+
+	info := &types.Info{
+		Types: map[ast.Expr]types.TypeAndValue{},
+		Defs:  map[*ast.Ident]types.Object{},
+		Uses:  map[*ast.Ident]types.Object{},
+	}
+	l := &Loader{
+		// conf:        &types.Config{Importer: i},
+		context:     &ctx,
+		directories: map[string]*Directory{},
 		fset:        token.NewFileSet(),
 		importGraph: collections.CreateCaravan(),
-		srcDirs:     build.Default.SrcDirs(),
+		info:        info,
+		ready:       make(chan bool),
 	}
+	i := &Importer{
+		l: l,
+	}
+	c := &types.Config{
+		Error: func(e error) {
+			fmt.Printf("ERROR: %s\n", e.Error())
+		},
+		Importer: i,
+	}
+	l.conf = c
+	return l
 }
 
-func (l *Loader) LoadDirectories(dpaths ...string) {
-	for _, dpath := range dpaths {
-		l.loadDirectory(dpath)
-	}
+// Start initializes the asynchronous source processing
+func (l *Loader) Start() chan bool {
+	return l.ready
 }
 
-func (l *Loader) Start() (chan bool, error) {
-	return nil, nil
-}
-
-func (l *Loader) Close() {
-
-}
-
-func (l *Loader) loadDirectory(dpath string) error {
-	fmt.Printf("loadDirectory :: %s\n", dpath)
-
-	prefix := ""
-	for _, v := range l.srcDirs {
-		if strings.HasPrefix(dpath, v) {
-			prefix = dpath[len(v)+1:]
-		}
-	}
-	if prefix == "" {
-		return fmt.Errorf("%s is not in gopath or goroot", dpath)
-	}
-
-	filepath.Walk(dpath, func(dpath string, info os.FileInfo, _ error) error {
+// LoadDirectory adds the contents of a directory to the Loader
+func (l *Loader) LoadDirectory(absPath string) {
+	filepath.Walk(absPath, func(dpath string, info os.FileInfo, _ error) error {
 		if !info.IsDir() {
 			return nil
 		}
@@ -95,86 +122,227 @@ func (l *Loader) loadDirectory(dpath string) error {
 			return filepath.SkipDir
 		}
 
-		fmt.Printf("Processing %s...\n", dpath)
-
-		// dpath: /Users/bropa18/work/src/github.com/object88/langd/examples/echo
-		importDir := &importDir{
-			path: dpath,
-		}
-		l.processDirectory(importDir)
-
-		time.Sleep(5 * time.Second)
+		l.processDirectory(&importDirective{absPath: dpath}, 0)
 
 		return nil
 	})
 
-	return nil
-}
+	fmt.Printf("\nListing descendents\n")
+	for k, v := range l.directories {
+		for k1 := range v.packages {
+			key := fmt.Sprintf("%s:%s", k, k1)
+			fmt.Printf("* %s\n", key)
+			n, ok := l.importGraph.Find(collections.Key(key))
+			if !ok {
+				fmt.Printf("Cannot find %s\n", key)
+				continue
+			}
+			for k2 := range n.Descendants {
+				fmt.Printf("\t --> %s\n", k2)
+			}
+		}
+	}
+	// l.importGraph.Walk(collections.WalkUp, func(n *collections.Node) {
+	// 	p, _ := n.Element.(*Package)
 
-func (l *Loader) processDirectory(imp *importDir) {
-	fmt.Printf("Processing directory %s\n", imp.path)
-	d := l.ensureDir(".", imp.path)
-	if d.loaded {
-		return
+	// 	fmt.Printf("%s:%s\n", p.absPath, p.name)
+	// 	if len(n.Descendants) != 0 {
+	// 		for k := range n.Descendants {
+	// 			fmt.Printf("--> %s\n", k)
+	// 		}
+	// 	} else {
+	// 		fmt.Printf("LEAF\n")
+	// 	}
+	// 	// if len(n.Ascendants) != 0 {
+	// 	// 	for k := range n.Ascendants {
+	// 	// 		fmt.Printf("IMP BY %s\n", k)
+	// 	// 	}
+	// 	// } else {
+	// 	// 	fmt.Printf("ROOT\n")
+	// 	// }
+	// })
+	fmt.Printf("Done.\n\n")
+
+	l.importGraph.Walk(collections.WalkUp, func(n *collections.Node) {
+		p, ok := n.Element.(*Package)
+		if !ok {
+			fmt.Printf("NOT PACKAGE.")
+			return
+		}
+
+		if p.checked == true {
+			fmt.Printf("!!! PACKAGE %s ALREADY CHECKED !!!\n", p.Key())
+		}
+
+		if strings.HasSuffix(p.absPath, "/src/unsafe") {
+			fmt.Printf("Checking %s... using types.Unsafe... Done.\n", p.absPath)
+			p.typesPkg = types.Unsafe
+		} else {
+			files := make([]*ast.File, len(p.files))
+			i := 0
+			for _, v := range p.files {
+				f := v
+				files[i] = f
+				i++
+			}
+
+			fmt.Printf("Checking %s, %d files... ", p.absPath, len(files))
+
+			for _, n1 := range n.Descendants {
+				p1, _ := n1.Element.(*Package)
+				if !p1.checked {
+					fmt.Printf("\n\t!!! ERROR: imported package %s is not checked !!!\n", p1.name)
+				}
+			}
+
+			typesPkg, err := l.conf.Check(p.absPath, l.fset, files, l.info)
+			if err != nil {
+				fmt.Printf("\n\t%s\n", err.Error())
+			}
+			fmt.Printf("Done.\n")
+			p.typesPkg = typesPkg
+		}
+		p.checked = true
+	})
+
+	fmt.Printf("Done.\n\n")
+
+	fmt.Printf("Checking for unchecked packages...\n")
+
+	for keyer := range l.importGraph.Iter() {
+		p, _ := keyer.(*Package)
+		if !p.checked {
+			fmt.Printf("!!! PACKAGE %s IS NEVER CHECKED !!!\n", p.Key())
+		}
 	}
 
-	buildPkg, err := build.ImportDir(d.absPath, 0)
+	fmt.Printf("Done.\n\n")
+
+	l.ready <- true
+}
+
+func (l *Loader) processDirectory(impDir *importDirective, depth int) *Directory {
+	absPath := impDir.absPath
+
+	if d, ok := l.directories[absPath]; ok {
+		// Already processed.
+		return d
+	}
+
+	if strings.HasSuffix(absPath, "/unsafe") {
+		fmt.Printf("*** Loading `unsafe`, replacing with types.Unsafe\n")
+		p := &Package{
+			absPath:  absPath,
+			name:     "unsafe",
+			typesPkg: types.Unsafe,
+		}
+		d := &Directory{
+			absPath: absPath,
+			packages: map[string]*Package{
+				"unsafe": p,
+			},
+		}
+		l.directories[absPath] = d
+		l.importGraph.Insert(p)
+		return d
+	}
+
+	buildPkg, err := l.context.Import(".", absPath, 0)
 	if err != nil {
 		if _, ok := err.(*build.NoGoError); ok {
 			// There isn't any Go code here.
-			fmt.Printf("NO GO CODE: %s\n", d.absPath)
-			return
+			return nil
 		}
-		fmt.Printf("Oh dear:\n\t%s\n\t%s\n", d.absPath, err.Error())
+		fmt.Printf("Proc error for '%s':\n\t%s\n", absPath, err.Error())
+		return nil
+	}
+
+	d := &Directory{
+		absPath:  absPath,
+		packages: map[string]*Package{},
+	}
+	l.directories[absPath] = d
+
+	pm := packageMap{}
+
+	for _, v := range buildPkg.GoFiles {
+		f := v
+		l.processFile(d, f, pm)
+	}
+
+	// for _, v := range buildPkg.TestGoFiles {
+	// 	f := v
+	// 	l.processFile(d, f, pm)
+	// }
+
+	for _, v := range buildPkg.XTestGoFiles {
+		f := v
+		l.processFile(d, f, pm)
+	}
+
+	for pkgName, pmi := range pm {
+		files := pmi.files
+		thisPkgName := filepath.Base(pkgName)
+		p := &Package{
+			absPath: absPath,
+			files:   files,
+			name:    thisPkgName,
+		}
+		pmi.p = p
+		d.packages[thisPkgName] = p
+		l.importGraph.Insert(p)
+	}
+
+	for _, pmi := range pm {
+		l.reportPath(absPath, pmi.p.name, len(pmi.p.files), depth, false)
+
+		// Find... and import.
+		for importPkgName := range pmi.imports {
+			importPath, err := l.findImportPath(importPkgName, absPath)
+			if err != nil {
+				fmt.Printf(err.Error())
+				continue
+			}
+
+			targetPkgName := filepath.Base(importPkgName)
+			targetD, ok := l.directories[importPath]
+			if !ok {
+				targetD = l.processDirectory(&importDirective{absPath: importPath}, depth+1)
+			} else {
+				l.reportPath(targetD.absPath, targetPkgName, len(targetD.packages[targetPkgName].files), depth, true)
+			}
+
+			targetP, ok := targetD.packages[targetPkgName]
+			if !ok {
+				fmt.Printf("ERROR: Failed to find package %s in %s\n", targetPkgName, d.absPath)
+			}
+			err = l.importGraph.Connect(pmi.p, targetP)
+			if err != nil {
+				fmt.Printf("ERROR: %s\n\tfrom: %s\n\tto: %s\n", err.Error(), pmi.p.name, targetP.name)
+			}
+		}
+	}
+
+	return d
+}
+
+func (l *Loader) processFile(d *Directory, fname string, pm packageMap) {
+	fpath := filepath.Join(d.absPath, fname)
+	astf, err := parser.ParseFile(l.fset, fpath, nil, parser.AllErrors)
+	if err != nil {
+		fmt.Printf("ERROR: While parsing %s:\n\t%s", fpath, err.Error())
 		return
 	}
 
-	d.loaded = true
-
-	imports := importMap{}
-
-	// count := len(buildPkg.GoFiles) + len(buildPkg.TestGoFiles)
-
-	for _, v := range buildPkg.GoFiles {
-		fpath := filepath.Join(buildPkg.Dir, v)
-		l.processFile(buildPkg, fpath, imports)
-	}
-
-	for _, v := range buildPkg.TestGoFiles {
-		fpath := filepath.Join(buildPkg.Dir, v)
-		l.processFile(buildPkg, fpath, imports)
-	}
-
-	fmt.Printf("Have %d imports\n", len(imports))
-
-	// Take all the imports, and announce them back for processing
-	for src, imps := range imports {
-		fmt.Printf("%s...\n", src.Key())
-		for imp := range imps {
-			fmt.Printf("\t%s\n", imp)
-			impPkg := l.ensure(buildPkg, imp)
-			importDir := &importDir{
-				imp:  impPkg.path,
-				path: d.absPath,
-				src:  src,
-			}
-			l.processDirectory(importDir)
-		}
-	}
-}
-
-func (l *Loader) processFile(buildPkg *build.Package, fpath string, imports importMap) {
-	fmt.Printf("Processing file %s\n", fpath)
-	dpath := filepath.Dir(fpath)
-	astf, _ := parser.ParseFile(l.fset, fpath, nil, 0)
-
 	pkgName := astf.Name.Name
-	pkg := l.ensure(buildPkg, pkgName)
-	pkg.astPkg.Files[fpath] = astf
 
-	src := &importKey{
-		pkgName: pkgName,
-		absPath: dpath,
+	pmi, ok := pm[pkgName]
+	if !ok {
+		pmi = &packageMapItem{
+			files:   map[string]*ast.File{},
+			imports: map[string]bool{},
+		}
+		pm[pkgName] = pmi
 	}
 
 	for _, decl := range astf.Decls {
@@ -191,68 +359,66 @@ func (l *Loader) processFile(buildPkg *build.Package, fpath string, imports impo
 				// Ignore the error and skip the C pseudo package
 				continue
 			}
-			destMap, ok := imports[src]
-			if !ok {
-				destMap = map[string]bool{}
-				imports[src] = destMap
-			}
-			destMap[path] = true
+			pmi.imports[path] = true
 		}
 	}
+
+	pmi.files[fname] = astf
 }
 
-func (l *Loader) ensureDir(path, src string) *dir {
-	fmt.Printf("Ensuring dir %s, %s\n", path, src)
-	buildPkg, err := build.Import(path, src, build.FindOnly)
+// func (l *Loader) connectImports(d *Directory) {
+// 	for pkgName, pkg := range d.packages {
+// 		imports := map[string]bool{}
+
+// 		for _, astf := range pkg.files {
+// 			for _, decl := range astf.Decls {
+// 				decl, ok := decl.(*ast.GenDecl)
+// 				if !ok || decl.Tok != token.IMPORT {
+// 					continue
+// 				}
+
+// 				for _, spec := range decl.Specs {
+// 					spec := spec.(*ast.ImportSpec)
+
+// 					path, err := strconv.Unquote(spec.Path.Value)
+// 					if err != nil || path == "C" {
+// 						// Ignore the error and skip the C pseudo package
+// 						continue
+// 					}
+// 					pmi.imports[path] = true
+// 				}
+// 			}
+// 		}
+
+// 		for importPkg := range imports {
+
+// 		}
+
+// 	}
+// }
+
+func (l *Loader) findImportPath(path, src string) (string, error) {
+	buildPkg, err := l.context.Import(path, src, build.FindOnly)
 	if err != nil {
-		fmt.Printf("Oh dir dear:\n\t%s\n", err.Error())
-		return nil
+		msg := fmt.Sprintf("Oh dear:\n\tAttemped build.Import('%s', '%s', build.FindOnly)\n\t%s\n", path, src, err.Error())
+		fmt.Printf("ERROR: %s", msg)
+		return "", errors.New(msg)
 	}
-
-	absPath := buildPkg.Dir
-	d, ok := l.dirs[absPath]
-	if !ok {
-		d = &dir{
-			absPath: absPath,
-		}
-		l.dirs[absPath] = d
-	}
-	return d
+	return buildPkg.Dir, nil
 }
 
-func (l *Loader) ensure(buildPkg *build.Package, pkgName string) *Package {
-	fmt.Printf("Ensuring %s\n", pkgName)
-	// if path == "main" {
-	// 	fmt.Printf("Convered to '.'\n")
-	// 	path = "."
-	// }
-	pkgPath := buildPkg.Dir
-	if pkgPath == "" {
-		// If pkgPath is the empty string, this is a stdlib package?
-		fmt.Printf("Ensured %s; No Dir; using %s\n", pkgName, pkgName)
-		pkgPath = pkgName
-	} else {
-		fmt.Printf("Ensured %s; got Dir %s\n", pkgName, pkgPath)
-	}
-
-	var pkg *Package
-	k := buildKey(pkgName, pkgPath)
-	keyer, ok := l.importGraph.Find(k)
-	if !ok {
-		pkg = &Package{
-			astPkg: &ast.Package{
-				Name:  pkgName,
-				Files: map[string]*ast.File{},
-			},
-			checked: false,
-			path:    pkgPath,
-			pkgName: pkgName,
+func (l *Loader) reportPath(absPath, targetPackageName string, fileCount, depth int, pathAlreadyFound bool) {
+	packagePath := absPath
+	for _, v := range l.context.SrcDirs() {
+		if strings.HasPrefix(packagePath, v) {
+			packagePath = packagePath[len(v)+1:]
+			break
 		}
-
-		l.importGraph.Insert(pkg)
-	} else {
-		pkg = keyer.(*Package)
 	}
-
-	return pkg
+	prefix := ""
+	if pathAlreadyFound {
+		prefix = "☑ "
+	}
+	spacer := strings.Repeat("  ", depth)
+	fmt.Printf("%s%s%s:%s (%d)\n", prefix, spacer, packagePath, targetPackageName, fileCount)
 }

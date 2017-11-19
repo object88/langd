@@ -1,6 +1,7 @@
 package main
 
 import (
+	"fmt"
 	"os"
 
 	"github.com/object88/langd/examples/echo/repeater"
@@ -8,5 +9,6 @@ import (
 
 func main() {
 	s := os.Args[1]
-	repeater.Repeat(s)
+	s2 := repeater.Repeat(s)
+	fmt.Printf("%s\n", s2)
 }
