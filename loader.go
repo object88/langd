@@ -8,8 +8,11 @@ import (
 	"go/parser"
 	"go/token"
 	"go/types"
+	"io/ioutil"
 	"os"
+	"os/exec"
 	"path/filepath"
+	"regexp"
 	"strconv"
 	"strings"
 
@@ -71,6 +74,8 @@ type packageMapItem struct {
 	imports map[string]bool
 	p       *Package
 }
+
+var cgoRe = regexp.MustCompile(`[/\\:]`)
 
 // NewLoader creates a new loader
 func NewLoader() *Loader {
@@ -270,14 +275,18 @@ func (l *Loader) processDirectory(impDir *importDirective, depth int) *Directory
 		l.processFile(d, f, pm)
 	}
 
-	// for _, v := range buildPkg.TestGoFiles {
-	// 	f := v
-	// 	l.processFile(d, f, pm)
-	// }
+	for _, v := range buildPkg.TestGoFiles {
+		f := v
+		l.processFile(d, f, pm)
+	}
 
 	for _, v := range buildPkg.XTestGoFiles {
 		f := v
 		l.processFile(d, f, pm)
+	}
+
+	if len(buildPkg.CgoFiles) != 0 {
+		l.processCgoFile(d, buildPkg.CgoFiles, pm, buildPkg.Goroot, buildPkg.ImportPath)
 	}
 
 	for pkgName, pmi := range pm {
@@ -334,6 +343,84 @@ func (l *Loader) processFile(d *Directory, fname string, pm packageMap) {
 		return
 	}
 
+	l.processAstFile(fname, astf, pm)
+}
+
+func (l *Loader) processCgoFile(d *Directory, fnames []string, pm packageMap, isFromRoot bool, importPath string) {
+	fpaths := make([]string, len(fnames))
+	for k, v := range fnames {
+		fmt.Printf("cgo: %s\n", v)
+		fpaths[k] = filepath.Join(d.absPath, v)
+	}
+
+	tmpdir, _ := ioutil.TempDir("", strings.Replace(d.absPath, "/", "_", -1)+"_C")
+	var files, displayFiles []string
+
+	// _cgo_gotypes.go (displayed "C") contains the type definitions.
+	files = append(files, filepath.Join(tmpdir, "_cgo_gotypes.go"))
+	displayFiles = append(displayFiles, "C")
+	for _, fname := range fnames {
+		// "foo.cgo1.go" (displayed "foo.go") is the processed Go source.
+		f := cgoRe.ReplaceAllString(fname[:len(fname)-len("go")], "_")
+		files = append(files, filepath.Join(tmpdir, f+"cgo1.go"))
+		displayFiles = append(displayFiles, fname)
+	}
+
+	fmt.Printf("importPath = %s\n", importPath)
+	var cgoflags []string
+	if isFromRoot && importPath == "runtime/cgo" {
+		cgoflags = append(cgoflags, "-import_runtime_cgo=false")
+	}
+	if isFromRoot && importPath == "runtime/race" || importPath == "runtime/cgo" {
+		cgoflags = append(cgoflags, "-import_syscall=false")
+	}
+
+	args := []string{
+		"tool",
+		"cgo",
+		"-objdir",
+		tmpdir,
+	}
+	for _, f := range cgoflags {
+		args = append(args, f)
+	}
+	args = append(args, "--")
+	args = append(args, "-I")
+	args = append(args, tmpdir)
+	for _, f := range fnames {
+		args = append(args, f)
+	}
+
+	cmd := exec.Command("go", args...)
+	cmd.Dir = d.absPath
+	// cmd.Stdout = os.Stderr
+	// cmd.Stderr = os.Stderr
+	cmd.Stdout = os.Stdout
+	cmd.Stderr = os.Stdout
+	if err := cmd.Run(); err != nil {
+		fmt.Printf("ERROR: cgo failed: %s: %s", args, err)
+		return
+	}
+
+	fmt.Printf("Processing %d cgo based files\n", len(fpaths))
+	for i := range fpaths {
+		f, err := os.Open(files[i])
+		if err != nil {
+			fmt.Printf("ERROR: failed to open file %s\n\t%s\n", files[i], err.Error())
+			continue
+		}
+		astf, err := parser.ParseFile(l.fset, displayFiles[i], f, 0)
+		f.Close()
+		if err != nil {
+			fmt.Printf("ERROR: Failed to open %s\n\t%s\n", fpaths[i], err.Error())
+			return
+		}
+
+		l.processAstFile(fnames[i], astf, pm)
+	}
+}
+
+func (l *Loader) processAstFile(fname string, astf *ast.File, pm packageMap) {
 	pkgName := astf.Name.Name
 
 	pmi, ok := pm[pkgName]
@@ -365,37 +452,6 @@ func (l *Loader) processFile(d *Directory, fname string, pm packageMap) {
 
 	pmi.files[fname] = astf
 }
-
-// func (l *Loader) connectImports(d *Directory) {
-// 	for pkgName, pkg := range d.packages {
-// 		imports := map[string]bool{}
-
-// 		for _, astf := range pkg.files {
-// 			for _, decl := range astf.Decls {
-// 				decl, ok := decl.(*ast.GenDecl)
-// 				if !ok || decl.Tok != token.IMPORT {
-// 					continue
-// 				}
-
-// 				for _, spec := range decl.Specs {
-// 					spec := spec.(*ast.ImportSpec)
-
-// 					path, err := strconv.Unquote(spec.Path.Value)
-// 					if err != nil || path == "C" {
-// 						// Ignore the error and skip the C pseudo package
-// 						continue
-// 					}
-// 					pmi.imports[path] = true
-// 				}
-// 			}
-// 		}
-
-// 		for importPkg := range imports {
-
-// 		}
-
-// 	}
-// }
 
 func (l *Loader) findImportPath(path, src string) (string, error) {
 	buildPkg, err := l.context.Import(path, src, build.FindOnly)
