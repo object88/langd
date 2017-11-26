@@ -41,9 +41,10 @@ type Caravan struct {
 
 // Node is an element in a caravan graph
 type Node struct {
-	Ascendants  map[Key]*Node
-	Descendants map[Key]*Node
-	Element     Keyer
+	Ascendants      map[Key]*Node
+	Descendants     map[Key]*Node
+	Element         Keyer
+	WeakDescendants map[Key]*Node
 }
 
 // Key is some unique identifier for an element in the graph
@@ -84,9 +85,10 @@ func (c *Caravan) Insert(k Keyer) {
 	}
 
 	n := &Node{
-		Ascendants:  map[Key]*Node{},
-		Descendants: map[Key]*Node{},
-		Element:     k,
+		Ascendants:      map[Key]*Node{},
+		Descendants:     map[Key]*Node{},
+		Element:         k,
+		WeakDescendants: map[Key]*Node{},
 	}
 	c.nodes[key] = n
 	c.roots[key] = n
@@ -120,14 +122,7 @@ func (c *Caravan) Connect(from, to Keyer) error {
 		return errors.New("`to` is already a direct descendent of `from`")
 	}
 
-	// circular := false
-	// visited := map[Key]bool{}
 	err := checkLoop(fromKey, toNode)
-	// c.walkNodeDown(visited, toNode, func(node *Node) {
-	// 	if fromKey == node.Element.Key() {
-	// 		circular = true
-	// 	}
-	// })
 	if err != nil {
 		c.m.Unlock()
 		return fmt.Errorf("Connect would create circular loop:\n\t%s", err.Error())
@@ -139,6 +134,36 @@ func (c *Caravan) Connect(from, to Keyer) error {
 
 	fromNode.Descendants[toKey] = toNode
 	toNode.Ascendants[fromKey] = fromNode
+
+	c.m.Unlock()
+	return nil
+}
+
+func (c *Caravan) WeakConnect(from, to Keyer) error {
+	fromKey, toKey := from.Key(), to.Key()
+
+	var ok bool
+	var fromNode, toNode *Node
+
+	c.m.Lock()
+
+	fromNode, ok = c.nodes[fromKey]
+	if !ok {
+		c.m.Unlock()
+		return errors.New("Element `from` not in caravan")
+	}
+
+	toNode, ok = c.nodes[toKey]
+	if !ok {
+		c.m.Unlock()
+		return errors.New("Element `to` not in caravan")
+	}
+
+	if _, ok := c.roots[toKey]; ok {
+		delete(c.roots, toKey)
+	}
+
+	fromNode.WeakDescendants[toKey] = toNode
 
 	c.m.Unlock()
 	return nil
@@ -159,6 +184,13 @@ func checkLoop(fromKey Key, n *Node) error {
 	return nil
 }
 
+// Iter provides a channel used for iterating over all nodes.
+// Example:
+// c := NewCaravan()
+// // ...
+// for i := range c.Iter() {
+//	// ...
+// }
 func (c *Caravan) Iter() <-chan Keyer {
 	ch := make(chan Keyer)
 	go func() {
@@ -225,6 +257,13 @@ func (c *Caravan) walkNodeUp(visits map[Key]bool, node *Node, walker CaravanWalk
 	for k, v := range node.Descendants {
 		if _, ok := visits[k]; ok {
 			// This node was already visited
+			continue
+		}
+		c.walkNodeUp(visits, v, walker)
+	}
+
+	for k, v := range node.WeakDescendants {
+		if _, ok := visits[k]; ok {
 			continue
 		}
 		c.walkNodeUp(visits, v, walker)

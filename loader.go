@@ -49,14 +49,20 @@ type Package struct {
 	// absPath is the cardinal location of this package
 	absPath string
 
-	// files contains the map from files names to parsed ast Files
+	// files contains the map from files names to parsed AST files
 	files map[string]*ast.File
+
+	// testFiles contains the map from test file names to parsed AST files
+	testFiles map[string]*ast.File
 
 	// name is the package name
 	name string
 
 	// astPkg is the native ast Package
 	typesPkg *types.Package
+
+	// isExternalTest indicates whether the package is a pseudo "_test" package
+	isExternalTest bool
 
 	// checked indicates whether this package has been checked
 	checked bool
@@ -70,9 +76,11 @@ func (p *Package) Key() collections.Key {
 type packageMap map[string]*packageMapItem
 
 type packageMapItem struct {
-	files   map[string]*ast.File
-	imports map[string]bool
-	p       *Package
+	files       map[string]*ast.File
+	imports     map[string]bool
+	p           *Package
+	testFiles   map[string]*ast.File
+	testImports map[string]bool
 }
 
 var cgoRe = regexp.MustCompile(`[/\\:]`)
@@ -166,16 +174,16 @@ func (l *Loader) LoadDirectory(absPath string) {
 	// 	// 	fmt.Printf("ROOT\n")
 	// 	// }
 	// })
-	fmt.Printf("Done.\n\n")
+	fmt.Printf("Done.\n\nChecking normal packages...\n")
 
 	l.importGraph.Walk(collections.WalkUp, func(n *collections.Node) {
-		p, ok := n.Element.(*Package)
-		if !ok {
-			fmt.Printf("NOT PACKAGE.")
+		p := n.Element.(*Package)
+
+		if p.isExternalTest {
 			return
 		}
 
-		if p.checked == true {
+		if p.checked {
 			fmt.Printf("!!! PACKAGE %s ALREADY CHECKED !!!\n", p.Key())
 		}
 
@@ -210,9 +218,65 @@ func (l *Loader) LoadDirectory(absPath string) {
 		p.checked = true
 	})
 
-	fmt.Printf("Done.\n\n")
+	fmt.Printf("Done.\n\nChecking test files...\n")
 
-	fmt.Printf("Checking for unchecked packages...\n")
+	l.importGraph.Walk(collections.WalkUp, func(n *collections.Node) {
+		p, _ := n.Element.(*Package)
+
+		// if p.isExternalTest || strings.HasSuffix(p.absPath, "/src/unsafe") {
+		// 	return
+		// }
+
+		files := make([]*ast.File, len(p.testFiles)+len(p.files))
+		i := 0
+		for _, v := range p.files {
+			f := v
+			files[i] = f
+			i++
+		}
+		for _, v := range p.testFiles {
+			f := v
+			files[i] = f
+			i++
+		}
+
+		fmt.Printf("Checking %s, %d files... ", p.absPath, len(files))
+
+		_, err := l.conf.Check(p.absPath, l.fset, files, l.info)
+		if err != nil {
+			fmt.Printf("\n\t%s\n", err.Error())
+		}
+		fmt.Printf("Done.\n")
+	})
+
+	fmt.Printf("Done.\n\nChecking external test packages...\n")
+
+	l.importGraph.Walk(collections.WalkUp, func(n *collections.Node) {
+		p := n.Element.(*Package)
+
+		if !p.isExternalTest {
+			return
+		}
+
+		files := make([]*ast.File, len(p.files))
+		i := 0
+		for _, v := range p.files {
+			f := v
+			files[i] = f
+			i++
+		}
+
+		fmt.Printf("Checking %s, %d files... ", p.absPath, len(files))
+
+		typesPkg, err := l.conf.Check(p.absPath, l.fset, files, l.info)
+		if err != nil {
+			fmt.Printf("\n\t%s\n", err.Error())
+		}
+		fmt.Printf("Done.\n")
+		p.typesPkg = typesPkg
+	})
+
+	fmt.Printf("Done.\n\nChecking for unchecked packages...\n")
 
 	for keyer := range l.importGraph.Iter() {
 		p, _ := keyer.(*Package)
@@ -270,32 +334,39 @@ func (l *Loader) processDirectory(impDir *importDirective, depth int) *Directory
 
 	pm := packageMap{}
 
+	fmt.Printf("Normal files:\n")
 	for _, v := range buildPkg.GoFiles {
 		f := v
-		l.processFile(d, f, pm)
+		l.processFile(d, f, pm, false)
 	}
 
-	for _, v := range buildPkg.TestGoFiles {
-		f := v
-		l.processFile(d, f, pm)
-	}
-
-	for _, v := range buildPkg.XTestGoFiles {
-		f := v
-		l.processFile(d, f, pm)
-	}
-
+	fmt.Printf("CGo files:\n")
 	if len(buildPkg.CgoFiles) != 0 {
 		l.processCgoFile(d, buildPkg.CgoFiles, pm, buildPkg.Goroot, buildPkg.ImportPath)
 	}
 
+	fmt.Printf("Test files:\n")
+	for _, v := range buildPkg.TestGoFiles {
+		f := v
+		l.processFile(d, f, pm, true)
+	}
+
+	fmt.Printf("External test files:\n")
+	for _, v := range buildPkg.XTestGoFiles {
+		f := v
+		l.processFile(d, f, pm, false)
+	}
+
 	for pkgName, pmi := range pm {
 		files := pmi.files
+		testFiles := pmi.testFiles
 		thisPkgName := filepath.Base(pkgName)
 		p := &Package{
-			absPath: absPath,
-			files:   files,
-			name:    thisPkgName,
+			absPath:        absPath,
+			files:          files,
+			name:           thisPkgName,
+			isExternalTest: strings.HasSuffix(thisPkgName, "_test"),
+			testFiles:      testFiles,
 		}
 		pmi.p = p
 		d.packages[thisPkgName] = p
@@ -305,12 +376,11 @@ func (l *Loader) processDirectory(impDir *importDirective, depth int) *Directory
 	for _, pmi := range pm {
 		l.reportPath(absPath, pmi.p.name, len(pmi.p.files), depth, false)
 
-		// Find... and import.
-		for importPkgName := range pmi.imports {
+		f := func(importPkgName string) *Package {
 			importPath, err := l.findImportPath(importPkgName, absPath)
 			if err != nil {
 				fmt.Printf(err.Error())
-				continue
+				return nil
 			}
 
 			targetPkgName := filepath.Base(importPkgName)
@@ -325,9 +395,27 @@ func (l *Loader) processDirectory(impDir *importDirective, depth int) *Directory
 			if !ok {
 				fmt.Printf("ERROR: Failed to find package %s in %s\n", targetPkgName, d.absPath)
 			}
+
+			return targetP
+		}
+
+		// Find... and import.
+		for importPkgName := range pmi.imports {
+			targetP := f(importPkgName)
 			err = l.importGraph.Connect(pmi.p, targetP)
 			if err != nil {
 				fmt.Printf("ERROR: %s\n\tfrom: %s\n\tto: %s\n", err.Error(), pmi.p.name, targetP.name)
+			}
+		}
+
+		if len(pmi.testImports) != 0 {
+			fmt.Printf("WEAK: package %s has %d weak imports\n", pmi.p.name, len(pmi.testImports))
+		}
+		for importPkgName := range pmi.testImports {
+			targetP := f(importPkgName)
+			err = l.importGraph.WeakConnect(pmi.p, targetP)
+			if err != nil {
+				fmt.Printf("ERROR: (weak) %s\n\tfrom: %s\n\tto: %s\n", err.Error(), pmi.p.name, targetP.name)
 			}
 		}
 	}
@@ -335,7 +423,7 @@ func (l *Loader) processDirectory(impDir *importDirective, depth int) *Directory
 	return d
 }
 
-func (l *Loader) processFile(d *Directory, fname string, pm packageMap) {
+func (l *Loader) processFile(d *Directory, fname string, pm packageMap, isTest bool) {
 	fpath := filepath.Join(d.absPath, fname)
 	astf, err := parser.ParseFile(l.fset, fpath, nil, parser.AllErrors)
 	if err != nil {
@@ -343,7 +431,7 @@ func (l *Loader) processFile(d *Directory, fname string, pm packageMap) {
 		return
 	}
 
-	l.processAstFile(fname, astf, pm)
+	l.processAstFile(fname, astf, pm, isTest)
 }
 
 func (l *Loader) processCgoFile(d *Directory, fnames []string, pm packageMap, isFromRoot bool, importPath string) {
@@ -416,18 +504,28 @@ func (l *Loader) processCgoFile(d *Directory, fnames []string, pm packageMap, is
 			return
 		}
 
-		l.processAstFile(fnames[i], astf, pm)
+		l.processAstFile(fnames[i], astf, pm, false)
 	}
 }
 
-func (l *Loader) processAstFile(fname string, astf *ast.File, pm packageMap) {
+func (l *Loader) processAstFile(fname string, astf *ast.File, pm packageMap, isTest bool) {
 	pkgName := astf.Name.Name
+	weakConnect := strings.HasSuffix(fname, "_test.go") && !strings.HasSuffix(pkgName, "_test")
+	// if strings.HasSuffix(fname, "_test.go") && !strings.HasSuffix(pkgName, "_test") {
+	// 	// This is a test file, but not a part of the separate test package.
+	// 	// This will require its own psuedo package.  It's not importable, so we
+	// 	// can name it anything.
+	// 	fmt.Printf("Renaming package from '%s' to '%s_pseudo'\n", pkgName, pkgName)
+	// 	pkgName = pkgName + "_pseudo"
+	// }
 
 	pmi, ok := pm[pkgName]
 	if !ok {
 		pmi = &packageMapItem{
-			files:   map[string]*ast.File{},
-			imports: map[string]bool{},
+			files:       map[string]*ast.File{},
+			imports:     map[string]bool{},
+			testFiles:   map[string]*ast.File{},
+			testImports: map[string]bool{},
 		}
 		pm[pkgName] = pmi
 	}
@@ -446,11 +544,23 @@ func (l *Loader) processAstFile(fname string, astf *ast.File, pm packageMap) {
 				// Ignore the error and skip the C pseudo package
 				continue
 			}
-			pmi.imports[path] = true
+			if weakConnect {
+				if _, ok := pmi.imports[path]; !ok {
+					fmt.Printf("WEAK: adding weak import from %s to %s\n", pkgName, path)
+					pmi.testImports[path] = true
+				}
+			} else {
+				pmi.imports[path] = true
+			}
 		}
 	}
 
-	pmi.files[fname] = astf
+	if isTest {
+		fmt.Printf("%s; adding %s to test files.\n", pkgName, fname)
+		pmi.testFiles[fname] = astf
+	} else {
+		pmi.files[fname] = astf
+	}
 }
 
 func (l *Loader) findImportPath(path, src string) (string, error) {
