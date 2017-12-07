@@ -77,14 +77,15 @@ func (i *Importer) locatePackages(path string) (map[string]*Package, error) {
 	d, ok := i.l.directories[path]
 	if !ok {
 		fmt.Printf("**** Not found! *****\n")
-		i.l.processDirectory(&importDirective{
-			absPath: path,
-		}, -1)
-		d, ok = i.l.directories[path]
-		if !ok {
-			fmt.Printf("Failed to import '%s'\n", path)
-			return nil, fmt.Errorf("Failed to import %s", path)
-		}
+		// i.l.processDirectory(&importDirective{
+		// 	absPath: path,
+		// }, -1)
+		// d, ok = i.l.directories[path]
+		// if !ok {
+		// 	fmt.Printf("Failed to import '%s'\n", path)
+		// 	return nil, fmt.Errorf("Failed to import %s", path)
+		// }
+		return nil, fmt.Errorf("Failed to import %s", path)
 	}
 
 	return d.packages, nil
