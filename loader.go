@@ -35,8 +35,6 @@ type Loader struct {
 	closer chan bool
 	ready  chan bool
 
-	// directoryQueue chan string
-
 	mDirectories sync.Mutex
 	directories  map[string]*Directory
 
@@ -98,7 +96,6 @@ func NewLoader() *Loader {
 		closer:      make(chan bool),
 		context:     &ctx,
 		directories: map[string]*Directory{},
-		// directoryQueue: make(chan string),
 		fset:        token.NewFileSet(),
 		info:        info,
 		stateChange: make(chan string),
@@ -134,9 +131,6 @@ func (l *Loader) Start() chan bool {
 			select {
 			case <-l.closer:
 				break
-			// case dPath := <-l.directoryQueue:
-			// 	fmt.Printf("Start: received %s\n", l.shortName(dPath))
-			// 	go l.processDirectory(dPath)
 			case dPath := <-l.stateChange:
 				go l.processStateChange(dPath)
 			}
@@ -171,7 +165,6 @@ func (l *Loader) LoadDirectory(absPath string) {
 
 		fmt.Printf("LoadDirectory: queueing %s\n", l.shortName(dpath))
 		l.stateChange <- dpath
-		// l.directoryQueue <- dpath
 
 		return nil
 	})
@@ -206,15 +199,15 @@ func (l *Loader) processStateChange(absPath string) {
 		l.processGoFiles(d)
 		l.processCgoFiles(d)
 		d.loadState = loadedGo
-		l.processPackages(d, d.pm)
+		l.processPackages(d)
 		l.processImports(d, d.pm)
 	case loadedGo:
 		fmt.Printf("loaded normal Go files\n")
 		l.processTestGoFiles(d)
 		d.loadState = loadedTest
-		l.processPackages(d, d.pm)
+		l.processPackages(d)
 		l.processImports(d, d.pm)
-		l.stateChange <- absPath
+		// l.stateChange <- absPath
 	case loadedTest:
 		fmt.Printf("loaded test Go files\n")
 		d.loadState = done
@@ -407,12 +400,14 @@ func (l *Loader) findImportPath(path, src string) (string, error) {
 	return buildPkg.Dir, nil
 }
 
-func (l *Loader) processPackages(d *Directory, pm packageMap) {
+func (l *Loader) processPackages(d *Directory) {
 	fmt.Printf("processPackages: %s started\n", l.shortName(d.absPath))
-	for pkgName, pmi := range pm {
+	for pkgName, pmi := range d.pm {
 		thisPkgName := filepath.Base(pkgName)
+		fmt.Printf("processPackages: have package name %s\n", thisPkgName)
 		p, ok := d.packages[thisPkgName]
 		if !ok {
+			fmt.Printf("processPackages: creating package %s\n", thisPkgName)
 			p = &Package{
 				absPath: d.absPath,
 				// files:          files,
@@ -433,7 +428,12 @@ func (l *Loader) processImports(d *Directory, pm packageMap) {
 	fmt.Printf("processImports: %s started\n", l.shortName(d.absPath))
 	importMaps := map[string]bool{}
 
+	// for _, pmi := range pmi {
+	// 	pmi.
+	// }
+
 	for _, pmi := range pm {
+		fmt.Printf("processImports: have package %s\n", pmi.p.name)
 		for importPkgName := range pmi.imports {
 			fmt.Printf("processImports: %s has import %s\n", l.shortName(d.absPath), importPkgName)
 
