@@ -166,8 +166,9 @@ func (l *Loader) LoadDirectory(absPath string) {
 		}
 
 		fmt.Printf("LoadDirectory: queueing %s\n", l.shortName(dpath))
+		l.mDirectories.Lock()
 		l.ensureDirectory(dpath)
-		// l.stateChange <- dpath
+		l.mDirectories.Unlock()
 
 		return nil
 	})
@@ -252,7 +253,7 @@ func (l *Loader) processDirectory(d *Directory) {
 }
 
 func (l *Loader) processGoFiles(d *Directory) {
-	if d.absPath == l.unsafePath {
+	if d.absPath == l.unsafePath || d.buildPkg == nil {
 		return
 	}
 
@@ -274,7 +275,7 @@ func (l *Loader) processGoFiles(d *Directory) {
 }
 
 func (l *Loader) processCgoFiles(d *Directory) {
-	if d.absPath == l.unsafePath {
+	if d.absPath == l.unsafePath || d.buildPkg == nil {
 		return
 	}
 
@@ -355,7 +356,7 @@ func (l *Loader) processCgoFiles(d *Directory) {
 }
 
 func (l *Loader) processTestGoFiles(d *Directory) {
-	if d.absPath == l.unsafePath {
+	if d.absPath == l.unsafePath || d.buildPkg == nil {
 		return
 	}
 
