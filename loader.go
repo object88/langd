@@ -226,6 +226,7 @@ func (l *Loader) processStateChange(absPath string) {
 
 		if complete {
 			fmt.Printf("DONE DONE DONE DONE DONE")
+			l.ready <- true
 		}
 	}
 }

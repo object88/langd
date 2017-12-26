@@ -34,11 +34,19 @@ func CreateWorkspace() *Workspace {
 }
 
 // AssignAST will inform the workspace of its file set, info, paths, etc.
-func (w *Workspace) AssignAST(fset *token.FileSet, info *types.Info, loadedPaths map[string]bool, files map[string]*ast.File) {
-	w.Fset = fset
-	w.Info = info
-	w.PkgNames = loadedPaths
-	w.Files = files
+func (w *Workspace) AssignAST( /*fset *token.FileSet, info *types.Info, loadedPaths map[string]bool, files map[string]*ast.File*/ ) {
+	w.Fset = w.Loader.fset
+	w.Info = w.Loader.info
+	w.PkgNames = make(map[string]bool, len(w.Loader.directories)) // w.Loader.loadedPaths
+	w.Files = map[string]*ast.File{}                              // w.Loader.files
+	for k, v := range w.Loader.directories {
+		w.PkgNames[k] = true
+		for _, pkg := range v.pm {
+			for fpath, astf := range pkg.files {
+				w.Files[fpath] = astf
+			}
+		}
+	}
 }
 
 // LocateIdent scans the loaded fset for the identifier at the requested
