@@ -18,6 +18,8 @@ import (
 	"strings"
 	"sync"
 	"unicode/utf8"
+
+	"github.com/object88/langd/collections"
 )
 
 type loadState int
@@ -35,6 +37,8 @@ type Loader struct {
 	mReady sync.Mutex
 	closer chan bool
 	ready  chan bool
+
+	caravan *collections.Caravan
 
 	mDirectories sync.Mutex
 	directories  map[string]*Directory
@@ -63,12 +67,32 @@ type Directory struct {
 	c         *sync.Cond
 }
 
+type PackageKey struct {
+	absPath string
+	name    string
+}
+
 // Package is the contents of a package
 type Package struct {
-	absPath     string
+	PackageKey
 	importPaths map[string]bool
-	name        string
+	key         collections.Key
 	typesPkg    *types.Package
+}
+
+func CreatePackage(absPath, name string) *Package {
+	return &Package{
+		PackageKey: PackageKey{
+			absPath: absPath,
+			name:    name,
+		},
+		importPaths: map[string]bool{},
+		key:         collections.Key(fmt.Sprintf("%s:%s", absPath, name)),
+	}
+}
+
+func (p *Package) Key() collections.Key {
+	return p.key
 }
 
 type packageMap map[string]*packageMapItem
@@ -95,6 +119,7 @@ func NewLoader() *Loader {
 	}
 
 	l := &Loader{
+		caravan:     collections.CreateCaravan(),
 		closer:      make(chan bool),
 		context:     &ctx,
 		directories: map[string]*Directory{},
@@ -129,10 +154,11 @@ func (l *Loader) Start() chan bool {
 	}
 	go func() {
 		fmt.Printf("Start: starting anon go func\n")
-		for {
+		stop := false
+		for !stop {
 			select {
 			case <-l.closer:
-				break
+				stop = true
 			case dPath := <-l.stateChange:
 				go l.processStateChange(dPath)
 			}
@@ -176,7 +202,6 @@ func (l *Loader) LoadDirectory(absPath string) {
 
 func (l *Loader) processStateChange(absPath string) {
 	l.mDirectories.Lock()
-	// d := l.ensureDirectory(absPath)
 	d, _ := l.directories[absPath]
 	l.mDirectories.Unlock()
 
@@ -184,26 +209,20 @@ func (l *Loader) processStateChange(absPath string) {
 
 	switch d.loadState {
 	case queued:
-		// fmt.Printf("queued\n")
 		l.processDirectory(d)
 		d.loadState = unloaded
 		l.stateChange <- absPath
 		d.c.Broadcast()
 	case unloaded:
-		// fmt.Printf("unloaded\n")
 		l.processGoFiles(d)
 		l.processCgoFiles(d)
-		// d.loadState = loadedGo
 		l.processPackages(d)
 		l.processImports(d, d.pm)
 	case loadedGo:
-		// fmt.Printf("loaded normal Go files\n")
 		l.processTestGoFiles(d)
-		// d.loadState = loadedTest
 		l.processPackages(d)
 		l.processImports(d, d.pm)
 	case loadedTest:
-		// fmt.Printf("loaded test Go files\n")
 		// Short circuiting directly to next state.
 		d.loadState = done
 		l.stateChange <- absPath
@@ -226,9 +245,14 @@ func (l *Loader) processStateChange(absPath string) {
 
 		if complete {
 			fmt.Printf("DONE DONE DONE DONE DONE")
-			l.ready <- true
+			l.processComplete()
 		}
 	}
+}
+
+func (l *Loader) processComplete() {
+	// Loop over packages in reverse order of imports and inspect
+	l.ready <- true
 }
 
 func (l *Loader) processDirectory(d *Directory) {
@@ -381,7 +405,7 @@ func (l *Loader) processTestGoFiles(d *Directory) {
 }
 
 func (l *Loader) processAstFile(fname string, astf *ast.File, pm packageMap) {
-	pkgName := astf.Name.Name
+	pkgName := filepath.Base(astf.Name.Name)
 
 	pmi, ok := pm[pkgName]
 	if !ok {
@@ -423,11 +447,8 @@ func (l *Loader) processUnsafe(d *Directory) bool {
 		return false
 	}
 	fmt.Printf("*** Loading `%s`, replacing with types.Unsafe\n", l.shortName(d.absPath))
-	p := &Package{
-		absPath:  absPath,
-		name:     "unsafe",
-		typesPkg: types.Unsafe,
-	}
+	p := CreatePackage(absPath, "unsafe")
+	p.typesPkg = types.Unsafe
 	d.packages = map[string]*Package{
 		"unsafe": p,
 	}
@@ -446,36 +467,31 @@ func (l *Loader) findImportPath(path, src string) (string, error) {
 }
 
 func (l *Loader) processPackages(d *Directory) {
-	// fmt.Printf(" PP: %s started\n", l.shortName(d.absPath))
 	for pkgName, pmi := range d.pm {
 		thisPkgName := filepath.Base(pkgName)
-		// fmt.Printf(" PP: have package name %s\n", thisPkgName)
 		p, ok := d.packages[thisPkgName]
 		if !ok {
-			// fmt.Printf(" PP: creating package %s\n", thisPkgName)
-			p = &Package{
-				absPath: d.absPath,
-				// files:          files,
-				importPaths: map[string]bool{},
-				name:        thisPkgName,
-				// isExternalTest: strings.HasSuffix(thisPkgName, "_test"),
-				// testFiles:      testFiles,
-			}
+			fmt.Printf(" PP: %s: creating package w/ %s:%s\n", l.shortName(d.absPath), d.absPath, thisPkgName)
+			p = CreatePackage(d.absPath, thisPkgName)
+			l.caravan.Insert(p)
 			d.packages[thisPkgName] = p
 		}
 		// files := pmi.files
-		// testFiles := pmi.testFiles
 		pmi.p = p
 	}
 }
 
 func (l *Loader) processImports(d *Directory, pm packageMap) {
 	fmt.Printf(" PI: %s: started\n", l.shortName(d.absPath))
-	importMaps := map[string]bool{}
+	importMaps := map[*PackageKey]*PackageKey{}
 
 	for _, pmi := range pm {
 		fmt.Printf(" PI: %s: package %s\n", l.shortName(d.absPath), pmi.p.name)
 		pmi.m.Lock()
+		sourceKey := &PackageKey{
+			absPath: pmi.p.absPath,
+			name:    pmi.p.name,
+		}
 		for importPkgName := range pmi.imports {
 			importPath, err := l.findImportPath(importPkgName, d.absPath)
 			if err != nil {
@@ -485,7 +501,11 @@ func (l *Loader) processImports(d *Directory, pm packageMap) {
 
 			fmt.Printf(" PI: %s: -> %s\n", l.shortName(d.absPath), l.shortName(importPath))
 			pmi.p.importPaths[importPath] = false
-			importMaps[importPath] = true
+			destinationKey := &PackageKey{
+				absPath: importPath,
+				name:    filepath.Base(importPkgName),
+			}
+			importMaps[sourceKey] = destinationKey
 
 			l.mDirectories.Lock()
 			l.ensureDirectory(importPath)
@@ -495,10 +515,10 @@ func (l *Loader) processImports(d *Directory, pm packageMap) {
 	}
 
 	go func() {
-		for targetPath := range importMaps {
+		for sourceKey, destinationKey := range importMaps {
 			l.mDirectories.Lock()
-			// targetD := l.ensureDirectory(targetPath)
-			targetD, _ := l.directories[targetPath]
+			sourcePackage := l.directories[sourceKey.absPath].packages[sourceKey.name]
+			targetD, _ := l.directories[destinationKey.absPath]
 			l.mDirectories.Unlock()
 
 			targetD.m.Lock()
@@ -509,6 +529,14 @@ func (l *Loader) processImports(d *Directory, pm packageMap) {
 			}
 
 			targetD.m.Unlock()
+
+			targetPackage, ok := targetD.packages[destinationKey.name]
+			if !ok {
+				panic(fmt.Sprintf(" PI: %s: target package %s:%s is !ok\n", l.shortName(d.absPath), destinationKey.absPath, destinationKey.name))
+			}
+
+			fmt.Printf(" PI: %s: connecting to %s:%s\n", l.shortName(d.absPath), destinationKey.absPath, destinationKey.name)
+			l.caravan.Connect(sourcePackage, targetPackage)
 
 			// All dependencies are loaded; can proceed.
 			fmt.Printf(" PI: %s: dep %s OK\n", l.shortName(d.absPath), l.shortName(targetD.absPath))
@@ -539,14 +567,7 @@ func (l *Loader) ensureDirectory(absPath string) *Directory {
 }
 
 func (l *Loader) checkImportReady(sourceD *Directory, targetD *Directory) bool {
-	// ready := true
-	// if targetD.loadState == unloaded {
-	// 	ready = false
-	// }
-
-	ready := sourceD.loadState <= targetD.loadState
-
-	return ready
+	return targetD.loadState == done || sourceD.loadState < targetD.loadState
 }
 
 func (l *Loader) shortName(path string) string {
@@ -554,11 +575,5 @@ func (l *Loader) shortName(path string) string {
 	if strings.HasPrefix(path, root) {
 		return path[utf8.RuneCountInString(root)+5:]
 	}
-	// for _, p := range l.context.SrcDirs() {
-	// 	if strings.HasPrefix(path, p) {
-	// 		return path[utf8.RuneCountInString(p)+1:]
-	// 	}
-	// }
 	return filepath.Base(path)
-	// return "NOPE"
 }
