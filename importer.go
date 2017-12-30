@@ -62,10 +62,14 @@ func (i *Importer) ImportFrom(path, srcDir string, mode types.ImportMode) (*type
 	}
 
 	if p.typesPkg == nil {
-		fmt.Printf("Found package map; has nil for %s\nAt %s\nStarting from %s, %s.\n", base, absPath, path, srcDir)
+		fmt.Printf("Found package map; has nil typesPkg for %s\nAt %s\nStarting from %s, %s.\n", base, absPath, path, srcDir)
 		fmt.Printf("Have...\n")
 		for _, v := range ps {
-			fmt.Printf("\t%s\n", v.name)
+			if v.typesPkg == nil {
+				fmt.Printf("\t%s (nil)\n", v.name)
+			} else {
+				fmt.Printf("\t%s (checked)\n", v.name)
+			}
 		}
 		return nil, fmt.Errorf("Got nil in packages map")
 	}

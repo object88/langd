@@ -38,6 +38,8 @@ type Loader struct {
 	closer chan bool
 	ready  chan bool
 
+	done bool
+
 	caravan *collections.Caravan
 
 	mDirectories sync.Mutex
@@ -75,6 +77,7 @@ type PackageKey struct {
 // Package is the contents of a package
 type Package struct {
 	PackageKey
+	files       map[string]*ast.File
 	importPaths map[string]bool
 	key         collections.Key
 	typesPkg    *types.Package
@@ -86,6 +89,7 @@ func CreatePackage(absPath, name string) *Package {
 			absPath: absPath,
 			name:    name,
 		},
+		files:       map[string]*ast.File{},
 		importPaths: map[string]bool{},
 		key:         collections.Key(fmt.Sprintf("%s:%s", absPath, name)),
 	}
@@ -123,6 +127,7 @@ func NewLoader() *Loader {
 		closer:      make(chan bool),
 		context:     &ctx,
 		directories: map[string]*Directory{},
+		done:        false,
 		fset:        token.NewFileSet(),
 		info:        info,
 		stateChange: make(chan string),
@@ -219,9 +224,14 @@ func (l *Loader) processStateChange(absPath string) {
 		l.processPackages(d)
 		l.processImports(d, d.pm)
 	case loadedGo:
-		l.processTestGoFiles(d)
-		l.processPackages(d)
-		l.processImports(d, d.pm)
+		// l.processTestGoFiles(d)
+		// l.processPackages(d)
+		// l.processImports(d, d.pm)
+
+		// Short circuiting directly to next state.
+		d.loadState++
+		l.stateChange <- absPath
+		d.c.Broadcast()
 	case loadedTest:
 		// Short circuiting directly to next state.
 		d.loadState = done
@@ -243,8 +253,17 @@ func (l *Loader) processStateChange(absPath string) {
 
 		l.mDirectories.Unlock()
 
+		if !complete {
+			return
+		}
+
+		fmt.Printf("DONE DONE\n")
+
+		complete = complete && !l.done
+		l.done = true
+
 		if complete {
-			fmt.Printf("DONE DONE DONE DONE DONE")
+			fmt.Printf("DONE DONE DONE DONE DONE\n")
 			l.processComplete()
 		}
 	}
@@ -252,6 +271,41 @@ func (l *Loader) processStateChange(absPath string) {
 
 func (l *Loader) processComplete() {
 	// Loop over packages in reverse order of imports and inspect
+	checked := map[string]bool{}
+	l.caravan.Walk(collections.WalkUp, func(node *collections.Node) {
+		p, ok := node.Element.(*Package)
+		if !ok {
+			panic("Oops, not a package pointer...\n")
+		}
+		if p.name == "unsafe" {
+			fmt.Printf("Checking unsafe (skipping)\n")
+			return
+		}
+		fmt.Printf("Checking %s\n", p.name)
+		fmap := l.directories[p.absPath].pm[p.name].files
+		files := make([]*ast.File, len(fmap))
+		i := 0
+		for _, v := range fmap {
+			f := v
+			files[i] = f
+			i++
+		}
+
+		key := fmt.Sprintf("%s:%s", p.absPath, p.name)
+		if _, ok := checked[key]; ok {
+			fmt.Printf("Double checking %s...\n", key)
+			return
+		}
+
+		typesPkg, err := l.conf.Check(p.absPath, l.fset, files, l.info)
+		if err != nil {
+			fmt.Printf("Error while checking %s:\n\t%s\n\n", key, err.Error())
+			return
+		}
+		p.typesPkg = typesPkg
+		checked[key] = true
+	})
+
 	l.ready <- true
 }
 
@@ -429,7 +483,7 @@ func (l *Loader) processAstFile(fname string, astf *ast.File, pm packageMap) {
 
 			path, err := strconv.Unquote(spec.Path.Value)
 			if err != nil || path == "C" {
-				// Ignore the error and skip the C pseudo package
+				// Ignore any error and skip the C pseudo package
 				continue
 			}
 			pmi.imports[path] = true
@@ -447,11 +501,12 @@ func (l *Loader) processUnsafe(d *Directory) bool {
 		return false
 	}
 	fmt.Printf("*** Loading `%s`, replacing with types.Unsafe\n", l.shortName(d.absPath))
-	p := CreatePackage(absPath, "unsafe")
+	p := CreatePackage(l.unsafePath, "unsafe")
 	p.typesPkg = types.Unsafe
 	d.packages = map[string]*Package{
 		"unsafe": p,
 	}
+	l.caravan.Insert(p)
 
 	return true
 }
@@ -483,7 +538,7 @@ func (l *Loader) processPackages(d *Directory) {
 
 func (l *Loader) processImports(d *Directory, pm packageMap) {
 	fmt.Printf(" PI: %s: started\n", l.shortName(d.absPath))
-	importMaps := map[*PackageKey]*PackageKey{}
+	importMaps := map[*PackageKey]map[*PackageKey]bool{}
 
 	for _, pmi := range pm {
 		fmt.Printf(" PI: %s: package %s\n", l.shortName(d.absPath), pmi.p.name)
@@ -505,7 +560,12 @@ func (l *Loader) processImports(d *Directory, pm packageMap) {
 				absPath: importPath,
 				name:    filepath.Base(importPkgName),
 			}
-			importMaps[sourceKey] = destinationKey
+			destinationKeys, ok := importMaps[sourceKey]
+			if !ok {
+				destinationKeys = map[*PackageKey]bool{}
+				importMaps[sourceKey] = destinationKeys
+			}
+			destinationKeys[destinationKey] = true
 
 			l.mDirectories.Lock()
 			l.ensureDirectory(importPath)
@@ -515,31 +575,39 @@ func (l *Loader) processImports(d *Directory, pm packageMap) {
 	}
 
 	go func() {
-		for sourceKey, destinationKey := range importMaps {
+		for sourceKey, destinationKeys := range importMaps {
 			l.mDirectories.Lock()
 			sourcePackage := l.directories[sourceKey.absPath].packages[sourceKey.name]
-			targetD, _ := l.directories[destinationKey.absPath]
 			l.mDirectories.Unlock()
 
-			targetD.m.Lock()
+			for destinationKey := range destinationKeys {
+				l.mDirectories.Lock()
+				targetD, _ := l.directories[destinationKey.absPath]
+				l.mDirectories.Unlock()
 
-			for !l.checkImportReady(d, targetD) {
-				fmt.Printf(" PI: %s: *** still waiting on %s ***\n", l.shortName(d.absPath), l.shortName(targetD.absPath))
-				targetD.c.Wait()
+				targetD.m.Lock()
+
+				for !l.checkImportReady(d, targetD) {
+					fmt.Printf(" PI: %s: *** still waiting on %s ***\n", l.shortName(d.absPath), l.shortName(targetD.absPath))
+					targetD.c.Wait()
+				}
+
+				targetD.m.Unlock()
+
+				targetPackage, ok := targetD.packages[destinationKey.name]
+				if !ok {
+					panic(fmt.Sprintf(" PI: %s: target package %s:%s is !ok\n", l.shortName(d.absPath), destinationKey.absPath, destinationKey.name))
+				}
+
+				fmt.Printf(" PI: %s: connecting to %s:%s\n", l.shortName(d.absPath), destinationKey.absPath, destinationKey.name)
+				if err := l.caravan.Connect(sourcePackage, targetPackage); err != nil {
+					panic(fmt.Sprintf(" PI: %s: connect failed:\n\tfrom: %s\n\tto: %s\n\terr: %s\n\n", l.shortName(d.absPath), sourcePackage.key, targetPackage.key, err.Error()))
+				}
+
+				// All dependencies are loaded; can proceed.
+				fmt.Printf(" PI: %s: dep %s OK\n", l.shortName(d.absPath), l.shortName(targetD.absPath))
 			}
 
-			targetD.m.Unlock()
-
-			targetPackage, ok := targetD.packages[destinationKey.name]
-			if !ok {
-				panic(fmt.Sprintf(" PI: %s: target package %s:%s is !ok\n", l.shortName(d.absPath), destinationKey.absPath, destinationKey.name))
-			}
-
-			fmt.Printf(" PI: %s: connecting to %s:%s\n", l.shortName(d.absPath), destinationKey.absPath, destinationKey.name)
-			l.caravan.Connect(sourcePackage, targetPackage)
-
-			// All dependencies are loaded; can proceed.
-			fmt.Printf(" PI: %s: dep %s OK\n", l.shortName(d.absPath), l.shortName(targetD.absPath))
 		}
 		fmt.Printf(" PI: %s: all imports fulfilled.\n", l.shortName(d.absPath))
 		d.loadState++

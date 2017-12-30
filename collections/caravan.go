@@ -118,8 +118,9 @@ func (c *Caravan) Connect(from, to Keyer) error {
 	}
 
 	if _, ok = fromNode.Descendants[toKey]; ok {
+		// The connection was already made; just accept it.
 		c.m.Unlock()
-		return errors.New("`to` is already a direct descendent of `from`")
+		return nil
 	}
 
 	err := checkLoop(fromKey, toNode)
