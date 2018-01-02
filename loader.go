@@ -145,7 +145,11 @@ func NewLoader() *Loader {
 	}
 	c := &types.Config{
 		Error: func(e error) {
-			fmt.Printf("ERROR: %s\n", e.Error())
+			if terror, ok := e.(types.Error); ok {
+				fmt.Printf("ERROR: (types error) %s\n", terror.Error())
+			} else {
+				fmt.Printf("ERROR: (unknown) %#v\n", e)
+			}
 		},
 		Importer: i,
 	}
@@ -162,7 +166,6 @@ func (l *Loader) Start() chan bool {
 		return l.ready
 	}
 	go func() {
-		fmt.Printf("Start: starting anon go func\n")
 		stop := false
 		for !stop {
 			select {
@@ -200,7 +203,6 @@ func (l *Loader) LoadDirectory(absPath string) {
 			return filepath.SkipDir
 		}
 
-		fmt.Printf("LoadDirectory: queueing %s\n", l.shortName(dpath))
 		l.ensureDirectory(dpath)
 
 		return nil

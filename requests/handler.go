@@ -227,14 +227,14 @@ func (h *Handler) startResponding(rhid int) {
 func (h *Handler) SendMessage(lvl log.Level, message string) {
 	ctx := context.Background()
 
-	t := Error
+	t := ErrorMessageType
 	switch lvl {
 	case log.Verbose:
-		t = Log
+		t = LogMessageType
 	case log.Info:
-		t = Info
+		t = InfoMessageType
 	case log.Warn:
-		t = Warning
+		t = WarningMessageType
 	}
 
 	params := &LogMessageParams{

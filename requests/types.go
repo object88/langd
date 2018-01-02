@@ -370,6 +370,46 @@ type WorkspaceClientCapabilities struct {
 
 // Common?
 
+type Diagnostic struct {
+	// Range is the range at which the message applies.
+	Range Range `json:"range"`
+
+	// Severity is the diagnostic's severity. Can be omitted. If omitted it is up
+	// to the client to interpret diagnostics as error, warning, info or hint.
+	Severity *DiagnosticSeverity `json:"severity,omitempty"`
+
+	// Code is the diagnostic's code. Can be omitted.
+	// code?: number | string;
+
+	// Source is a human-readable string describing the source of this
+	// diagnostic, e.g. 'typescript' or 'super lint'.
+	Source *string `json:"source,omitempty"`
+
+	// Message is the diagnostic's message.
+	Message string `json:"message"`
+}
+
+type DiagnosticCode struct {
+}
+
+type DiagnosticSeverity int
+
+const (
+	_ DiagnosticSeverity = iota
+
+	// ErrorDiagnosticSeverity reports an error.
+	ErrorDiagnosticSeverity
+
+	// WarningDiagnosticSeverity reports a warning.
+	WarningDiagnosticSeverity
+
+	// InformationDiagnosticSeverity reports an information.
+	InformationDiagnosticSeverity
+
+	// HintDiagnosticSeverity reports a hint.
+	HintDiagnosticSeverity
+)
+
 // DocumentFilter denotes a document through properties like language, schema or pattern.
 // https://github.com/Microsoft/language-server-protocol/blob/master/protocol.md#new-documentfilter
 type DocumentFilter struct {
@@ -433,17 +473,17 @@ type MessageType int
 const (
 	_ MessageType = iota
 
-	// Error is an error message.
-	Error
+	// ErrorMessageType is an error message.
+	ErrorMessageType
 
-	// Warning is a warning message.
-	Warning
+	// WarningMessageType is a warning message.
+	WarningMessageType
 
-	// Info is an information message.
-	Info
+	// InfoMessageType is an information message.
+	InfoMessageType
 
-	// Log is a log message.
-	Log
+	// LogMessageType is a log message.
+	LogMessageType
 )
 
 // Position points to a location in a text document
@@ -454,6 +494,14 @@ type Position struct {
 
 	// Character offset on a line in a document (zero-based)
 	Character int `json:"character"`
+}
+
+type PublishDiagnosticsParams struct {
+	// URI is the uri for which diagnostic information is reported.
+	URI DocumentURI `json:"uri"`
+
+	// Diagnostics is an array of diagnostic information items.
+	Diagnostics []Diagnostic `json:"diagnostics"`
 }
 
 // Range is a contigous block within a document
