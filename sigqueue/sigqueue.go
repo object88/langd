@@ -3,11 +3,13 @@ package sigqueue
 import (
 	"fmt"
 	"sync"
+
+	"github.com/object88/langd/collections"
 )
 
 // Sigqueue is a signalling queue.
 type Sigqueue struct {
-	waiters     *LinkedList
+	waiters     *collections.LinkedList
 	readied     *Heap
 	waitersLock sync.Mutex
 	readiedLock sync.Mutex
@@ -15,10 +17,24 @@ type Sigqueue struct {
 	signal      *Signal
 }
 
+type IntLinkedListItem struct {
+	Value int
+
+	prev, next collections.LinkedListItem
+}
+
+func (illi *IntLinkedListItem) AssignSiblings(prev, next collections.LinkedListItem) {
+	illi.prev, illi.next = prev, next
+}
+
+func (illi *IntLinkedListItem) Siblings() (collections.LinkedListItem, collections.LinkedListItem) {
+	return illi.prev, illi.next
+}
+
 // CreateSigqueue creates a new instance of Sigqueue
 func CreateSigqueue(notify chan int) *Sigqueue {
 	s := &Sigqueue{
-		waiters: CreateLinkedList(),
+		waiters: collections.CreateLinkedList(),
 		readied: CreateHeap(),
 		notify:  notify,
 		signal:  CreateSignal(),
@@ -35,13 +51,13 @@ func CreateSigqueue(notify chan int) *Sigqueue {
 func (s *Sigqueue) WaitOn(item int) error {
 	s.waitersLock.Lock()
 
-	id := s.waiters.Peer()
-	if id != -1 && id >= item {
+	lli := s.waiters.Peer()
+	if lli != nil && lli.(*IntLinkedListItem).Value >= item {
 		s.waitersLock.Unlock()
 		return NewErrOutOfOrderWait(item)
 	}
 
-	s.waiters.Push(item)
+	s.waiters.Push(&IntLinkedListItem{Value: item})
 
 	s.waitersLock.Unlock()
 
@@ -75,7 +91,7 @@ func (s *Sigqueue) process() {
 					break
 				}
 				item := s.waiters.Peek()
-				if item == -1 || item != id {
+				if item == nil || item.(*IntLinkedListItem).Value != id {
 					// The signal received was not for the oldest wait
 					break
 				}
@@ -83,7 +99,7 @@ func (s *Sigqueue) process() {
 				// Remove the minimum value from the hash, and notify the consumer
 				// that the oldest wait is ready.
 				s.readied.RemoveMinimum()
-				s.notify <- s.waiters.Pop()
+				s.notify <- s.waiters.Pop().(*IntLinkedListItem).Value
 			}
 
 			s.readiedLock.Unlock()

@@ -5,8 +5,6 @@ import (
 	"encoding/json"
 	"fmt"
 	"strings"
-
-	"github.com/object88/langd"
 )
 
 const (
@@ -71,11 +69,24 @@ func (h *Handler) readRoot(root string) {
 		fmt.Printf("Failed to deliver message to client: %s\n", err.Error())
 	}
 
-	l := langd.NewLoader()
-	loadErr := l.Load(context.Background(), h.workspace, base)
-	if loadErr != nil {
-		fmt.Printf("OHSHANP: %s\n", loadErr.Error())
-	}
+	// l := langd.NewLoader()
+	done := h.workspace.Loader.Start()
+	// if err != nil {
+	// 	fmt.Printf("OHSHANP: %s\n", err.Error())
+	// }
+
+	fmt.Printf("About to load %s\n", base)
+	h.workspace.Loader.LoadDirectory(base)
+	// if loadErr != nil {
+	// 	fmt.Printf("OHSHANP: %s\n", loadErr.Error())
+	// }
+
+	// NOTE: We are not doing anything with this, so... BLOCKED.
+	fmt.Printf("Waiting...\n")
+	<-done
+
+	h.workspace.AssignAST()
+
 	fmt.Printf("Have %d imports...\n", len(h.workspace.PkgNames))
 
 	// Start a routine to process requests

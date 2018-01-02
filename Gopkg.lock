@@ -8,12 +8,6 @@
   revision = "17ce1425424ab154092bbb43af630bd647f3bb0d"
 
 [[projects]]
-  name = "github.com/google/uuid"
-  packages = ["."]
-  revision = "064e2069ce9c359c118179501254f67d7d37ba24"
-  version = "0.2"
-
-[[projects]]
   name = "github.com/inconshreveable/mousetrap"
   packages = ["."]
   revision = "76626ae9c91c4f2a10f34cad8ce83ea42c93bb75"
@@ -21,9 +15,21 @@
 
 [[projects]]
   branch = "master"
+  name = "github.com/object88/rope"
+  packages = ["."]
+  revision = "9bc22b8b7ff6b8e346c0d18d19f9930aab1250af"
+
+[[projects]]
+  branch = "master"
   name = "github.com/sourcegraph/jsonrpc2"
   packages = ["."]
   revision = "c6c7b9aa99fb76ee5460ccd3912ba35d419d493d"
+
+[[projects]]
+  name = "github.com/spf13/afero"
+  packages = [".","mem"]
+  revision = "8d919cbe7e2627e417f3e45c3c0e489a5b7e2536"
+  version = "v1.0.0"
 
 [[projects]]
   branch = "master"
@@ -64,6 +70,6 @@
 [solve-meta]
   analyzer-name = "dep"
   analyzer-version = 1
-  inputs-digest = "58de07ca353bd569d84cc021c4cf970b4f6a738394acc8760b74fa24cbab302a"
+  inputs-digest = "14d1a65ad2bb76615dc4fab98577b354a399c4a8ec3f743d095894316f9306cb"
   solver-name = "gps-cdcl"
   solver-version = 1
