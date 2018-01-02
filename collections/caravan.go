@@ -164,7 +164,9 @@ func (c *Caravan) WeakConnect(from, to Keyer) error {
 		delete(c.roots, toKey)
 	}
 
-	fromNode.WeakDescendants[toKey] = toNode
+	if _, ok := fromNode.Descendants[toKey]; !ok {
+		fromNode.WeakDescendants[toKey] = toNode
+	}
 
 	c.m.Unlock()
 	return nil

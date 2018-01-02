@@ -305,46 +305,6 @@ func (l *Loader) processComplete(d *Directory) {
 	}
 }
 
-// func (l *Loader) processComplete() {
-// 	// Loop over packages in reverse order of imports and inspect
-// 	checked := map[string]bool{}
-// 	l.caravan.Walk(collections.WalkUp, func(node *collections.Node) {
-// 		p, ok := node.Element.(*Package)
-// 		if !ok {
-// 			panic("Oops, not a package pointer...\n")
-// 		}
-// 		if p.name == "unsafe" {
-// 			fmt.Printf("Checking unsafe (skipping)\n")
-// 			return
-// 		}
-// 		fmt.Printf("Checking %s\n", p.name)
-// 		fmap := l.directories[p.absPath].pm[p.name].files
-// 		files := make([]*ast.File, len(fmap))
-// 		i := 0
-// 		for _, v := range fmap {
-// 			f := v
-// 			files[i] = f
-// 			i++
-// 		}
-
-// 		key := fmt.Sprintf("%s:%s", p.absPath, p.name)
-// 		if _, ok := checked[key]; ok {
-// 			fmt.Printf("Double checking %s...\n", key)
-// 			return
-// 		}
-
-// 		typesPkg, err := l.conf.Check(p.absPath, l.fset, files, l.info)
-// 		if err != nil {
-// 			fmt.Printf("Error while checking %s:\n\t%s\n\n", key, err.Error())
-// 			return
-// 		}
-// 		p.typesPkg = typesPkg
-// 		checked[key] = true
-// 	})
-
-// 	l.ready <- true
-// }
-
 func (l *Loader) processDirectory(d *Directory) {
 	fmt.Printf(" PD: %s\n", l.shortName(d.absPath))
 
