@@ -49,6 +49,7 @@ type Loader struct {
 
 	conf    *types.Config
 	context *build.Context
+	mFset   sync.Mutex
 	fset    *token.FileSet
 	info    *types.Info
 
@@ -200,9 +201,7 @@ func (l *Loader) LoadDirectory(absPath string) {
 		}
 
 		fmt.Printf("LoadDirectory: queueing %s\n", l.shortName(dpath))
-		l.mDirectories.Lock()
 		l.ensureDirectory(dpath)
-		l.mDirectories.Unlock()
 
 		return nil
 	})
@@ -226,6 +225,7 @@ func (l *Loader) processStateChange(absPath string) {
 		l.processGoFiles(d)
 		l.processCgoFiles(d)
 		l.processPackages(d, false)
+		l.processComplete(d)
 		d.loadState++
 		fmt.Printf("PSC: %s: broadcasting done!!\n", l.shortName(d.absPath))
 		d.c.Broadcast()
@@ -233,6 +233,7 @@ func (l *Loader) processStateChange(absPath string) {
 	case loadedGo:
 		l.processTestGoFiles(d)
 		l.processPackages(d, true)
+		l.processComplete(d)
 		d.loadState++
 		fmt.Printf("PSC: %s: broadcasting done on test!!\n", l.shortName(d.absPath))
 		d.c.Broadcast()
@@ -269,19 +270,15 @@ func (l *Loader) processStateChange(absPath string) {
 
 		if complete {
 			fmt.Printf("DONE DONE DONE DONE DONE\n")
-			l.processComplete()
+			// l.processComplete()
+			l.ready <- true
 		}
 	}
 }
 
-func (l *Loader) processComplete() {
-	// Loop over packages in reverse order of imports and inspect
-	checked := map[string]bool{}
-	l.caravan.Walk(collections.WalkUp, func(node *collections.Node) {
-		p, ok := node.Element.(*Package)
-		if !ok {
-			panic("Oops, not a package pointer...\n")
-		}
+func (l *Loader) processComplete(d *Directory) {
+	// Loop over packages
+	for _, p := range d.packages {
 		if p.name == "unsafe" {
 			fmt.Printf("Checking unsafe (skipping)\n")
 			return
@@ -296,23 +293,57 @@ func (l *Loader) processComplete() {
 			i++
 		}
 
-		key := fmt.Sprintf("%s:%s", p.absPath, p.name)
-		if _, ok := checked[key]; ok {
-			fmt.Printf("Double checking %s...\n", key)
-			return
-		}
-
+		l.mFset.Lock()
 		typesPkg, err := l.conf.Check(p.absPath, l.fset, files, l.info)
+		l.mFset.Unlock()
 		if err != nil {
+			key := fmt.Sprintf("%s:%s", p.absPath, p.name)
 			fmt.Printf("Error while checking %s:\n\t%s\n\n", key, err.Error())
 			return
 		}
 		p.typesPkg = typesPkg
-		checked[key] = true
-	})
-
-	l.ready <- true
+	}
 }
+
+// func (l *Loader) processComplete() {
+// 	// Loop over packages in reverse order of imports and inspect
+// 	checked := map[string]bool{}
+// 	l.caravan.Walk(collections.WalkUp, func(node *collections.Node) {
+// 		p, ok := node.Element.(*Package)
+// 		if !ok {
+// 			panic("Oops, not a package pointer...\n")
+// 		}
+// 		if p.name == "unsafe" {
+// 			fmt.Printf("Checking unsafe (skipping)\n")
+// 			return
+// 		}
+// 		fmt.Printf("Checking %s\n", p.name)
+// 		fmap := l.directories[p.absPath].pm[p.name].files
+// 		files := make([]*ast.File, len(fmap))
+// 		i := 0
+// 		for _, v := range fmap {
+// 			f := v
+// 			files[i] = f
+// 			i++
+// 		}
+
+// 		key := fmt.Sprintf("%s:%s", p.absPath, p.name)
+// 		if _, ok := checked[key]; ok {
+// 			fmt.Printf("Double checking %s...\n", key)
+// 			return
+// 		}
+
+// 		typesPkg, err := l.conf.Check(p.absPath, l.fset, files, l.info)
+// 		if err != nil {
+// 			fmt.Printf("Error while checking %s:\n\t%s\n\n", key, err.Error())
+// 			return
+// 		}
+// 		p.typesPkg = typesPkg
+// 		checked[key] = true
+// 	})
+
+// 	l.ready <- true
+// }
 
 func (l *Loader) processDirectory(d *Directory) {
 	fmt.Printf(" PD: %s\n", l.shortName(d.absPath))
@@ -348,7 +379,9 @@ func (l *Loader) processGoFiles(d *Directory) {
 
 	for _, fname := range fnames {
 		fpath := filepath.Join(d.absPath, fname)
+		l.mFset.Lock()
 		astf, err := parser.ParseFile(l.fset, fpath, nil, parser.AllErrors)
+		l.mFset.Unlock()
 		if err != nil {
 			fmt.Printf(" GF: ERROR: While parsing %s:\n\t%s", fpath, err.Error())
 			return
@@ -428,7 +461,9 @@ func (l *Loader) processCgoFiles(d *Directory) {
 			fmt.Printf("CGO: ERROR: failed to open file %s\n\t%s\n", files[i], err.Error())
 			continue
 		}
+		l.mFset.Lock()
 		astf, err := parser.ParseFile(l.fset, displayFiles[i], f, 0)
+		l.mFset.Unlock()
 		f.Close()
 		if err != nil {
 			fmt.Printf("CGO: ERROR: Failed to open %s\n\t%s\n", fpaths[i], err.Error())
@@ -454,7 +489,9 @@ func (l *Loader) processTestGoFiles(d *Directory) {
 	fmt.Printf("TFG: %s: processing %d test Go files\n", l.shortName(d.absPath), len(fnames))
 	for _, fname := range fnames {
 		fpath := filepath.Join(d.absPath, fname)
+		l.mFset.Lock()
 		astf, err := parser.ParseFile(l.fset, fpath, nil, parser.AllErrors)
+		l.mFset.Unlock()
 		if err != nil {
 			fmt.Printf("TGF: ERROR: While parsing %s:\n\t%s\n", fpath, err.Error())
 			return
@@ -559,9 +596,7 @@ func (l *Loader) processPackages(d *Directory, testing bool) {
 			}
 			destinationKeys[destinationKey] = true
 
-			l.mDirectories.Lock()
 			l.ensureDirectory(importPath)
-			l.mDirectories.Unlock()
 		}
 		pmi.m.Unlock()
 	}
@@ -609,7 +644,6 @@ func (l *Loader) processPackages(d *Directory, testing bool) {
 	fmt.Printf(" PP: %s: %d: all imports fulfilled.\n", l.shortName(d.absPath), d.loadState)
 }
 
-// ensureDirectory assumes that the caller has the mDirectories mutex
 func (l *Loader) checkImportReady(sourceD *Directory, targetD *Directory) bool {
 	// return targetD.loadState == done || sourceD.loadState < targetD.loadState
 
@@ -630,6 +664,7 @@ func (l *Loader) checkImportReady(sourceD *Directory, targetD *Directory) bool {
 }
 
 func (l *Loader) ensureDirectory(absPath string) *Directory {
+	l.mDirectories.Lock()
 	d, ok := l.directories[absPath]
 	if !ok {
 		d = &Directory{
@@ -639,6 +674,10 @@ func (l *Loader) ensureDirectory(absPath string) *Directory {
 		}
 		d.c = sync.NewCond(&d.m)
 		l.directories[absPath] = d
+	}
+	l.mDirectories.Unlock()
+
+	if !ok {
 		l.stateChange <- absPath
 	}
 
