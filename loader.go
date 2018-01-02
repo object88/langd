@@ -69,6 +69,7 @@ type Directory struct {
 	c         *sync.Cond
 }
 
+// PackageKey contains the canonical absolute path and package name
 type PackageKey struct {
 	absPath string
 	name    string
@@ -83,6 +84,7 @@ type Package struct {
 	typesPkg    *types.Package
 }
 
+// CreatePackage creates a new Package with the given canonical path and name
 func CreatePackage(absPath, name string) *Package {
 	return &Package{
 		PackageKey: PackageKey{
@@ -95,6 +97,7 @@ func CreatePackage(absPath, name string) *Package {
 	}
 }
 
+// Key returns the collections.Key for the given Package
 func (p *Package) Key() collections.Key {
 	return p.key
 }
@@ -208,35 +211,37 @@ func (l *Loader) LoadDirectory(absPath string) {
 func (l *Loader) processStateChange(absPath string) {
 	l.mDirectories.Lock()
 	d, _ := l.directories[absPath]
+	loadState := d.loadState
 	l.mDirectories.Unlock()
 
 	fmt.Printf("PSC: %s: current state %q...\n", l.shortName(absPath), d.loadState)
 
-	switch d.loadState {
+	switch loadState {
 	case queued:
 		l.processDirectory(d)
-		d.loadState = unloaded
-		l.stateChange <- absPath
+		d.loadState++
 		d.c.Broadcast()
+		l.stateChange <- absPath
 	case unloaded:
 		l.processGoFiles(d)
 		l.processCgoFiles(d)
 		l.processPackages(d)
-		l.processImports(d, d.pm)
-	case loadedGo:
-		// l.processTestGoFiles(d)
-		// l.processPackages(d)
-		// l.processImports(d, d.pm)
-
-		// Short circuiting directly to next state.
 		d.loadState++
-		l.stateChange <- absPath
+		fmt.Printf("PSC: %s: broadcasting done!!\n", l.shortName(d.absPath))
 		d.c.Broadcast()
+		l.stateChange <- d.absPath
+	case loadedGo:
+		l.processTestGoFiles(d)
+		l.processPackages(d)
+		d.loadState++
+		fmt.Printf("PSC: %s: broadcasting done on test!!\n", l.shortName(d.absPath))
+		d.c.Broadcast()
+		l.stateChange <- d.absPath
 	case loadedTest:
 		// Short circuiting directly to next state.
-		d.loadState = done
-		l.stateChange <- absPath
+		d.loadState++
 		d.c.Broadcast()
+		l.stateChange <- absPath
 	case done:
 		fmt.Printf("PSC: %s: done\n", l.shortName(absPath))
 
@@ -259,7 +264,7 @@ func (l *Loader) processStateChange(absPath string) {
 
 		fmt.Printf("DONE DONE\n")
 
-		complete = complete && !l.done
+		complete = !l.done
 		l.done = true
 
 		if complete {
@@ -446,6 +451,7 @@ func (l *Loader) processTestGoFiles(d *Directory) {
 		return
 	}
 
+	fmt.Printf("TFG: %s: processing %d test Go files\n", l.shortName(d.absPath), len(fnames))
 	for _, fname := range fnames {
 		fpath := filepath.Join(d.absPath, fname)
 		astf, err := parser.ParseFile(l.fset, fpath, nil, parser.AllErrors)
@@ -456,6 +462,7 @@ func (l *Loader) processTestGoFiles(d *Directory) {
 
 		l.processAstFile(fname, astf, d.pm)
 	}
+	fmt.Printf("TFG: %s: processing complete\n", l.shortName(d.absPath))
 }
 
 func (l *Loader) processAstFile(fname string, astf *ast.File, pm packageMap) {
@@ -511,37 +518,22 @@ func (l *Loader) processUnsafe(d *Directory) bool {
 	return true
 }
 
-func (l *Loader) findImportPath(path, src string) (string, error) {
-	buildPkg, err := l.context.Import(path, src, build.FindOnly)
-	if err != nil {
-		msg := fmt.Sprintf("Oh dear:\n\tAttemped build.Import('%s', '%s', build.FindOnly)\n\t%s\n", path, src, err.Error())
-		fmt.Printf("ERROR: %s", msg)
-		return "", errors.New(msg)
-	}
-	return buildPkg.Dir, nil
-}
-
 func (l *Loader) processPackages(d *Directory) {
+	fmt.Printf(" PP: %s: %d: started\n", l.shortName(d.absPath), d.loadState)
+	importMaps := map[*PackageKey]map[*PackageKey]bool{}
+
 	for pkgName, pmi := range d.pm {
 		thisPkgName := filepath.Base(pkgName)
 		p, ok := d.packages[thisPkgName]
 		if !ok {
-			fmt.Printf(" PP: %s: creating package w/ %s:%s\n", l.shortName(d.absPath), d.absPath, thisPkgName)
+			fmt.Printf(" PP: %s: %d: creating package w/ %s:%s\n", l.shortName(d.absPath), d.loadState, d.absPath, thisPkgName)
 			p = CreatePackage(d.absPath, thisPkgName)
 			l.caravan.Insert(p)
 			d.packages[thisPkgName] = p
 		}
-		// files := pmi.files
 		pmi.p = p
-	}
-}
 
-func (l *Loader) processImports(d *Directory, pm packageMap) {
-	fmt.Printf(" PI: %s: started\n", l.shortName(d.absPath))
-	importMaps := map[*PackageKey]map[*PackageKey]bool{}
-
-	for _, pmi := range pm {
-		fmt.Printf(" PI: %s: package %s\n", l.shortName(d.absPath), pmi.p.name)
+		fmt.Printf(" PP: %s: %d: package %s\n", l.shortName(d.absPath), d.loadState, pmi.p.name)
 		pmi.m.Lock()
 		sourceKey := &PackageKey{
 			absPath: pmi.p.absPath,
@@ -554,7 +546,7 @@ func (l *Loader) processImports(d *Directory, pm packageMap) {
 				continue
 			}
 
-			fmt.Printf(" PI: %s: -> %s\n", l.shortName(d.absPath), l.shortName(importPath))
+			fmt.Printf(" PP: %s: %d: -> %s\n", l.shortName(d.absPath), d.loadState, l.shortName(importPath))
 			pmi.p.importPaths[importPath] = false
 			destinationKey := &PackageKey{
 				absPath: importPath,
@@ -574,50 +566,47 @@ func (l *Loader) processImports(d *Directory, pm packageMap) {
 		pmi.m.Unlock()
 	}
 
-	go func() {
-		for sourceKey, destinationKeys := range importMaps {
+	for sourceKey, destinationKeys := range importMaps {
+		l.mDirectories.Lock()
+		sourcePackage := l.directories[sourceKey.absPath].packages[sourceKey.name]
+		l.mDirectories.Unlock()
+
+		for destinationKey := range destinationKeys {
 			l.mDirectories.Lock()
-			sourcePackage := l.directories[sourceKey.absPath].packages[sourceKey.name]
+			targetD, _ := l.directories[destinationKey.absPath]
 			l.mDirectories.Unlock()
 
-			for destinationKey := range destinationKeys {
-				l.mDirectories.Lock()
-				targetD, _ := l.directories[destinationKey.absPath]
-				l.mDirectories.Unlock()
+			targetD.m.Lock()
 
-				targetD.m.Lock()
-
-				for !l.checkImportReady(d, targetD) {
-					fmt.Printf(" PI: %s: *** still waiting on %s ***\n", l.shortName(d.absPath), l.shortName(targetD.absPath))
-					targetD.c.Wait()
-				}
-
-				targetD.m.Unlock()
-
-				targetPackage, ok := targetD.packages[destinationKey.name]
-				if !ok {
-					panic(fmt.Sprintf(" PI: %s: target package %s:%s is !ok\n", l.shortName(d.absPath), destinationKey.absPath, destinationKey.name))
-				}
-
-				fmt.Printf(" PI: %s: connecting to %s:%s\n", l.shortName(d.absPath), destinationKey.absPath, destinationKey.name)
-				if err := l.caravan.Connect(sourcePackage, targetPackage); err != nil {
-					panic(fmt.Sprintf(" PI: %s: connect failed:\n\tfrom: %s\n\tto: %s\n\terr: %s\n\n", l.shortName(d.absPath), sourcePackage.key, targetPackage.key, err.Error()))
-				}
-
-				// All dependencies are loaded; can proceed.
-				fmt.Printf(" PI: %s: dep %s OK\n", l.shortName(d.absPath), l.shortName(targetD.absPath))
+			for !l.checkImportReady(d, targetD) {
+				fmt.Printf(" PP: %s: %d: *** still waiting on %s ***\n", l.shortName(d.absPath), d.loadState, l.shortName(targetD.absPath))
+				targetD.c.Wait()
 			}
 
+			targetD.m.Unlock()
+
+			targetPackage, ok := targetD.packages[destinationKey.name]
+			if !ok {
+				panic(fmt.Sprintf(" PP: %s: %d: target package %s:%s is !ok\n", l.shortName(d.absPath), d.loadState, destinationKey.absPath, destinationKey.name))
+			}
+
+			fmt.Printf(" PP: %s: %d: connecting to %s:%s\n", l.shortName(d.absPath), d.loadState, destinationKey.absPath, destinationKey.name)
+			if err := l.caravan.Connect(sourcePackage, targetPackage); err != nil {
+				panic(fmt.Sprintf(" PP: %s: %d: connect failed:\n\tfrom: %s\n\tto: %s\n\terr: %s\n\n", l.shortName(d.absPath), d.loadState, sourcePackage.key, targetPackage.key, err.Error()))
+			}
+
+			// All dependencies are loaded; can proceed.
+			fmt.Printf(" PP: %s: %d: dep %s OK\n", l.shortName(d.absPath), d.loadState, l.shortName(targetD.absPath))
 		}
-		fmt.Printf(" PI: %s: all imports fulfilled.\n", l.shortName(d.absPath))
-		d.loadState++
-		l.stateChange <- d.absPath
-		fmt.Printf(" PI: %s: broadcasting done!!\n", l.shortName(d.absPath))
-		d.c.Broadcast()
-	}()
+	}
+	fmt.Printf(" PP: %s: %d: all imports fulfilled.\n", l.shortName(d.absPath), d.loadState)
 }
 
 // ensureDirectory assumes that the caller has the mDirectories mutex
+func (l *Loader) checkImportReady(sourceD *Directory, targetD *Directory) bool {
+	return targetD.loadState == done || sourceD.loadState < targetD.loadState
+}
+
 func (l *Loader) ensureDirectory(absPath string) *Directory {
 	d, ok := l.directories[absPath]
 	if !ok {
@@ -634,8 +623,14 @@ func (l *Loader) ensureDirectory(absPath string) *Directory {
 	return d
 }
 
-func (l *Loader) checkImportReady(sourceD *Directory, targetD *Directory) bool {
-	return targetD.loadState == done || sourceD.loadState < targetD.loadState
+func (l *Loader) findImportPath(path, src string) (string, error) {
+	buildPkg, err := l.context.Import(path, src, build.FindOnly)
+	if err != nil {
+		msg := fmt.Sprintf("Oh dear:\n\tAttemped build.Import('%s', '%s', build.FindOnly)\n\t%s\n", path, src, err.Error())
+		fmt.Printf("ERROR: %s", msg)
+		return "", errors.New(msg)
+	}
+	return buildPkg.Dir, nil
 }
 
 func (l *Loader) shortName(path string) string {
