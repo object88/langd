@@ -225,14 +225,14 @@ func (l *Loader) processStateChange(absPath string) {
 	case unloaded:
 		l.processGoFiles(d)
 		l.processCgoFiles(d)
-		l.processPackages(d)
+		l.processPackages(d, false)
 		d.loadState++
 		fmt.Printf("PSC: %s: broadcasting done!!\n", l.shortName(d.absPath))
 		d.c.Broadcast()
 		l.stateChange <- d.absPath
 	case loadedGo:
 		l.processTestGoFiles(d)
-		l.processPackages(d)
+		l.processPackages(d, true)
 		d.loadState++
 		fmt.Printf("PSC: %s: broadcasting done on test!!\n", l.shortName(d.absPath))
 		d.c.Broadcast()
@@ -518,7 +518,7 @@ func (l *Loader) processUnsafe(d *Directory) bool {
 	return true
 }
 
-func (l *Loader) processPackages(d *Directory) {
+func (l *Loader) processPackages(d *Directory, testing bool) {
 	fmt.Printf(" PP: %s: %d: started\n", l.shortName(d.absPath), d.loadState)
 	importMaps := map[*PackageKey]map[*PackageKey]bool{}
 
@@ -590,9 +590,16 @@ func (l *Loader) processPackages(d *Directory) {
 				panic(fmt.Sprintf(" PP: %s: %d: target package %s:%s is !ok\n", l.shortName(d.absPath), d.loadState, destinationKey.absPath, destinationKey.name))
 			}
 
-			fmt.Printf(" PP: %s: %d: connecting to %s:%s\n", l.shortName(d.absPath), d.loadState, destinationKey.absPath, destinationKey.name)
-			if err := l.caravan.Connect(sourcePackage, targetPackage); err != nil {
-				panic(fmt.Sprintf(" PP: %s: %d: connect failed:\n\tfrom: %s\n\tto: %s\n\terr: %s\n\n", l.shortName(d.absPath), d.loadState, sourcePackage.key, targetPackage.key, err.Error()))
+			if testing {
+				fmt.Printf(" PP: %s: %d: weak connecting to %s:%s\n", l.shortName(d.absPath), d.loadState, destinationKey.absPath, destinationKey.name)
+				if err := l.caravan.WeakConnect(sourcePackage, targetPackage); err != nil {
+					panic(fmt.Sprintf(" PP: %s: %d: weak connect failed:\n\tfrom: %s\n\tto: %s\n\terr: %s\n\n", l.shortName(d.absPath), d.loadState, sourcePackage.key, targetPackage.key, err.Error()))
+				}
+			} else {
+				fmt.Printf(" PP: %s: %d: connecting to %s:%s\n", l.shortName(d.absPath), d.loadState, destinationKey.absPath, destinationKey.name)
+				if err := l.caravan.Connect(sourcePackage, targetPackage); err != nil {
+					panic(fmt.Sprintf(" PP: %s: %d: connect failed:\n\tfrom: %s\n\tto: %s\n\terr: %s\n\n", l.shortName(d.absPath), d.loadState, sourcePackage.key, targetPackage.key, err.Error()))
+				}
 			}
 
 			// All dependencies are loaded; can proceed.
@@ -604,7 +611,22 @@ func (l *Loader) processPackages(d *Directory) {
 
 // ensureDirectory assumes that the caller has the mDirectories mutex
 func (l *Loader) checkImportReady(sourceD *Directory, targetD *Directory) bool {
-	return targetD.loadState == done || sourceD.loadState < targetD.loadState
+	// return targetD.loadState == done || sourceD.loadState < targetD.loadState
+
+	switch sourceD.loadState {
+	case queued:
+		// Does not make sense that the source loadState would be here.
+	case unloaded:
+		return targetD.loadState > unloaded
+	case loadedGo:
+		return targetD.loadState > unloaded
+	case loadedTest:
+		// Should pass through here.
+	default:
+		// Should never get here.
+	}
+
+	return false
 }
 
 func (l *Loader) ensureDirectory(absPath string) *Directory {
