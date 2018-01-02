@@ -5,6 +5,8 @@ import (
 	"encoding/json"
 	"fmt"
 	"strings"
+
+	"github.com/object88/langd"
 )
 
 const (
@@ -86,5 +88,27 @@ func (h *Handler) readRoot(root string) {
 	h.startProcessingQueue()
 
 	// Send off some errors.
-
+	h.workspace.Loader.Errors(func(file string, errs []langd.FileError) {
+		params := &PublishDiagnosticsParams{
+			URI:         DocumentURI("file://" + file),
+			Diagnostics: make([]Diagnostic, len(errs)),
+		}
+		for k, e := range errs {
+			s := ErrorDiagnosticSeverity
+			if e.Warning {
+				s = WarningDiagnosticSeverity
+			}
+			params.Diagnostics[k] = Diagnostic{
+				Range: Range{
+					Start: Position{
+						Line:      e.Line,
+						Character: e.Column,
+					},
+				},
+				Severity: &s,
+				Message:  e.Message,
+			}
+		}
+		publishDiagnostics(context.Background(), h.conn, params)
+	})
 }

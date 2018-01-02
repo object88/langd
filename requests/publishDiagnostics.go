@@ -11,5 +11,5 @@ const (
 )
 
 func publishDiagnostics(ctx context.Context, conn *jsonrpc2.Conn, params *PublishDiagnosticsParams) {
-	conn.Notify(ctx, logMessageNotification, params)
+	conn.Notify(ctx, publishDiagnosticsNotification, params)
 }

@@ -56,11 +56,23 @@ type Loader struct {
 	unsafePath string
 }
 
+type FileError struct {
+	token.Position
+	Message string
+	Warning bool
+}
+
+type File struct {
+	file *ast.File
+	errs []FileError
+}
+
 // Directory is the collection of packages in a directory
 type Directory struct {
 	buildPkg *build.Package
 
 	absPath string
+	files   map[string]*File
 
 	pm       packageMap
 	packages map[string]*Package
@@ -138,14 +150,26 @@ func NewLoader() *Loader {
 		unsafePath:  filepath.Join(runtime.GOROOT(), "src", "unsafe"),
 	}
 
-	fmt.Printf("unsafe path: %s\n", l.unsafePath)
-
 	i := &Importer{
 		l: l,
 	}
 	c := &types.Config{
 		Error: func(e error) {
 			if terror, ok := e.(types.Error); ok {
+				position := terror.Fset.Position(terror.Pos)
+				absPath := filepath.Dir(position.Filename)
+				l.mDirectories.Lock()
+				d := l.directories[absPath]
+				l.mDirectories.Unlock()
+
+				f := d.files[filepath.Base(position.Filename)]
+				ferr := FileError{
+					Position: position,
+					Message:  terror.Msg,
+					Warning:  terror.Soft,
+				}
+				f.errs = append(f.errs, ferr)
+
 				fmt.Printf("ERROR: (types error) %s\n", terror.Error())
 			} else {
 				fmt.Printf("ERROR: (unknown) %#v\n", e)
@@ -189,6 +213,18 @@ func (l *Loader) Start() chan bool {
 // Close stops the loader processing
 func (l *Loader) Close() {
 	l.closer <- true
+}
+
+func (l *Loader) Errors(handleErrs func(file string, errs []FileError)) {
+	l.mDirectories.Lock()
+	for _, d := range l.directories {
+		for fname, f := range d.files {
+			if len(f.errs) != 0 {
+				handleErrs(filepath.Join(d.absPath, fname), f.errs)
+			}
+		}
+	}
+	l.mDirectories.Unlock()
 }
 
 // LoadDirectory adds the contents of a directory to the Loader
@@ -279,12 +315,18 @@ func (l *Loader) processStateChange(absPath string) {
 }
 
 func (l *Loader) processComplete(d *Directory) {
+	if d.absPath == l.unsafePath {
+		fmt.Printf("Checking unsafe (skipping)\n")
+		return
+	}
+
+	// Clear previous errors; all will be rechecked.
+	for _, f := range d.files {
+		f.errs = []FileError{}
+	}
+
 	// Loop over packages
 	for _, p := range d.packages {
-		if p.name == "unsafe" {
-			fmt.Printf("Checking unsafe (skipping)\n")
-			return
-		}
 		fmt.Printf("Checking %s\n", p.name)
 		fmap := l.directories[p.absPath].pm[p.name].files
 		files := make([]*ast.File, len(fmap))
@@ -349,7 +391,7 @@ func (l *Loader) processGoFiles(d *Directory) {
 			return
 		}
 
-		l.processAstFile(fname, astf, d.pm)
+		l.processAstFile(d, fname, astf, d.pm)
 	}
 }
 
@@ -432,7 +474,7 @@ func (l *Loader) processCgoFiles(d *Directory) {
 			return
 		}
 
-		l.processAstFile(fnames[i], astf, d.pm)
+		l.processAstFile(d, fnames[i], astf, d.pm)
 	}
 }
 
@@ -459,12 +501,12 @@ func (l *Loader) processTestGoFiles(d *Directory) {
 			return
 		}
 
-		l.processAstFile(fname, astf, d.pm)
+		l.processAstFile(d, fname, astf, d.pm)
 	}
 	fmt.Printf("TFG: %s: processing complete\n", l.shortName(d.absPath))
 }
 
-func (l *Loader) processAstFile(fname string, astf *ast.File, pm packageMap) {
+func (l *Loader) processAstFile(d *Directory, fname string, astf *ast.File, pm packageMap) {
 	pkgName := filepath.Base(astf.Name.Name)
 
 	pmi, ok := pm[pkgName]
@@ -494,6 +536,11 @@ func (l *Loader) processAstFile(fname string, astf *ast.File, pm packageMap) {
 			}
 			pmi.imports[path] = true
 		}
+	}
+
+	d.files[fname] = &File{
+		errs: []FileError{},
+		file: astf,
 	}
 
 	pmi.files[fname] = astf
@@ -631,6 +678,7 @@ func (l *Loader) ensureDirectory(absPath string) *Directory {
 	if !ok {
 		d = &Directory{
 			absPath:   absPath,
+			files:     map[string]*File{},
 			loadState: queued,
 			packages:  map[string]*Package{},
 		}
