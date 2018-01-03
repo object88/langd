@@ -101,7 +101,11 @@ func (h *Handler) readRoot(root string) {
 			params.Diagnostics[k] = Diagnostic{
 				Range: Range{
 					Start: Position{
-						Line:      e.Line,
+						Line:      e.Line - 1,
+						Character: e.Column,
+					},
+					End: Position{
+						Line:      e.Line - 1,
 						Character: e.Column,
 					},
 				},

@@ -251,7 +251,7 @@ func (l *Loader) processStateChange(absPath string) {
 	loadState := d.loadState
 	l.mDirectories.Unlock()
 
-	fmt.Printf("PSC: %s: current state %q...\n", l.shortName(absPath), d.loadState)
+	fmt.Printf("PSC: %s: current state: %d\n", l.shortName(absPath), d.loadState)
 
 	switch loadState {
 	case queued:
@@ -265,7 +265,6 @@ func (l *Loader) processStateChange(absPath string) {
 		l.processPackages(d, false)
 		l.processComplete(d)
 		d.loadState++
-		fmt.Printf("PSC: %s: broadcasting done!!\n", l.shortName(d.absPath))
 		d.c.Broadcast()
 		l.stateChange <- d.absPath
 	case loadedGo:
@@ -273,7 +272,6 @@ func (l *Loader) processStateChange(absPath string) {
 		l.processPackages(d, true)
 		l.processComplete(d)
 		d.loadState++
-		fmt.Printf("PSC: %s: broadcasting done on test!!\n", l.shortName(d.absPath))
 		d.c.Broadcast()
 		l.stateChange <- d.absPath
 	case loadedTest:
@@ -282,8 +280,6 @@ func (l *Loader) processStateChange(absPath string) {
 		d.c.Broadcast()
 		l.stateChange <- absPath
 	case done:
-		fmt.Printf("PSC: %s: done\n", l.shortName(absPath))
-
 		complete := true
 		l.mDirectories.Lock()
 
@@ -308,7 +304,6 @@ func (l *Loader) processStateChange(absPath string) {
 
 		if complete {
 			fmt.Printf("DONE DONE DONE DONE DONE\n")
-			// l.processComplete()
 			l.ready <- true
 		}
 	}
@@ -316,7 +311,7 @@ func (l *Loader) processStateChange(absPath string) {
 
 func (l *Loader) processComplete(d *Directory) {
 	if d.absPath == l.unsafePath {
-		fmt.Printf("Checking unsafe (skipping)\n")
+		fmt.Printf(" PC: %s: Checking unsafe (skipping)\n", l.shortName(d.absPath))
 		return
 	}
 
@@ -327,7 +322,7 @@ func (l *Loader) processComplete(d *Directory) {
 
 	// Loop over packages
 	for _, p := range d.packages {
-		fmt.Printf("Checking %s\n", p.name)
+		fmt.Printf(" PC: %s: Checking %s\n", l.shortName(d.absPath), p.name)
 		fmap := l.directories[p.absPath].pm[p.name].files
 		files := make([]*ast.File, len(fmap))
 		i := 0
@@ -341,17 +336,13 @@ func (l *Loader) processComplete(d *Directory) {
 		typesPkg, err := l.conf.Check(p.absPath, l.fset, files, l.info)
 		l.mFset.Unlock()
 		if err != nil {
-			key := fmt.Sprintf("%s:%s", p.absPath, p.name)
-			fmt.Printf("Error while checking %s:\n\t%s\n\n", key, err.Error())
-			return
+			fmt.Printf("Error while checking %s:%s:\n\t%s\n\n", p.absPath, p.name, err.Error())
 		}
 		p.typesPkg = typesPkg
 	}
 }
 
 func (l *Loader) processDirectory(d *Directory) {
-	fmt.Printf(" PD: %s\n", l.shortName(d.absPath))
-
 	if l.processUnsafe(d) {
 		return
 	}
