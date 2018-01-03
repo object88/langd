@@ -370,6 +370,8 @@ type WorkspaceClientCapabilities struct {
 
 // Common?
 
+// Diagnostic represents a diagnostic, such as a compiler error or warning.
+// Diagnostic objects are only valid in the scope of a resource.
 type Diagnostic struct {
 	// Range is the range at which the message applies.
 	Range Range `json:"range"`
@@ -389,9 +391,7 @@ type Diagnostic struct {
 	Message string `json:"message"`
 }
 
-type DiagnosticCode struct {
-}
-
+// DiagnosticSeverity represents the severity of a diagnostic
 type DiagnosticSeverity int
 
 const (
@@ -496,6 +496,8 @@ type Position struct {
 	Character int `json:"character"`
 }
 
+// PublishDiagnosticsParams is the notification payload on a server-to-client
+// PublishDiagnostics request.
 type PublishDiagnosticsParams struct {
 	// URI is the uri for which diagnostic information is reported.
 	URI DocumentURI `json:"uri"`

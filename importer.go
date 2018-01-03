@@ -18,20 +18,7 @@ func (i *Importer) Import(path string) (*types.Package, error) {
 	if err != nil {
 		return nil, err
 	}
-	// d, ok := i.l.directories[path]
-	// if !ok {
-	// 	fmt.Printf("Not found!\n")
-	// 	i.l.processDirectory(&importDirective{
-	// 		absPath: path,
-	// 	}, -1)
-	// 	d, ok = i.l.directories[path]
-	// 	if !ok {
-	// 		fmt.Printf("Failed to import '%s'\n", path)
-	// 		return nil, fmt.Errorf("Failed to import %s", path)
-	// 	}
-	// }
 	pkgName := filepath.Base(path)
-	// p, ok := d.packages[pkgName]
 	p, ok := ps[pkgName]
 	if !ok {
 		return nil, fmt.Errorf("Directory parsed, but does not contain package %s", pkgName)
@@ -74,21 +61,14 @@ func (i *Importer) ImportFrom(path, srcDir string, mode types.ImportMode) (*type
 		return nil, fmt.Errorf("Got nil in packages map")
 	}
 	return p.typesPkg, nil
-	// return i.Import(absPath)
 }
 
 func (i *Importer) locatePackages(path string) (map[string]*Package, error) {
+	i.l.mDirectories.Lock()
 	d, ok := i.l.directories[path]
+	i.l.mDirectories.Unlock()
 	if !ok {
 		fmt.Printf("**** Not found! *****\n")
-		// i.l.processDirectory(&importDirective{
-		// 	absPath: path,
-		// }, -1)
-		// d, ok = i.l.directories[path]
-		// if !ok {
-		// 	fmt.Printf("Failed to import '%s'\n", path)
-		// 	return nil, fmt.Errorf("Failed to import %s", path)
-		// }
 		return nil, fmt.Errorf("Failed to import %s", path)
 	}
 

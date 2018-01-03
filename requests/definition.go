@@ -87,6 +87,11 @@ func (rh *definitionHandler) work() error {
 		rh.h.log.Verbosef("Have typespec; declaration at %s\n", declPosition.String())
 		rh.result = LocationFromPosition(x.Name, &declPosition)
 
+	case *ast.ValueSpec:
+		declPosition := rh.h.workspace.Fset.Position(v1.Pos())
+		rh.h.log.Verbosef("Have valuespec; declaration at %s\n", declPosition.String())
+		rh.result = LocationFromPosition(x.Name, &declPosition)
+
 	default:
 		// No-op
 	}
