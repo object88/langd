@@ -58,6 +58,7 @@ func NewHandler(imf *IniterMapFactory) *Handler {
 	// Hopefully this queue is sufficiently deep.  Otherwise, the handler
 	// will start blocking.
 	incomingQueue := make(chan int, 1024)
+	l := log.CreateLog(os.Stdout)
 	outgoingQueue := make(chan int, 256)
 	sq := sigqueue.CreateSigqueue(outgoingQueue)
 	h := &Handler{
@@ -69,13 +70,12 @@ func NewHandler(imf *IniterMapFactory) *Handler {
 
 		imap: imf.Imap,
 
-		workspace: langd.CreateWorkspace(),
+		log:       l,
+		workspace: langd.CreateWorkspace(l),
 	}
 
-	h.log = log.CreateLog(os.Stdout)
-	h.log.SetLevel(log.Verbose)
-
 	h.hFunc = h.uninitedHandler
+	h.log.SetLevel(log.Verbose)
 
 	return h
 }
@@ -177,6 +177,7 @@ func (h *Handler) startProcessing(rhid int) {
 	if err != nil {
 		// Bad news...
 		// TODO: determine what to do here.
+		h.log.Errorf(err.Error())
 		return
 	}
 

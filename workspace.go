@@ -7,6 +7,7 @@ import (
 	"go/types"
 	"sync"
 
+	"github.com/object88/langd/log"
 	"github.com/object88/rope"
 )
 
@@ -20,16 +21,19 @@ type Workspace struct {
 	rwm         sync.RWMutex
 
 	Loader *Loader
+
+	log *log.Log
 }
 
 // CreateWorkspace returns a new instance of the Workspace struct
-func CreateWorkspace() *Workspace {
+func CreateWorkspace(log *log.Log) *Workspace {
 	loader := NewLoader()
 	openedFiles := map[string]*rope.Rope{}
 
 	return &Workspace{
 		OpenedFiles: openedFiles,
 		Loader:      loader,
+		log:         log,
 	}
 }
 
@@ -73,9 +77,14 @@ func (w *Workspace) LocateIdent(p *token.Position) (*ast.Ident, error) {
 
 		if WithinPosition(p, &pStart, &pEnd) {
 			switch v := n.(type) {
+			case *ast.CallExpr:
+				fmt.Printf("Got call expr:\n\t%#v\n", v)
+				ids := v.Args
+				x = ids[0].(*ast.Ident)
 			case *ast.Ident:
 				x = v
 			default:
+				fmt.Printf("Narrowing; %#v\n", n)
 			}
 			return true
 		}
@@ -83,6 +92,43 @@ func (w *Workspace) LocateIdent(p *token.Position) (*ast.Ident, error) {
 	})
 
 	return x, nil
+}
+
+func (w *Workspace) LocateDefinition(x *ast.Ident) *token.Position {
+	if x.Obj == nil {
+		p := w.Fset.Position(x.NamePos)
+		return &p
+	}
+
+	var declPosition token.Position
+	switch v1 := x.Obj.Decl.(type) {
+	case *ast.Field:
+		declPosition = w.Fset.Position(v1.Pos())
+		w.log.Verbosef("Have field; declaration at %s\n", declPosition.String())
+
+	case *ast.TypeSpec:
+		declPosition = w.Fset.Position(v1.Pos())
+		w.log.Verbosef("Have typespec; declaration at %s\n", declPosition.String())
+
+	case *ast.ValueSpec:
+		declPosition = w.Fset.Position(v1.Pos())
+		w.log.Verbosef("Have valuespec; declaration at %s\n", declPosition.String())
+
+	default:
+		// No-op
+		w.log.Verbosef("Have identifier: %s, object %#v\n", x.String(), x.Obj.Decl)
+		return nil
+	}
+
+	return &declPosition
+}
+
+func (w *Workspace) LocateReferences(x *ast.Ident) *[]token.Position {
+	foo := w.Info.Uses[x]
+
+	fmt.Printf("Uses:\n%#v\n", foo)
+
+	return nil
 }
 
 // Lock will synchronize access to the workspace for read or write access

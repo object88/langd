@@ -53,7 +53,6 @@ func (rh *referencesHandler) preprocess(params *json.RawMessage) error {
 	var typedParams ReferenceParams
 	if err := json.Unmarshal(*params, &typedParams); err != nil {
 		return err
-		// return noopHandleFuncer
 	}
 
 	rh.h.log.Verbosef("Got parameters: %#v\n", typedParams)
@@ -77,17 +76,50 @@ func (rh *referencesHandler) work() error {
 		return err
 	}
 
-	if x.Obj == nil {
+	if x == nil {
+		fmt.Printf("No identifier located; nothing we can do.\n	")
 		return nil
 	}
 
-	if rh.options.IncludeDeclaration {
+	usePositions := rh.h.workspace.LocateReferences(x)
 
+	size := 0
+	if usePositions != nil && len(*usePositions) > 0 {
+		size = len(*usePositions)
 	}
 
-	fmt.Printf("X:\n%#v\n", x.Obj)
-	foo := rh.h.workspace.Info.Uses[x]
-	fmt.Printf("Uses:\n%#v\n", foo)
+	var declPosition *token.Position
+	if rh.options.IncludeDeclaration {
+		declPosition = rh.h.workspace.LocateDefinition(x)
+		if declPosition != nil {
+			size++
+		}
+	} else {
+		fmt.Printf("No include declaration\n")
+	}
+
+	if size == 0 {
+		fmt.Printf("No locations found\n")
+		return nil
+	}
+
+	locs := make([]Location, size)
+	offset := 0
+	if declPosition != nil {
+		locs[0] = *LocationFromPosition(x.Name, declPosition)
+		offset = 1
+	}
+	if usePositions != nil {
+		for k, v := range *usePositions {
+			locs[k+offset] = *LocationFromPosition(x.Name, &v)
+		}
+	}
+
+	// fmt.Printf("X:\n%#v\n", x.Obj)
+	// foo := rh.h.workspace.Info.Uses[x]
+	// fmt.Printf("Uses:\n%#v\n", foo)
+
+	rh.result = &locs
 
 	return nil
 }

@@ -275,7 +275,8 @@ func (l *Loader) processStateChange(absPath string) {
 		d.c.Broadcast()
 		l.stateChange <- d.absPath
 	case loadedTest:
-		// Short circuiting directly to next state.
+		// Short circuiting directly to next state.  Will add external test
+		// packages later.
 		d.loadState++
 		d.c.Broadcast()
 		l.stateChange <- absPath
@@ -636,11 +637,9 @@ func (l *Loader) processPackages(d *Directory, testing bool) {
 					panic(fmt.Sprintf(" PP: %s: %d: connect failed:\n\tfrom: %s\n\tto: %s\n\terr: %s\n\n", l.shortName(d.absPath), d.loadState, sourcePackage.key, targetPackage.key, err.Error()))
 				}
 			}
-
-			// All dependencies are loaded; can proceed.
-			fmt.Printf(" PP: %s: %d: dep %s OK\n", l.shortName(d.absPath), d.loadState, l.shortName(targetD.absPath))
 		}
 	}
+	// All dependencies are loaded; can proceed.
 	fmt.Printf(" PP: %s: %d: all imports fulfilled.\n", l.shortName(d.absPath), d.loadState)
 }
 

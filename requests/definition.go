@@ -3,7 +3,6 @@ package requests
 import (
 	"context"
 	"encoding/json"
-	"go/ast"
 	"go/token"
 	"strings"
 
@@ -75,25 +74,10 @@ func (rh *definitionHandler) work() error {
 		// This may happen because the user has an incomplete program.
 		return nil
 	}
-	rh.h.log.Verbosef("Have identifier: %s, object %#v\n", x.String(), x.Obj.Decl)
-	switch v1 := x.Obj.Decl.(type) {
-	case *ast.Field:
-		declPosition := rh.h.workspace.Fset.Position(v1.Pos())
-		rh.h.log.Verbosef("Have field; declaration at %s\n", declPosition.String())
-		rh.result = LocationFromPosition(x.Name, &declPosition)
 
-	case *ast.TypeSpec:
-		declPosition := rh.h.workspace.Fset.Position(v1.Pos())
-		rh.h.log.Verbosef("Have typespec; declaration at %s\n", declPosition.String())
-		rh.result = LocationFromPosition(x.Name, &declPosition)
-
-	case *ast.ValueSpec:
-		declPosition := rh.h.workspace.Fset.Position(v1.Pos())
-		rh.h.log.Verbosef("Have valuespec; declaration at %s\n", declPosition.String())
-		rh.result = LocationFromPosition(x.Name, &declPosition)
-
-	default:
-		// No-op
+	declPosition := rh.h.workspace.LocateDefinition(x)
+	if declPosition != nil {
+		rh.result = LocationFromPosition(x.Name, declPosition)
 	}
 
 	return nil
