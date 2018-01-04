@@ -7,14 +7,14 @@ import (
 	"testing"
 )
 
-const test_program = `package foo
+const testProgram = `package foo
 
 var foo = 13
 var bar = 31
 `
 
 func Test_Position(t *testing.T) {
-	r := strings.NewReader(test_program)
+	r := strings.NewReader(testProgram)
 
 	n, err := CalculateOffsetForPosition(r, 0, 4)
 	if err != nil {
@@ -26,7 +26,7 @@ func Test_Position(t *testing.T) {
 }
 
 func Test_Position_LastRowAndColumn(t *testing.T) {
-	r := strings.NewReader(test_program)
+	r := strings.NewReader(testProgram)
 
 	n, err := CalculateOffsetForPosition(r, 4, 0)
 	if err != nil {
@@ -38,7 +38,7 @@ func Test_Position_LastRowAndColumn(t *testing.T) {
 }
 
 func Test_Position_Overrun_Column(t *testing.T) {
-	r := strings.NewReader(test_program)
+	r := strings.NewReader(testProgram)
 
 	n, err := CalculateOffsetForPosition(r, 0, 40)
 	if err == nil {
@@ -53,7 +53,7 @@ func Test_Position_Overrun_Column(t *testing.T) {
 }
 
 func Test_Position_Overrun_Line(t *testing.T) {
-	r := strings.NewReader(test_program)
+	r := strings.NewReader(testProgram)
 
 	n, err := CalculateOffsetForPosition(r, 6, 1)
 	if err == nil {
