@@ -45,11 +45,9 @@ func (w *Workspace) AssignAST() {
 	w.Files = map[string]*ast.File{}
 	for _, v := range w.Loader.directories {
 		for k, pkg := range v.pm {
-			fmt.Println(k)
 			w.PkgNames[k] = true
 			for fname, astf := range pkg.files {
 				fpath := filepath.Join(v.absPath, fname)
-				fmt.Println("  ", fpath)
 				w.Files[fpath] = astf
 			}
 		}
@@ -80,8 +78,9 @@ func (w *Workspace) LocateIdent(p *token.Position) (*ast.Ident, error) {
 
 		if WithinPosition(p, &pStart, &pEnd) {
 			switch v := n.(type) {
+			case *ast.AssignStmt:
+				x = v.Lhs[0].(*ast.Ident)
 			case *ast.CallExpr:
-				fmt.Printf("Got call expr:\n\t%#v\n", v)
 				ids := v.Args
 				x = ids[0].(*ast.Ident)
 			case *ast.Ident:
@@ -105,6 +104,10 @@ func (w *Workspace) LocateDefinition(x *ast.Ident) *token.Position {
 
 	var declPosition token.Position
 	switch v1 := x.Obj.Decl.(type) {
+	case *ast.AssignStmt:
+		declPosition = w.Fset.Position(v1.Pos())
+		w.log.Verbosef("Have assign; declaration at %s\n", declPosition.String())
+
 	case *ast.Field:
 		declPosition = w.Fset.Position(v1.Pos())
 		w.log.Verbosef("Have field; declaration at %s\n", declPosition.String())

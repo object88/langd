@@ -11,8 +11,7 @@ import (
 	"golang.org/x/tools/go/buildutil"
 )
 
-func Test_LocateIdent(t *testing.T) {
-	const testProgram = `package foo
+const identTestProgram = `package foo
 
 func add1(add1Param1 int) int {
 	add1result := add1Param1
@@ -28,35 +27,14 @@ func addWhilePos(addWhilePosParam1, addWhilePosParam2 int) int {
 }
 `
 
-	packages := map[string]map[string]string{
-		"foo": map[string]string{
-			"foo.go": testProgram,
-		},
-	}
-
-	fc := buildutil.FakeContext(packages)
-	loader := NewLoader(func(l *Loader) {
-		l.context = fc
-	})
-	w := CreateWorkspace(loader, log.CreateLog(os.Stdout))
-
-	done := loader.Start()
-	loader.LoadDirectory("/go/src/foo")
-	<-done
-
-	w.AssignAST()
-
-	errCount := 0
-	w.Loader.Errors(func(file string, errs []FileError) {
-		errCount++
-	})
-
-	if errCount != 0 {
-		t.Fatalf("Found %d errors", errCount)
+func Test_LocateIdent(t *testing.T) {
+	w, err := setup()
+	if err != nil {
+		t.Fatalf(err.Error())
 	}
 
 	identName := "add1result"
-	offset := nthIndex(testProgram, identName, 0) + 1
+	offset := nthIndex(identTestProgram, identName, 0) + 1
 
 	// Find an ident a couple of characters into the word
 	p := w.Fset.Position(token.Pos(offset + 2))
@@ -75,6 +53,65 @@ func addWhilePos(addWhilePosParam1, addWhilePosParam2 int) int {
 	if ident.Name != identName {
 		t.Errorf("Ident has wrong name; got '%s'; expected '%s'", ident.Name, identName)
 	}
+}
+
+func Test_LocateDefinition(t *testing.T) {
+	w, err := setup()
+	if err != nil {
+		t.Fatalf(err.Error())
+	}
+
+	identName := "add1result"
+	offset := nthIndex(identTestProgram, identName, 0)
+
+	// Find an ident a couple of characters into the word
+	// Must add 1, then nudging in 2 characters.
+	p := w.Fset.Position(token.Pos(offset + 3))
+	fmt.Printf("p: %#v\n", p)
+	ident, _ := w.LocateIdent(&p)
+	if ident == nil {
+		t.Fatalf("Did not get ident back")
+	}
+	declPosition := w.LocateDefinition(ident)
+
+	if declPosition.Offset != offset {
+		t.Errorf("Ident is at wrong position: got %d; expected %d", declPosition.Offset, offset)
+	}
+	// if declPosition.Name != identName {
+	// 	t.Errorf("Ident has wrong name; got '%s'; expected '%s'", ident.Name, identName)
+	// }
+}
+
+func setup() (*Workspace, error) {
+	packages := map[string]map[string]string{
+		"foo": map[string]string{
+			"foo.go": identTestProgram,
+		},
+	}
+
+	fc := buildutil.FakeContext(packages)
+	loader := NewLoader(func(l *Loader) {
+		l.context = fc
+	})
+	w := CreateWorkspace(loader, log.CreateLog(os.Stdout))
+	w.log.SetLevel(log.Verbose)
+
+	done := loader.Start()
+	loader.LoadDirectory("/go/src/foo")
+	<-done
+
+	w.AssignAST()
+
+	errCount := 0
+	w.Loader.Errors(func(file string, errs []FileError) {
+		errCount++
+	})
+
+	if errCount != 0 {
+		return nil, fmt.Errorf("Found %d errors", errCount)
+	}
+
+	return w, nil
 }
 
 func Test_nthIndex(t *testing.T) {
