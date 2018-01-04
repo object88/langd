@@ -128,10 +128,10 @@ type packageMapItem struct {
 
 var cgoRe = regexp.MustCompile(`[/\\:]`)
 
-// NewLoader creates a new loader
-func NewLoader() *Loader {
-	ctx := build.Default
+type LoaderOption func(loader *Loader)
 
+// NewLoader creates a new loader
+func NewLoader(options ...LoaderOption) *Loader {
 	info := &types.Info{
 		Types: map[ast.Expr]types.TypeAndValue{},
 		Defs:  map[*ast.Ident]types.Object{},
@@ -141,14 +141,34 @@ func NewLoader() *Loader {
 	l := &Loader{
 		caravan:     collections.CreateCaravan(),
 		closer:      make(chan bool),
-		context:     &ctx,
 		directories: map[string]*Directory{},
 		done:        false,
 		fset:        token.NewFileSet(),
 		info:        info,
 		stateChange: make(chan string),
-		unsafePath:  filepath.Join(runtime.GOROOT(), "src", "unsafe"),
 	}
+
+	for _, opt := range options {
+		opt(l)
+	}
+
+	if l.context == nil {
+		l.context = &build.Default
+	}
+
+	if l.context.IsDir == nil {
+		l.context.IsDir = func(path string) bool {
+			fi, err := os.Stat(path)
+			return err == nil && fi.IsDir()
+		}
+	}
+	if l.context.ReadDir == nil {
+		l.context.ReadDir = func(dir string) ([]os.FileInfo, error) {
+			return ioutil.ReadDir(dir)
+		}
+	}
+
+	l.unsafePath = filepath.Join(l.context.GOROOT, "src", "unsafe")
 
 	i := &Importer{
 		l: l,
@@ -229,20 +249,33 @@ func (l *Loader) Errors(handleErrs func(file string, errs []FileError)) {
 
 // LoadDirectory adds the contents of a directory to the Loader
 func (l *Loader) LoadDirectory(absPath string) {
-	filepath.Walk(absPath, func(dpath string, info os.FileInfo, _ error) error {
-		if !info.IsDir() {
-			return nil
+	if !l.context.IsDir(absPath) {
+		fmt.Printf("Argument '%s' is not a directory\n", absPath)
+		return
+	}
+	l.readDir(absPath)
+}
+
+func (l *Loader) readDir(absPath string) {
+	// Skipping directories that start with "." (i.e., .git)
+	if strings.HasPrefix(filepath.Base(absPath), ".") {
+		return
+	}
+
+	l.ensureDirectory(absPath)
+
+	fis, err := l.context.ReadDir(absPath)
+	if err != nil {
+		panic(fmt.Sprintf("Dang:\n\t%s", err.Error()))
+	}
+	for _, fi := range fis {
+		// Ignore individual files
+		if !fi.IsDir() {
+			continue
 		}
 
-		// Skipping directories that start with "." (i.e., .git)
-		if strings.HasPrefix(filepath.Base(info.Name()), ".") {
-			return filepath.SkipDir
-		}
-
-		l.ensureDirectory(dpath)
-
-		return nil
-	})
+		l.readDir(filepath.Join(absPath, fi.Name()))
+	}
 }
 
 func (l *Loader) processStateChange(absPath string) {
