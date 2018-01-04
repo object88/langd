@@ -5,6 +5,7 @@ import (
 	"go/ast"
 	"go/token"
 	"go/types"
+	"path/filepath"
 	"sync"
 
 	"github.com/object88/langd/log"
@@ -26,8 +27,7 @@ type Workspace struct {
 }
 
 // CreateWorkspace returns a new instance of the Workspace struct
-func CreateWorkspace(log *log.Log) *Workspace {
-	loader := NewLoader()
+func CreateWorkspace(loader *Loader, log *log.Log) *Workspace {
 	openedFiles := map[string]*rope.Rope{}
 
 	return &Workspace{
@@ -43,10 +43,13 @@ func (w *Workspace) AssignAST() {
 	w.Info = w.Loader.info
 	w.PkgNames = make(map[string]bool, len(w.Loader.directories))
 	w.Files = map[string]*ast.File{}
-	for k, v := range w.Loader.directories {
-		w.PkgNames[k] = true
-		for _, pkg := range v.pm {
-			for fpath, astf := range pkg.files {
+	for _, v := range w.Loader.directories {
+		for k, pkg := range v.pm {
+			fmt.Println(k)
+			w.PkgNames[k] = true
+			for fname, astf := range pkg.files {
+				fpath := filepath.Join(v.absPath, fname)
+				fmt.Println("  ", fpath)
 				w.Files[fpath] = astf
 			}
 		}

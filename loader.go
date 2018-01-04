@@ -8,6 +8,7 @@ import (
 	"go/parser"
 	"go/token"
 	"go/types"
+	"io"
 	"io/ioutil"
 	"os"
 	"os/exec"
@@ -160,6 +161,15 @@ func NewLoader(options ...LoaderOption) *Loader {
 		l.context.IsDir = func(path string) bool {
 			fi, err := os.Stat(path)
 			return err == nil && fi.IsDir()
+		}
+	}
+	if l.context.OpenFile == nil {
+		l.context.OpenFile = func(path string) (io.ReadCloser, error) {
+			f, err := os.Open(path)
+			if err != nil {
+				return nil, err // nil interface
+			}
+			return f, nil
 		}
 	}
 	if l.context.ReadDir == nil {
@@ -409,10 +419,16 @@ func (l *Loader) processGoFiles(d *Directory) {
 	for _, fname := range fnames {
 		fpath := filepath.Join(d.absPath, fname)
 		l.mFset.Lock()
-		astf, err := parser.ParseFile(l.fset, fpath, nil, parser.AllErrors)
+
+		r, err := l.context.OpenFile(fpath)
+		if err != nil {
+			fmt.Printf(" GF: ERROR: Failed to read file %s:\n\t%s\n", fpath, err.Error())
+		}
+
+		astf, err := parser.ParseFile(l.fset, fpath, r, parser.AllErrors)
 		l.mFset.Unlock()
 		if err != nil {
-			fmt.Printf(" GF: ERROR: While parsing %s:\n\t%s", fpath, err.Error())
+			fmt.Printf(" GF: ERROR: While parsing %s:\n\t%s\n", fpath, err.Error())
 			return
 		}
 

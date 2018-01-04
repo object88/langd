@@ -59,6 +59,7 @@ func NewHandler(imf *IniterMapFactory) *Handler {
 	// will start blocking.
 	incomingQueue := make(chan int, 1024)
 	l := log.CreateLog(os.Stdout)
+	loader := langd.NewLoader()
 	outgoingQueue := make(chan int, 256)
 	sq := sigqueue.CreateSigqueue(outgoingQueue)
 	h := &Handler{
@@ -71,7 +72,7 @@ func NewHandler(imf *IniterMapFactory) *Handler {
 		imap: imf.Imap,
 
 		log:       l,
-		workspace: langd.CreateWorkspace(l),
+		workspace: langd.CreateWorkspace(loader, l),
 	}
 
 	h.hFunc = h.uninitedHandler
