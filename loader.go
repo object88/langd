@@ -418,15 +418,16 @@ func (l *Loader) processGoFiles(d *Directory) {
 
 	for _, fname := range fnames {
 		fpath := filepath.Join(d.absPath, fname)
-		l.mFset.Lock()
 
 		r, err := l.context.OpenFile(fpath)
 		if err != nil {
 			fmt.Printf(" GF: ERROR: Failed to read file %s:\n\t%s\n", fpath, err.Error())
 		}
 
+		l.mFset.Lock()
 		astf, err := parser.ParseFile(l.fset, fpath, r, parser.AllErrors)
 		l.mFset.Unlock()
+
 		if err != nil {
 			fmt.Printf(" GF: ERROR: While parsing %s:\n\t%s\n", fpath, err.Error())
 			return
@@ -506,9 +507,11 @@ func (l *Loader) processCgoFiles(d *Directory) {
 			fmt.Printf("CGO: ERROR: failed to open file %s\n\t%s\n", files[i], err.Error())
 			continue
 		}
+
 		l.mFset.Lock()
 		astf, err := parser.ParseFile(l.fset, displayFiles[i], f, 0)
 		l.mFset.Unlock()
+
 		f.Close()
 		if err != nil {
 			fmt.Printf("CGO: ERROR: Failed to open %s\n\t%s\n", fpaths[i], err.Error())
@@ -534,9 +537,16 @@ func (l *Loader) processTestGoFiles(d *Directory) {
 	fmt.Printf("TFG: %s: processing %d test Go files\n", l.shortName(d.absPath), len(fnames))
 	for _, fname := range fnames {
 		fpath := filepath.Join(d.absPath, fname)
+
+		r, err := l.context.OpenFile(fpath)
+		if err != nil {
+			fmt.Printf("TGF: ERROR: Failed to read file %s:\n\t%s\n", fpath, err.Error())
+		}
+
 		l.mFset.Lock()
-		astf, err := parser.ParseFile(l.fset, fpath, nil, parser.AllErrors)
+		astf, err := parser.ParseFile(l.fset, fpath, r, parser.AllErrors)
 		l.mFset.Unlock()
+
 		if err != nil {
 			fmt.Printf("TGF: ERROR: While parsing %s:\n\t%s\n", fpath, err.Error())
 			return
