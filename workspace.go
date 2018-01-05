@@ -80,9 +80,20 @@ func (w *Workspace) LocateIdent(p *token.Position) (*ast.Ident, error) {
 			switch v := n.(type) {
 			case *ast.AssignStmt:
 				x = v.Lhs[0].(*ast.Ident)
-			case *ast.CallExpr:
-				ids := v.Args
-				x = ids[0].(*ast.Ident)
+			// case *ast.CallExpr:
+			// 	fmt.Printf("SOMETHING SOMETHING\n\n%#v\n\n", v)
+			// 	fIndent := v.Fun.(*ast.Ident)
+			// 	fStart := w.Fset.Position(fIndent.Pos())
+			// 	fEnd := w.Fset.Position(fIndent.End())
+			// 	if WithinPosition(p, &fStart, &fEnd) {
+			// 		fmt.Printf("It is the func!\n")
+			// 	} else {
+			// 		fmt.Printf("Func args?\n")
+			// 		ids := v.Args
+			// 		x = ids[0].(*ast.Ident)
+			// 	}
+			case *ast.FuncDecl:
+				x = v.Name
 			case *ast.Ident:
 				x = v
 			default:
@@ -111,6 +122,10 @@ func (w *Workspace) LocateDefinition(x *ast.Ident) *token.Position {
 	case *ast.Field:
 		declPosition = w.Fset.Position(v1.Pos())
 		w.log.Verbosef("Have field; declaration at %s\n", declPosition.String())
+
+	case *ast.FuncDecl:
+		declPosition = w.Fset.Position(v1.Name.Pos())
+		w.log.Verbosef("Have func; declaration at %s\n", declPosition.String())
 
 	case *ast.TypeSpec:
 		declPosition = w.Fset.Position(v1.Pos())

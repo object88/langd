@@ -13,10 +13,27 @@ import (
 
 const identTestProgram = `package foo
 
+var calls = map[string]int{}
+var totalCalls = 0
+
 func add1(add1Param1 int) int {
+	countCall("add1")
+
 	add1result := add1Param1
 	add1result++
 	return add1result
+}
+
+func countCall(source string) {
+	totalCalls++
+
+	call, ok := calls[source]
+	if !ok {
+		call = 1
+	} else {
+		call++
+	}
+	calls[source] = call
 }
 
 func addWhilePos(addWhilePosParam1, addWhilePosParam2 int) int {
@@ -28,10 +45,7 @@ func addWhilePos(addWhilePosParam1, addWhilePosParam2 int) int {
 `
 
 func Test_LocateIdent(t *testing.T) {
-	w, err := setup()
-	if err != nil {
-		t.Fatalf(err.Error())
-	}
+	w := setup(t)
 
 	identName := "add1result"
 	offset := nthIndex(identTestProgram, identName, 0)
@@ -57,10 +71,7 @@ func Test_LocateIdent(t *testing.T) {
 }
 
 func Test_LocateDefinition(t *testing.T) {
-	w, err := setup()
-	if err != nil {
-		t.Fatalf(err.Error())
-	}
+	w := setup(t)
 
 	identName := "add1result"
 	offset := nthIndex(identTestProgram, identName, 0)
@@ -83,11 +94,43 @@ func Test_LocateDefinition(t *testing.T) {
 	// }
 }
 
-func Test_LocateReferences(t *testing.T) {
-	w, err := setup()
-	if err != nil {
-		t.Fatalf(err.Error())
+func Test_LocateDefinition_AtFuncParameter(t *testing.T) {
+	w := setup(t)
+
+	identName := "add1Param1"
+	definitionOffset := nthIndex(identTestProgram, identName, 0)
+	usageOffset := nthIndex(identTestProgram, identName, 1)
+
+	p := w.Fset.Position(token.Pos(usageOffset + 1))
+	ident, _ := w.LocateIdent(&p)
+	declPosition := w.LocateDefinition(ident)
+
+	if declPosition.Offset != definitionOffset {
+		t.Errorf("Definition Ident is at wrong position: got %d; expected %d", declPosition.Offset, definitionOffset)
 	}
+}
+
+func Test_LocateDefinition_OfFunc(t *testing.T) {
+	w := setup(t)
+
+	identName := "countCall"
+	definitionOffset := nthIndex(identTestProgram, identName, 1)
+	usageOffset := nthIndex(identTestProgram, identName, 0)
+
+	p := w.Fset.Position(token.Pos(usageOffset + 1))
+	ident, _ := w.LocateIdent(&p)
+	declPosition := w.LocateDefinition(ident)
+
+	if declPosition == nil {
+		t.Fatalf("Did not get back declaration position")
+	}
+	if declPosition.Offset != definitionOffset {
+		t.Errorf("Definition Ident is at wrong position: got %d; expected %d", declPosition.Offset, definitionOffset)
+	}
+}
+
+func Test_LocateReferences(t *testing.T) {
+	w := setup(t)
 
 	identName := "add1result"
 	offset := nthIndex(identTestProgram, identName, 0)
@@ -111,7 +154,6 @@ func Test_LocateReferences(t *testing.T) {
 		nthIndex(identTestProgram, identName, 2),
 	}
 
-	fmt.Printf("Positions:\n")
 	for _, v := range *refPositions {
 		found := false
 		for _, v2 := range expectedOffsets {
@@ -126,7 +168,7 @@ func Test_LocateReferences(t *testing.T) {
 	}
 }
 
-func setup() (*Workspace, error) {
+func setup(t *testing.T) *Workspace {
 	packages := map[string]map[string]string{
 		"foo": map[string]string{
 			"foo.go": identTestProgram,
@@ -148,14 +190,20 @@ func setup() (*Workspace, error) {
 
 	errCount := 0
 	w.Loader.Errors(func(file string, errs []FileError) {
+		if errCount == 0 {
+			t.Errorf("Loading error in %s:\n", file)
+		}
+		for k, err := range errs {
+			t.Errorf("\t%d: %s\n", k, err.Message)
+		}
 		errCount++
 	})
 
 	if errCount != 0 {
-		return nil, fmt.Errorf("Found %d errors", errCount)
+		t.Fatalf("Found %d errors", errCount)
 	}
 
-	return w, nil
+	return w
 }
 
 func Test_nthIndex(t *testing.T) {
