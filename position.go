@@ -95,6 +95,8 @@ func CalculateOffsetForPosition(read io.Reader, line, character int) (int, error
 	}
 }
 
+// WithinPosition checks to see if a target position is inclusively within two
+// other positions.
 func WithinPosition(target, start, end *token.Position) bool {
 	if target.Line < start.Line || target.Line > end.Line {
 		return false
