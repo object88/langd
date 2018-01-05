@@ -34,10 +34,11 @@ func Test_LocateIdent(t *testing.T) {
 	}
 
 	identName := "add1result"
-	offset := nthIndex(identTestProgram, identName, 0) + 1
+	offset := nthIndex(identTestProgram, identName, 0)
 
 	// Find an ident a couple of characters into the word
-	p := w.Fset.Position(token.Pos(offset + 2))
+	// Must add 1, then nudging in 2 characters.
+	p := w.Fset.Position(token.Pos(offset + 3))
 	fmt.Printf("p: %#v\n", p)
 	ident, err := w.LocateIdent(&p)
 	if err != nil {
@@ -47,8 +48,8 @@ func Test_LocateIdent(t *testing.T) {
 	if ident == nil {
 		t.Errorf("Did not get ident back")
 	}
-	if int(ident.Pos()) != offset {
-		t.Errorf("Ident is at wrong position: got %d; expected %d", ident.Pos(), offset)
+	if int(ident.Pos()) != offset+1 {
+		t.Errorf("Ident is at wrong position: got %d; expected %d", ident.Pos(), offset+1)
 	}
 	if ident.Name != identName {
 		t.Errorf("Ident has wrong name; got '%s'; expected '%s'", ident.Name, identName)
@@ -80,6 +81,49 @@ func Test_LocateDefinition(t *testing.T) {
 	// if declPosition.Name != identName {
 	// 	t.Errorf("Ident has wrong name; got '%s'; expected '%s'", ident.Name, identName)
 	// }
+}
+
+func Test_LocateReferences(t *testing.T) {
+	w, err := setup()
+	if err != nil {
+		t.Fatalf(err.Error())
+	}
+
+	identName := "add1result"
+	offset := nthIndex(identTestProgram, identName, 0)
+
+	// Find an ident a couple of characters into the word
+	// Must add 1, then nudging in 2 characters.
+	p := w.Fset.Position(token.Pos(offset + 3))
+	fmt.Printf("p: %#v\n", p)
+	ident, _ := w.LocateIdent(&p)
+	if ident == nil {
+		t.Fatalf("Did not get ident back")
+	}
+
+	refPositions := w.LocateReferences(ident)
+	if nil == refPositions {
+		t.Errorf("Did not get any references back")
+	}
+
+	expectedOffsets := []int{
+		nthIndex(identTestProgram, identName, 1),
+		nthIndex(identTestProgram, identName, 2),
+	}
+
+	fmt.Printf("Positions:\n")
+	for _, v := range *refPositions {
+		found := false
+		for _, v2 := range expectedOffsets {
+			if v.Offset == v2 {
+				found = true
+				break
+			}
+		}
+		if !found {
+			t.Errorf("Got refPosition %d is not among expected offsets", v.Offset)
+		}
+	}
 }
 
 func setup() (*Workspace, error) {

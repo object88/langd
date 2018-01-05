@@ -130,11 +130,16 @@ func (w *Workspace) LocateDefinition(x *ast.Ident) *token.Position {
 }
 
 func (w *Workspace) LocateReferences(x *ast.Ident) *[]token.Position {
-	foo := w.Info.Uses[x]
+	obj := w.Info.ObjectOf(x)
+	ps := []token.Position{}
 
-	fmt.Printf("Uses:\n%#v\n", foo)
+	for k, v := range w.Info.Uses {
+		if obj == v {
+			ps = append(ps, w.Fset.Position(k.Pos()))
+		}
+	}
 
-	return nil
+	return &ps
 }
 
 // Lock will synchronize access to the workspace for read or write access
