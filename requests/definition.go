@@ -75,7 +75,7 @@ func (rh *definitionHandler) work() error {
 		return nil
 	}
 
-	declPosition := rh.h.workspace.LocateDefinition(x)
+	declPosition := rh.h.workspace.LocateDeclaration(x)
 	if declPosition != nil {
 		rh.result = LocationFromPosition(x.Name, declPosition)
 	}

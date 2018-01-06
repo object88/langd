@@ -79,6 +79,7 @@ func (w *Workspace) LocateIdent(p *token.Position) (*ast.Ident, error) {
 		if WithinPosition(p, &pStart, &pEnd) {
 			switch v := n.(type) {
 			case *ast.Ident:
+				fmt.Printf("Found;     %#v\n", n)
 				x = v
 				return false
 			default:
@@ -92,49 +93,23 @@ func (w *Workspace) LocateIdent(p *token.Position) (*ast.Ident, error) {
 	return x, nil
 }
 
-func (w *Workspace) LocateDefinition(x *ast.Ident) *token.Position {
-	if x.Obj == nil {
-		p := w.Fset.Position(x.NamePos)
-		return &p
-	}
-
-	var declPosition token.Position
-	switch v1 := x.Obj.Decl.(type) {
-	case *ast.AssignStmt:
-		declPosition = w.Fset.Position(v1.Pos())
-		w.log.Verbosef("Have assign; declaration at %s\n", declPosition.String())
-
-	case *ast.Field:
-		declPosition = w.Fset.Position(v1.Pos())
-		w.log.Verbosef("Have field; declaration at %s\n", declPosition.String())
-
-	case *ast.FuncDecl:
-		declPosition = w.Fset.Position(v1.Name.Pos())
-		w.log.Verbosef("Have func; declaration at %s\n", declPosition.String())
-
-	case *ast.TypeSpec:
-		declPosition = w.Fset.Position(v1.Pos())
-		w.log.Verbosef("Have typespec; declaration at %s\n", declPosition.String())
-
-	case *ast.ValueSpec:
-		declPosition = w.Fset.Position(v1.Pos())
-		w.log.Verbosef("Have valuespec; declaration at %s\n", declPosition.String())
-
-	default:
-		// No-op
-		w.log.Verbosef("Have identifier: %s, object %#v\n", x.String(), x.Obj.Decl)
-		return nil
-	}
-
-	return &declPosition
+// LocateDeclaration returns the position where the provided identifier is
+// declared & defined
+func (w *Workspace) LocateDeclaration(x *ast.Ident) *token.Position {
+	xObj := w.Info.ObjectOf(x)
+	xObjPos := xObj.Pos()
+	loc := w.Fset.Position(xObjPos)
+	return &loc
 }
 
+// LocateReferences returns the array of positions where the given identifier
+// is referenced or used
 func (w *Workspace) LocateReferences(x *ast.Ident) *[]token.Position {
-	obj := w.Info.ObjectOf(x)
+	xObj := w.Info.ObjectOf(x)
 	ps := []token.Position{}
 
 	for k, v := range w.Info.Uses {
-		if obj == v {
+		if xObj == v {
 			ps = append(ps, w.Fset.Position(k.Pos()))
 		}
 	}

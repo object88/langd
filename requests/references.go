@@ -90,7 +90,7 @@ func (rh *referencesHandler) work() error {
 
 	var declPosition *token.Position
 	if rh.options.IncludeDeclaration {
-		declPosition = rh.h.workspace.LocateDefinition(x)
+		declPosition = rh.h.workspace.LocateDeclaration(x)
 		if declPosition != nil {
 			size++
 		}

@@ -45,6 +45,18 @@ func addWhilePos(addWhilePosParam1, addWhilePosParam2 int) int {
 }
 `
 
+// type addCallback func(x int, callback addCallback) int
+
+// func addUntilDone(x int, callback addCallback) int {
+// 	if x >= 100 {
+// 		return x
+// 	}
+
+// 	x++
+// 	x = callback(x, addUntilDone)
+// 	return x
+// }
+
 func Test_LocateIdent_OnIdent(t *testing.T) {
 	identName := "add1result"
 	w := setup(t)
@@ -107,7 +119,7 @@ func Test_LocateIdent_OnKeyword(t *testing.T) {
 	}
 }
 
-func Test_LocateDefinition(t *testing.T) {
+func Test_LocateDeclaration(t *testing.T) {
 	w := setup(t)
 
 	identName := "add1result"
@@ -121,7 +133,7 @@ func Test_LocateDefinition(t *testing.T) {
 	if ident == nil {
 		t.Fatalf("Did not get ident back")
 	}
-	declPosition := w.LocateDefinition(ident)
+	declPosition := w.LocateDeclaration(ident)
 
 	if declPosition.Offset != offset {
 		t.Errorf("Ident is at wrong position: got %d; expected %d", declPosition.Offset, offset)
@@ -131,7 +143,7 @@ func Test_LocateDefinition(t *testing.T) {
 	// }
 }
 
-func Test_LocateDefinition_AtFuncParameter(t *testing.T) {
+func Test_LocateDeclaration_AtFuncParameter(t *testing.T) {
 	w := setup(t)
 
 	identName := "add1Param1"
@@ -140,14 +152,14 @@ func Test_LocateDefinition_AtFuncParameter(t *testing.T) {
 
 	p := w.Fset.Position(token.Pos(usageOffset + 1))
 	ident, _ := w.LocateIdent(&p)
-	declPosition := w.LocateDefinition(ident)
+	declPosition := w.LocateDeclaration(ident)
 
 	if declPosition.Offset != definitionOffset {
 		t.Errorf("Definition Ident is at wrong position: got %d; expected %d", declPosition.Offset, definitionOffset)
 	}
 }
 
-func Test_LocateDefinition_OfFunc(t *testing.T) {
+func Test_LocateDeclaration_OfFunc(t *testing.T) {
 	w := setup(t)
 
 	identName := "countCall"
@@ -156,7 +168,7 @@ func Test_LocateDefinition_OfFunc(t *testing.T) {
 
 	p := w.Fset.Position(token.Pos(usageOffset + 1))
 	ident, _ := w.LocateIdent(&p)
-	declPosition := w.LocateDefinition(ident)
+	declPosition := w.LocateDeclaration(ident)
 
 	if declPosition == nil {
 		t.Fatalf("Did not get back declaration position")

@@ -245,6 +245,8 @@ func (l *Loader) Close() {
 	l.closer <- true
 }
 
+// Errors exposes problems with code found during compilation on a file-by-file
+// basis.
 func (l *Loader) Errors(handleErrs func(file string, errs []FileError)) {
 	l.mDirectories.Lock()
 	for _, d := range l.directories {
@@ -381,6 +383,9 @@ func (l *Loader) processComplete(d *Directory) {
 		l.mFset.Unlock()
 		if err != nil {
 			fmt.Printf("Error while checking %s:%s:\n\t%s\n\n", p.absPath, p.name, err.Error())
+		}
+		if !typesPkg.Complete() {
+			fmt.Printf("Imcomplete package %s:%s\n", p.absPath, p.name)
 		}
 		p.typesPkg = typesPkg
 	}

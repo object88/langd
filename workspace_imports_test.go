@@ -48,15 +48,30 @@ func CountCall(source string) {
 
 `
 
-func Test_LocateDefinition_FromImport_AsFunc(t *testing.T) {
+func Test_FromImports_LocateDeclaration(t *testing.T) {
+	w := setup2(t)
+
+	callCountDeclOffset := nthIndex(identImportsTestProgram2, "CountCall", 0)
+
+	callCountInvokeOffset := nthIndex(identImportsTestProgram1, "CountCall", 0)
+	callCountInvokePosition := w.Fset.Position(token.Pos(callCountInvokeOffset + 1))
+	callCountInvokeIdent, _ := w.LocateIdent(&callCountInvokePosition)
+
+	declPosition := w.LocateDeclaration(callCountInvokeIdent)
+	if !declPosition.IsValid() {
+		t.Fatalf("Got invalid declPosition")
+	}
+	if declPosition.Offset != callCountDeclOffset {
+		t.Errorf("Incorrect position:\n\tgot      %s\n\texpected %d\n", declPosition.String(), callCountDeclOffset)
+	}
+}
+
+func Test_FromImports_LocateReferences_AsFunc(t *testing.T) {
 	w := setup2(t)
 
 	callCountInvokeOffset := nthIndex(identImportsTestProgram1, "CountCall", 0)
 	callCountInvokePosition := w.Fset.Position(token.Pos(callCountInvokeOffset + 1))
-	callCountIdent, err := w.LocateIdent(&callCountInvokePosition)
-	if err != nil {
-		t.Fatalf("Failed to find CallCount invokation:\n\t%s\n", err.Error())
-	}
+	callCountIdent, _ := w.LocateIdent(&callCountInvokePosition)
 
 	refPositions := w.LocateReferences(callCountIdent)
 	if nil == refPositions {
