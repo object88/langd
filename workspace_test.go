@@ -5,6 +5,7 @@ import (
 	"go/token"
 	"os"
 	"strings"
+	"sync"
 	"testing"
 
 	"github.com/object88/langd/log"
@@ -44,29 +45,65 @@ func addWhilePos(addWhilePosParam1, addWhilePosParam2 int) int {
 }
 `
 
-func Test_LocateIdent(t *testing.T) {
+func Test_LocateIdent_OnIdent(t *testing.T) {
+	identName := "add1result"
 	w := setup(t)
 
-	identName := "add1result"
-	offset := nthIndex(identTestProgram, identName, 0)
+	tests := []struct {
+		name   string
+		offset int
+	}{
+		{
+			name:   "AtStart",
+			offset: 0,
+		},
+		{
+			name:   "Within",
+			offset: 2,
+		},
+		{
+			name:   "AtEnd",
+			offset: len(identName) - 1,
+		},
+	}
 
-	// Find an ident a couple of characters into the word
-	// Must add 1, then nudging in 2 characters.
-	p := w.Fset.Position(token.Pos(offset + 3))
-	fmt.Printf("p: %#v\n", p)
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			offset := nthIndex(identTestProgram, identName, 0)
+			pos := offset + 1
+
+			p := w.Fset.Position(token.Pos(pos + tc.offset))
+			ident, err := w.LocateIdent(&p)
+			if err != nil {
+				t.Errorf("Got error: %s", err.Error())
+			}
+			if ident == nil {
+				t.Errorf("Did not get ident back")
+			}
+			if int(ident.Pos()) != pos {
+				t.Errorf("Ident is at wrong position: got %d; expected %d", ident.Pos(), pos)
+			}
+			if ident.Name != identName {
+				t.Errorf("Ident has wrong name; got '%s'; expected '%s'", ident.Name, identName)
+			}
+		})
+	}
+}
+
+func Test_LocateIdent_OnKeyword(t *testing.T) {
+	identName := "func"
+	w := setup(t)
+
+	offset := nthIndex(identTestProgram, identName, 0)
+	pos := offset + 1
+
+	p := w.Fset.Position(token.Pos(pos))
 	ident, err := w.LocateIdent(&p)
 	if err != nil {
 		t.Errorf("Got error: %s", err.Error())
 	}
-
-	if ident == nil {
-		t.Errorf("Did not get ident back")
-	}
-	if int(ident.Pos()) != offset+1 {
-		t.Errorf("Ident is at wrong position: got %d; expected %d", ident.Pos(), offset+1)
-	}
-	if ident.Name != identName {
-		t.Errorf("Ident has wrong name; got '%s'; expected '%s'", ident.Name, identName)
+	if ident != nil {
+		t.Errorf("Got ident back at %d", ident.Pos())
 	}
 }
 
@@ -168,42 +205,49 @@ func Test_LocateReferences(t *testing.T) {
 	}
 }
 
+var _o sync.Once
+var _w *Workspace
+
 func setup(t *testing.T) *Workspace {
-	packages := map[string]map[string]string{
-		"foo": map[string]string{
-			"foo.go": identTestProgram,
-		},
-	}
-
-	fc := buildutil.FakeContext(packages)
-	loader := NewLoader(func(l *Loader) {
-		l.context = fc
-	})
-	w := CreateWorkspace(loader, log.CreateLog(os.Stdout))
-	w.log.SetLevel(log.Verbose)
-
-	done := loader.Start()
-	loader.LoadDirectory("/go/src/foo")
-	<-done
-
-	w.AssignAST()
-
-	errCount := 0
-	w.Loader.Errors(func(file string, errs []FileError) {
-		if errCount == 0 {
-			t.Errorf("Loading error in %s:\n", file)
+	_o.Do(func() {
+		packages := map[string]map[string]string{
+			"foo": map[string]string{
+				"foo.go": identTestProgram,
+			},
 		}
-		for k, err := range errs {
-			t.Errorf("\t%d: %s\n", k, err.Message)
+
+		fc := buildutil.FakeContext(packages)
+		loader := NewLoader(func(l *Loader) {
+			l.context = fc
+		})
+		w := CreateWorkspace(loader, log.CreateLog(os.Stdout))
+		w.log.SetLevel(log.Verbose)
+
+		done := loader.Start()
+		loader.LoadDirectory("/go/src/foo")
+		<-done
+
+		w.AssignAST()
+
+		errCount := 0
+		w.Loader.Errors(func(file string, errs []FileError) {
+			if errCount == 0 {
+				t.Errorf("Loading error in %s:\n", file)
+			}
+			for k, err := range errs {
+				t.Errorf("\t%d: %s\n", k, err.Message)
+			}
+			errCount++
+		})
+
+		if errCount != 0 {
+			t.Fatalf("Found %d errors", errCount)
 		}
-		errCount++
+
+		_w = w
 	})
 
-	if errCount != 0 {
-		t.Fatalf("Found %d errors", errCount)
-	}
-
-	return w
+	return _w
 }
 
 func Test_nthIndex(t *testing.T) {
