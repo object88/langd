@@ -313,9 +313,10 @@ func (l *Loader) processStateChange(absPath string) {
 		d.c.Broadcast()
 		l.stateChange <- d.absPath
 	case loadedGo:
-		l.processTestGoFiles(d)
-		l.processPackages(d, true)
-		l.processComplete(d)
+		if l.processTestGoFiles(d) {
+			l.processPackages(d, true)
+			l.processComplete(d)
+		}
 		d.loadState++
 		d.c.Broadcast()
 		l.stateChange <- d.absPath
@@ -331,7 +332,6 @@ func (l *Loader) processStateChange(absPath string) {
 
 		for _, d := range l.directories {
 			if d.loadState != done {
-				fmt.Printf("PSC: %s: Incomplete: %s has state %q\n", l.shortName(absPath), l.shortName(d.absPath), d.loadState)
 				complete = false
 				break
 			}
@@ -385,7 +385,7 @@ func (l *Loader) processComplete(d *Directory) {
 			fmt.Printf("Error while checking %s:%s:\n\t%s\n\n", p.absPath, p.name, err.Error())
 		}
 		if !typesPkg.Complete() {
-			fmt.Printf("Imcomplete package %s:%s\n", p.absPath, p.name)
+			fmt.Printf("Incomplete package %s:%s\n", p.absPath, p.name)
 		}
 		p.typesPkg = typesPkg
 	}
@@ -527,16 +527,16 @@ func (l *Loader) processCgoFiles(d *Directory) {
 	}
 }
 
-func (l *Loader) processTestGoFiles(d *Directory) {
+func (l *Loader) processTestGoFiles(d *Directory) bool {
 	if d.absPath == l.unsafePath || d.buildPkg == nil {
-		return
+		return false
 	}
 
 	fnames := d.buildPkg.TestGoFiles
 	if len(fnames) == 0 {
 		// No test files; continue on.
 		fmt.Printf("TFG: %s: no test Go files\n", l.shortName(d.absPath))
-		return
+		return false
 	}
 
 	fmt.Printf("TFG: %s: processing %d test Go files\n", l.shortName(d.absPath), len(fnames))
@@ -554,12 +554,14 @@ func (l *Loader) processTestGoFiles(d *Directory) {
 
 		if err != nil {
 			fmt.Printf("TGF: ERROR: While parsing %s:\n\t%s\n", fpath, err.Error())
-			return
+			continue
 		}
 
 		l.processAstFile(d, fname, astf, d.pm)
 	}
+
 	fmt.Printf("TFG: %s: processing complete\n", l.shortName(d.absPath))
+	return true
 }
 
 func (l *Loader) processAstFile(d *Directory, fname string, astf *ast.File, pm packageMap) {
