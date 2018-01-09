@@ -41,10 +41,8 @@ type Loader struct {
 
 	done bool
 
-	caravan *collections.Caravan
-
-	mDirectories sync.Mutex
-	directories  map[string]*Directory
+	caravanMutex sync.Mutex
+	caravan      *collections.Caravan
 
 	stateChange chan string
 
@@ -63,57 +61,39 @@ type FileError struct {
 	Warning bool
 }
 
+// File is an AST file and any errors that types.Config.Check discovers
 type File struct {
 	file *ast.File
 	errs []FileError
 }
 
-// Directory is the collection of packages in a directory
-type Directory struct {
-	buildPkg *build.Package
-
+// Package is the contents of a package
+type Package struct {
 	absPath string
-	files   map[string]*File
+	name    string
 
-	pm       packageMap
-	packages map[string]*Package
+	buildPkg    *build.Package
+	files       map[string]*File
+	importPaths map[string]bool
+	typesPkg    *types.Package
 
 	loadState loadState
 	m         sync.Mutex
 	c         *sync.Cond
 }
 
-// PackageKey contains the canonical absolute path and package name
-type PackageKey struct {
-	absPath string
-	name    string
-}
-
-// Package is the contents of a package
-type Package struct {
-	PackageKey
-	files       map[string]*ast.File
-	importPaths map[string]bool
-	key         collections.Key
-	typesPkg    *types.Package
-}
-
 // CreatePackage creates a new Package with the given canonical path and name
-func CreatePackage(absPath, name string) *Package {
+func CreatePackage(absPath string) *Package {
 	return &Package{
-		PackageKey: PackageKey{
-			absPath: absPath,
-			name:    name,
-		},
-		files:       map[string]*ast.File{},
+		absPath:     absPath,
+		files:       map[string]*File{},
 		importPaths: map[string]bool{},
-		key:         collections.Key(fmt.Sprintf("%s:%s", absPath, name)),
 	}
 }
 
 // Key returns the collections.Key for the given Package
 func (p *Package) Key() collections.Key {
-	return p.key
+	return collections.Key(p.absPath)
 }
 
 type packageMap map[string]*packageMapItem
@@ -133,19 +113,16 @@ type LoaderOption func(loader *Loader)
 
 // NewLoader creates a new loader
 func NewLoader(options ...LoaderOption) *Loader {
-	info := &types.Info{
-		Types: map[ast.Expr]types.TypeAndValue{},
-		Defs:  map[*ast.Ident]types.Object{},
-		Uses:  map[*ast.Ident]types.Object{},
-	}
-
 	l := &Loader{
-		caravan:     collections.CreateCaravan(),
-		closer:      make(chan bool),
-		directories: map[string]*Directory{},
-		done:        false,
-		fset:        token.NewFileSet(),
-		info:        info,
+		caravan: collections.CreateCaravan(),
+		closer:  make(chan bool),
+		done:    false,
+		fset:    token.NewFileSet(),
+		info: &types.Info{
+			Types: map[ast.Expr]types.TypeAndValue{},
+			Defs:  map[*ast.Ident]types.Object{},
+			Uses:  map[*ast.Ident]types.Object{},
+		},
 		stateChange: make(chan string),
 	}
 
@@ -188,11 +165,12 @@ func NewLoader(options ...LoaderOption) *Loader {
 			if terror, ok := e.(types.Error); ok {
 				position := terror.Fset.Position(terror.Pos)
 				absPath := filepath.Dir(position.Filename)
-				l.mDirectories.Lock()
-				d := l.directories[absPath]
-				l.mDirectories.Unlock()
+				l.caravanMutex.Lock()
+				node, _ := l.caravan.Find(collections.Key(absPath))
+				l.caravanMutex.Unlock()
 
-				f := d.files[filepath.Base(position.Filename)]
+				p := node.Element.(*Package)
+				f := p.files[filepath.Base(position.Filename)]
 				ferr := FileError{
 					Position: position,
 					Message:  terror.Msg,
@@ -248,15 +226,18 @@ func (l *Loader) Close() {
 // Errors exposes problems with code found during compilation on a file-by-file
 // basis.
 func (l *Loader) Errors(handleErrs func(file string, errs []FileError)) {
-	l.mDirectories.Lock()
-	for _, d := range l.directories {
-		for fname, f := range d.files {
+	// l.mDirectories.Lock()
+	// for _, d := range l.directories {
+	l.caravanMutex.Lock()
+	for k := range l.caravan.Iter() {
+		p := k.(*Package)
+		for fname, f := range p.files {
 			if len(f.errs) != 0 {
-				handleErrs(filepath.Join(d.absPath, fname), f.errs)
+				handleErrs(filepath.Join(p.absPath, fname), f.errs)
 			}
 		}
 	}
-	l.mDirectories.Unlock()
+	l.caravanMutex.Unlock()
 }
 
 // LoadDirectory adds the contents of a directory to the Loader
@@ -274,7 +255,7 @@ func (l *Loader) readDir(absPath string) {
 		return
 	}
 
-	l.ensureDirectory(absPath)
+	l.ensurePackage(absPath)
 
 	fis, err := l.context.ReadDir(absPath)
 	if err != nil {
@@ -291,53 +272,60 @@ func (l *Loader) readDir(absPath string) {
 }
 
 func (l *Loader) processStateChange(absPath string) {
-	l.mDirectories.Lock()
-	d, _ := l.directories[absPath]
-	loadState := d.loadState
-	l.mDirectories.Unlock()
+	l.caravanMutex.Lock()
+	n, _ := l.caravan.Find(collections.Key(absPath))
+	l.caravanMutex.Unlock()
+	p := n.Element.(*Package)
 
-	fmt.Printf("PSC: %s: current state: %d\n", l.shortName(absPath), d.loadState)
+	fmt.Printf("PSC: %s: current state: %d\n", l.shortName(absPath), p.loadState)
 
-	switch loadState {
+	switch p.loadState {
 	case queued:
-		l.processDirectory(d)
-		d.loadState++
-		d.c.Broadcast()
+		l.processDirectory(p)
+		p.loadState++
+		p.c.Broadcast()
 		l.stateChange <- absPath
 	case unloaded:
-		l.processGoFiles(d)
-		l.processCgoFiles(d)
-		l.processPackages(d, false)
-		l.processComplete(d)
-		d.loadState++
-		d.c.Broadcast()
-		l.stateChange <- d.absPath
-	case loadedGo:
-		if l.processTestGoFiles(d) {
-			l.processPackages(d, true)
-			l.processComplete(d)
+		haveGo := l.processGoFiles(p)
+		haveCGo := l.processCgoFiles(p)
+		if haveGo || haveCGo {
+			l.processPackages(p, false)
+			l.processComplete(p)
 		}
-		d.loadState++
-		d.c.Broadcast()
-		l.stateChange <- d.absPath
+		p.loadState++
+		p.c.Broadcast()
+		l.stateChange <- absPath
+	case loadedGo:
+		haveTestGo := l.processTestGoFiles(p)
+		if haveTestGo {
+			l.processPackages(p, true)
+			l.processComplete(p)
+		}
+		p.loadState++
+		p.c.Broadcast()
+		l.stateChange <- absPath
 	case loadedTest:
 		// Short circuiting directly to next state.  Will add external test
 		// packages later.
-		d.loadState++
-		d.c.Broadcast()
+		p.loadState++
+		p.c.Broadcast()
 		l.stateChange <- absPath
 	case done:
 		complete := true
-		l.mDirectories.Lock()
+		// l.mDirectories.Lock()
+		l.caravanMutex.Lock()
 
-		for _, d := range l.directories {
-			if d.loadState != done {
+		// for _, d := range l.directories {
+		for n := range l.caravan.Iter() {
+			p := n.(*Package)
+			if p.loadState != done {
 				complete = false
 				break
 			}
 		}
 
-		l.mDirectories.Unlock()
+		// l.mDirectories.Unlock()
+		l.caravanMutex.Unlock()
 
 		if !complete {
 			return
@@ -355,78 +343,80 @@ func (l *Loader) processStateChange(absPath string) {
 	}
 }
 
-func (l *Loader) processComplete(d *Directory) {
-	if d.absPath == l.unsafePath {
-		fmt.Printf(" PC: %s: Checking unsafe (skipping)\n", l.shortName(d.absPath))
+func (l *Loader) processComplete(p *Package) {
+	if p.absPath == l.unsafePath {
+		fmt.Printf(" PC: %s: Checking unsafe (skipping)\n", l.shortName(p.absPath))
 		return
 	}
 
 	// Clear previous errors; all will be rechecked.
-	for _, f := range d.files {
+	for _, f := range p.files {
 		f.errs = []FileError{}
 	}
 
 	// Loop over packages
-	for _, p := range d.packages {
-		fmt.Printf(" PC: %s: Checking %s\n", l.shortName(d.absPath), p.name)
-		fmap := l.directories[p.absPath].pm[p.name].files
-		files := make([]*ast.File, len(fmap))
-		i := 0
-		for _, v := range fmap {
-			f := v
-			files[i] = f
-			i++
-		}
-
-		l.mFset.Lock()
-		typesPkg, err := l.conf.Check(p.absPath, l.fset, files, l.info)
-		l.mFset.Unlock()
-		if err != nil {
-			fmt.Printf("Error while checking %s:%s:\n\t%s\n\n", p.absPath, p.name, err.Error())
-		}
-		if !typesPkg.Complete() {
-			fmt.Printf("Incomplete package %s:%s\n", p.absPath, p.name)
-		}
-		p.typesPkg = typesPkg
+	fmt.Printf(" PC: %s: Checking %s\n", l.shortName(p.absPath), p.name)
+	fmap := p.files
+	files := make([]*ast.File, len(fmap))
+	i := 0
+	for _, v := range fmap {
+		f := v
+		files[i] = f.file
+		i++
 	}
+
+	l.mFset.Lock()
+	typesPkg, err := l.conf.Check(p.absPath, l.fset, files, l.info)
+	l.mFset.Unlock()
+	if err != nil {
+		fmt.Printf("Error while checking %s:%s:\n\t%s\n\n", p.absPath, p.name, err.Error())
+	}
+	if !typesPkg.Complete() {
+		fmt.Printf("Incomplete package %s:%s\n", p.absPath, p.name)
+	}
+	p.typesPkg = typesPkg
 }
 
-func (l *Loader) processDirectory(d *Directory) {
-	if l.processUnsafe(d) {
+func (l *Loader) processDirectory(p *Package) {
+	if l.processUnsafe(p) {
 		return
 	}
 
-	buildPkg, err := l.context.Import(".", d.absPath, 0)
+	buildPkg, err := l.context.Import(".", p.absPath, 0)
 	if err != nil {
 		if _, ok := err.(*build.NoGoError); ok {
 			// There isn't any Go code here.
-			fmt.Printf(" PD: %s: no go code", l.shortName(d.absPath))
+			fmt.Printf(" PD: %s: no go code", l.shortName(p.absPath))
 			return
 		}
-		fmt.Printf(" PD: %s: proc error:\n\t%s\n", l.shortName(d.absPath), err.Error())
+		fmt.Printf(" PD: %s: proc error:\n\t%s\n", l.shortName(p.absPath), err.Error())
 		return
 	}
 
-	d.buildPkg = buildPkg
-	d.pm = packageMap{}
+	p.buildPkg = buildPkg
 }
 
-func (l *Loader) processGoFiles(d *Directory) {
-	if d.absPath == l.unsafePath || d.buildPkg == nil {
-		return
+func (l *Loader) processGoFiles(p *Package) bool {
+	if p.absPath == l.unsafePath {
+		return true
 	}
 
-	fnames := d.buildPkg.GoFiles
+	if p.buildPkg == nil {
+		return false
+	}
+
+	fnames := p.buildPkg.GoFiles
 	if len(fnames) == 0 {
-		return
+		return false
 	}
 
 	for _, fname := range fnames {
-		fpath := filepath.Join(d.absPath, fname)
+		fpath := filepath.Join(p.absPath, fname)
 
 		r, err := l.context.OpenFile(fpath)
 		if err != nil {
 			fmt.Printf(" GF: ERROR: Failed to read file %s:\n\t%s\n", fpath, err.Error())
+			continue
 		}
 
 		l.mFset.Lock()
@@ -435,30 +425,113 @@ func (l *Loader) processGoFiles(d *Directory) {
 
 		if err != nil {
 			fmt.Printf(" GF: ERROR: While parsing %s:\n\t%s\n", fpath, err.Error())
-			return
 		}
 
-		l.processAstFile(d, fname, astf, d.pm)
+		l.processAstFile(p, fname, astf)
 	}
+
+	return true
 }
 
-func (l *Loader) processCgoFiles(d *Directory) {
-	if d.absPath == l.unsafePath || d.buildPkg == nil {
-		return
+// Return the flags to use when invoking the C or C++ compilers, or cgo.
+func cflags(p *build.Package, def bool) (cppflags, cflags, cxxflags, ldflags []string) {
+	var defaults string
+	if def {
+		defaults = "-g -O2"
 	}
 
-	fnames := d.buildPkg.CgoFiles
-	if len(fnames) == 0 {
-		return
+	cppflags = stringList(envList("CGO_CPPFLAGS", ""), p.CgoCPPFLAGS)
+	cflags = stringList(envList("CGO_CFLAGS", defaults), p.CgoCFLAGS)
+	cxxflags = stringList(envList("CGO_CXXFLAGS", defaults), p.CgoCXXFLAGS)
+	ldflags = stringList(envList("CGO_LDFLAGS", defaults), p.CgoLDFLAGS)
+	return
+}
+
+// envList returns the value of the given environment variable broken
+// into fields, using the default value when the variable is empty.
+func envList(key, def string) []string {
+	v := os.Getenv(key)
+	if v == "" {
+		v = def
 	}
+	return strings.Fields(v)
+}
+
+// stringList's arguments should be a sequence of string or []string values.
+// stringList flattens them into a single []string.
+func stringList(args ...interface{}) []string {
+	var x []string
+	for _, arg := range args {
+		switch arg := arg.(type) {
+		case []string:
+			x = append(x, arg...)
+		case string:
+			x = append(x, arg)
+		default:
+			panic("stringList: invalid argument")
+		}
+	}
+	return x
+}
+
+// pkgConfig runs pkg-config with the specified arguments and returns the flags it prints.
+func pkgConfig(mode string, pkgs []string) (flags []string, err error) {
+	cmd := exec.Command("pkg-config", append([]string{mode}, pkgs...)...)
+	out, err := cmd.CombinedOutput()
+	if err != nil {
+		s := fmt.Sprintf("%s failed: %v", strings.Join(cmd.Args, " "), err)
+		if len(out) > 0 {
+			s = fmt.Sprintf("%s: %s", s, out)
+		}
+		return nil, errors.New(s)
+	}
+	if len(out) > 0 {
+		flags = strings.Fields(string(out))
+	}
+	return
+}
+
+// pkgConfigFlags calls pkg-config if needed and returns the cflags
+// needed to build the package.
+func pkgConfigFlags(p *build.Package) (cflags []string, err error) {
+	if len(p.CgoPkgConfig) == 0 {
+		return nil, nil
+	}
+	return pkgConfig("--cflags", p.CgoPkgConfig)
+}
+
+func (l *Loader) processCgoFiles(p *Package) bool {
+	if p.absPath == l.unsafePath {
+		return true
+	}
+
+	if p.buildPkg == nil {
+		return false
+	}
+
+	fnames := p.buildPkg.CgoFiles
+	if len(fnames) == 0 {
+		return false
+	}
+
+	cgoCPPFLAGS, _, _, _ := cflags(p.buildPkg, true)
+	_, cgoexeCFLAGS, _, _ := cflags(p.buildPkg, false)
+
+	if len(p.buildPkg.CgoPkgConfig) > 0 {
+		pcCFLAGS, err := pkgConfigFlags(p.buildPkg)
+		if err != nil {
+			return false
+		}
+		cgoCPPFLAGS = append(cgoCPPFLAGS, pcCFLAGS...)
+	}
+	fmt.Printf("CGO: %#v\n", p.buildPkg.CgoPkgConfig)
 
 	fpaths := make([]string, len(fnames))
 	for k, v := range fnames {
-		fmt.Printf("CGO: %s\n", v)
-		fpaths[k] = filepath.Join(d.absPath, v)
+		fpaths[k] = filepath.Join(p.absPath, v)
 	}
 
-	tmpdir, _ := ioutil.TempDir("", strings.Replace(d.absPath, "/", "_", -1)+"_C")
+	tmpdir, _ := ioutil.TempDir("", strings.Replace(p.absPath, "/", "_", -1)+"_C")
 	var files, displayFiles []string
 
 	// _cgo_gotypes.go (displayed "C") contains the type definitions.
@@ -471,12 +544,12 @@ func (l *Loader) processCgoFiles(d *Directory) {
 		displayFiles = append(displayFiles, fname)
 	}
 
-	fmt.Printf("importPath = %s\n", d.buildPkg.ImportPath)
+	fmt.Printf("importPath = %s\n", p.buildPkg.ImportPath)
 	var cgoflags []string
-	if d.buildPkg.Goroot && d.buildPkg.ImportPath == "runtime/cgo" {
+	if p.buildPkg.Goroot && p.buildPkg.ImportPath == "runtime/cgo" {
 		cgoflags = append(cgoflags, "-import_runtime_cgo=false")
 	}
-	if d.buildPkg.Goroot && d.buildPkg.ImportPath == "runtime/race" || d.buildPkg.ImportPath == "runtime/cgo" {
+	if p.buildPkg.Goroot && p.buildPkg.ImportPath == "runtime/race" || p.buildPkg.ImportPath == "runtime/cgo" {
 		cgoflags = append(cgoflags, "-import_syscall=false")
 	}
 
@@ -492,17 +565,23 @@ func (l *Loader) processCgoFiles(d *Directory) {
 	args = append(args, "--")
 	args = append(args, "-I")
 	args = append(args, tmpdir)
+	for _, v := range cgoCPPFLAGS {
+		args = append(args, v)
+	}
+	for _, v := range cgoexeCFLAGS {
+		args = append(args, v)
+	}
 	for _, f := range fnames {
 		args = append(args, f)
 	}
 
 	cmd := exec.Command("go", args...)
-	cmd.Dir = d.absPath
+	cmd.Dir = p.absPath
 	cmd.Stdout = os.Stdout // os.Stderr
 	cmd.Stderr = os.Stdout // os.Stderr
 	if err := cmd.Run(); err != nil {
-		fmt.Printf("CGO: ERROR: cgo failed: %s: %s", args, err)
-		return
+		fmt.Printf("CGO: ERROR: cgo failed: %s\n\t%s\n", args, err.Error())
+		return false
 	}
 
 	fmt.Printf("CGO: Processing %d cgo based files\n", len(fpaths))
@@ -518,34 +597,37 @@ func (l *Loader) processCgoFiles(d *Directory) {
 		l.mFset.Unlock()
 
 		f.Close()
+
 		if err != nil {
 			fmt.Printf("CGO: ERROR: Failed to open %s\n\t%s\n", fpaths[i], err.Error())
-			return
 		}
 
-		l.processAstFile(d, fnames[i], astf, d.pm)
+		l.processAstFile(p, fnames[i], astf)
 	}
+
+	return true
 }
 
-func (l *Loader) processTestGoFiles(d *Directory) bool {
-	if d.absPath == l.unsafePath || d.buildPkg == nil {
+func (l *Loader) processTestGoFiles(p *Package) bool {
+	if p.absPath == l.unsafePath || p.buildPkg == nil {
 		return false
 	}
 
-	fnames := d.buildPkg.TestGoFiles
+	fnames := p.buildPkg.TestGoFiles
 	if len(fnames) == 0 {
 		// No test files; continue on.
-		fmt.Printf("TFG: %s: no test Go files\n", l.shortName(d.absPath))
+		// fmt.Printf("TFG: %s: no test Go files\n", l.shortName(d.absPath))
 		return false
 	}
 
-	fmt.Printf("TFG: %s: processing %d test Go files\n", l.shortName(d.absPath), len(fnames))
+	fmt.Printf("TFG: %s: processing %d test Go files\n", l.shortName(p.absPath), len(fnames))
 	for _, fname := range fnames {
-		fpath := filepath.Join(d.absPath, fname)
+		fpath := filepath.Join(p.absPath, fname)
 
 		r, err := l.context.OpenFile(fpath)
 		if err != nil {
 			fmt.Printf("TGF: ERROR: Failed to read file %s:\n\t%s\n", fpath, err.Error())
+			continue
 		}
 
 		l.mFset.Lock()
@@ -554,30 +636,16 @@ func (l *Loader) processTestGoFiles(d *Directory) bool {
 
 		if err != nil {
 			fmt.Printf("TGF: ERROR: While parsing %s:\n\t%s\n", fpath, err.Error())
-			continue
 		}
 
-		l.processAstFile(d, fname, astf, d.pm)
+		l.processAstFile(p, fname, astf)
 	}
 
-	fmt.Printf("TFG: %s: processing complete\n", l.shortName(d.absPath))
+	fmt.Printf("TFG: %s: processing complete\n", l.shortName(p.absPath))
 	return true
 }
 
-func (l *Loader) processAstFile(d *Directory, fname string, astf *ast.File, pm packageMap) {
-	pkgName := filepath.Base(astf.Name.Name)
-
-	pmi, ok := pm[pkgName]
-	if !ok {
-		pmi = &packageMapItem{
-			files:   map[string]*ast.File{},
-			imports: map[string]bool{},
-		}
-		pm[pkgName] = pmi
-	}
-
-	pmi.m.Lock()
-
+func (l *Loader) processAstFile(p *Package, fname string, astf *ast.File) {
 	for _, decl := range astf.Decls {
 		decl, ok := decl.(*ast.GenDecl)
 		if !ok || decl.Tok != token.IMPORT {
@@ -592,133 +660,97 @@ func (l *Loader) processAstFile(d *Directory, fname string, astf *ast.File, pm p
 				// Ignore any error and skip the C pseudo package
 				continue
 			}
-			pmi.imports[path] = true
+
+			p.importPaths[path] = true
 		}
 	}
 
-	d.files[fname] = &File{
+	p.files[fname] = &File{
 		errs: []FileError{},
 		file: astf,
 	}
-
-	pmi.files[fname] = astf
-
-	pmi.m.Unlock()
 }
 
-func (l *Loader) processUnsafe(d *Directory) bool {
-	absPath := d.absPath
+func (l *Loader) processUnsafe(p *Package) bool {
+	absPath := p.absPath
 	if strings.Compare(absPath, l.unsafePath) != 0 {
 		return false
 	}
-	fmt.Printf("*** Loading `%s`, replacing with types.Unsafe\n", l.shortName(d.absPath))
-	p := CreatePackage(l.unsafePath, "unsafe")
+	fmt.Printf("*** Loading `%s`, replacing with types.Unsafe\n", l.shortName(p.absPath))
+	// p := CreatePackage(l.unsafePath)
+	p.name = "unsafe"
 	p.typesPkg = types.Unsafe
-	d.packages = map[string]*Package{
-		"unsafe": p,
-	}
+	// d.packages = map[string]*Package{
+	// 	"unsafe": p,
+	// }
 	l.caravan.Insert(p)
 
 	return true
 }
 
-func (l *Loader) processPackages(d *Directory, testing bool) {
-	fmt.Printf(" PP: %s: %d: started\n", l.shortName(d.absPath), d.loadState)
-	importMaps := map[*PackageKey]map[*PackageKey]bool{}
+func (l *Loader) processPackages(p *Package, testing bool) {
+	// fmt.Printf(" PP: %s: %d: started\n", l.shortName(p.absPath), p.loadState)
 
-	for pkgName, pmi := range d.pm {
-		thisPkgName := filepath.Base(pkgName)
-		p, ok := d.packages[thisPkgName]
-		if !ok {
-			fmt.Printf(" PP: %s: %d: creating package w/ %s:%s\n", l.shortName(d.absPath), d.loadState, d.absPath, thisPkgName)
-			p = CreatePackage(d.absPath, thisPkgName)
-			l.caravan.Insert(p)
-			d.packages[thisPkgName] = p
+	imprts := []string{}
+	// sourceKey := collections.Key(p.absPath)
+
+	for importPath := range p.importPaths {
+		targetPkgName := filepath.Base(importPath)
+		targetPath, err := l.findImportPath(p.absPath, importPath)
+		if err != nil {
+			fmt.Printf(err.Error())
+			continue
 		}
-		pmi.p = p
+		targetP := l.ensurePackage(targetPath)
+		targetP.name = targetPkgName
 
-		fmt.Printf(" PP: %s: %d: package %s\n", l.shortName(d.absPath), d.loadState, pmi.p.name)
-		pmi.m.Lock()
-		sourceKey := &PackageKey{
-			absPath: pmi.p.absPath,
-			name:    pmi.p.name,
-		}
-		for importPkgName := range pmi.imports {
-			importPath, err := l.findImportPath(importPkgName, d.absPath)
-			if err != nil {
-				fmt.Printf(err.Error())
-				continue
-			}
-
-			fmt.Printf(" PP: %s: %d: -> %s\n", l.shortName(d.absPath), d.loadState, l.shortName(importPath))
-			pmi.p.importPaths[importPath] = false
-			destinationKey := &PackageKey{
-				absPath: importPath,
-				name:    filepath.Base(importPkgName),
-			}
-			destinationKeys, ok := importMaps[sourceKey]
-			if !ok {
-				destinationKeys = map[*PackageKey]bool{}
-				importMaps[sourceKey] = destinationKeys
-			}
-			destinationKeys[destinationKey] = true
-
-			l.ensureDirectory(importPath)
-		}
-		pmi.m.Unlock()
+		imprts = append(imprts, l.shortName(importPath))
+		// destinationKey := collections.Key(targetPath)
+		// destinationKeys[destinationKey] = true
 	}
 
-	for sourceKey, destinationKeys := range importMaps {
-		l.mDirectories.Lock()
-		sourcePackage := l.directories[sourceKey.absPath].packages[sourceKey.name]
-		l.mDirectories.Unlock()
+	allImprts := strings.Join(imprts, ", ")
+	fmt.Printf(" PP: %s: %d: -> %s\n", l.shortName(p.absPath), p.loadState, allImprts)
 
-		for destinationKey := range destinationKeys {
-			l.mDirectories.Lock()
-			targetD, _ := l.directories[destinationKey.absPath]
-			l.mDirectories.Unlock()
+	for importPath := range p.importPaths {
+		l.caravanMutex.Lock()
+		n, _ := l.caravan.Find(collections.Key(importPath))
+		l.caravanMutex.Unlock()
+		targetP := n.Element.(*Package)
 
-			targetD.m.Lock()
+		targetP.m.Lock()
 
-			for !l.checkImportReady(d, targetD) {
-				fmt.Printf(" PP: %s: %d: *** still waiting on %s ***\n", l.shortName(d.absPath), d.loadState, l.shortName(targetD.absPath))
-				targetD.c.Wait()
+		for !l.checkImportReady(p, targetP) {
+			fmt.Printf(" PP: %s: %d: *** still waiting on %s ***\n", l.shortName(p.absPath), p.loadState, l.shortName(targetP.absPath))
+			targetP.c.Wait()
+		}
+
+		targetP.m.Unlock()
+
+		if testing {
+			if err := l.caravan.WeakConnect(p, targetP); err != nil {
+				panic(fmt.Sprintf(" PP: %s: %d: weak connect failed:\n\tfrom: %s\n\tto: %s\n\terr: %s\n\n", l.shortName(p.absPath), p.loadState, p.Key(), targetP.Key(), err.Error()))
 			}
-
-			targetD.m.Unlock()
-
-			targetPackage, ok := targetD.packages[destinationKey.name]
-			if !ok {
-				panic(fmt.Sprintf(" PP: %s: %d: target package %s:%s is !ok\n", l.shortName(d.absPath), d.loadState, destinationKey.absPath, destinationKey.name))
-			}
-
-			if testing {
-				fmt.Printf(" PP: %s: %d: weak connecting to %s:%s\n", l.shortName(d.absPath), d.loadState, destinationKey.absPath, destinationKey.name)
-				if err := l.caravan.WeakConnect(sourcePackage, targetPackage); err != nil {
-					panic(fmt.Sprintf(" PP: %s: %d: weak connect failed:\n\tfrom: %s\n\tto: %s\n\terr: %s\n\n", l.shortName(d.absPath), d.loadState, sourcePackage.key, targetPackage.key, err.Error()))
-				}
-			} else {
-				fmt.Printf(" PP: %s: %d: connecting to %s:%s\n", l.shortName(d.absPath), d.loadState, destinationKey.absPath, destinationKey.name)
-				if err := l.caravan.Connect(sourcePackage, targetPackage); err != nil {
-					panic(fmt.Sprintf(" PP: %s: %d: connect failed:\n\tfrom: %s\n\tto: %s\n\terr: %s\n\n", l.shortName(d.absPath), d.loadState, sourcePackage.key, targetPackage.key, err.Error()))
-				}
+		} else {
+			if err := l.caravan.Connect(p, targetP); err != nil {
+				panic(fmt.Sprintf(" PP: %s: %d: connect failed:\n\tfrom: %s\n\tto: %s\n\terr: %s\n\n", l.shortName(p.absPath), p.loadState, p.Key(), targetP.Key(), err.Error()))
 			}
 		}
 	}
 	// All dependencies are loaded; can proceed.
-	fmt.Printf(" PP: %s: %d: all imports fulfilled.\n", l.shortName(d.absPath), d.loadState)
+	fmt.Printf(" PP: %s: %d: all imports fulfilled.\n", l.shortName(p.absPath), p.loadState)
 }
 
-func (l *Loader) checkImportReady(sourceD *Directory, targetD *Directory) bool {
+func (l *Loader) checkImportReady(sourceP *Package, targetP *Package) bool {
 	// return targetD.loadState == done || sourceD.loadState < targetD.loadState
 
-	switch sourceD.loadState {
+	switch sourceP.loadState {
 	case queued:
 		// Does not make sense that the source loadState would be here.
 	case unloaded:
-		return targetD.loadState > unloaded
+		return targetP.loadState > unloaded
 	case loadedGo:
-		return targetD.loadState > unloaded
+		return targetP.loadState > unloaded
 	case loadedTest:
 		// Should pass through here.
 	default:
@@ -728,32 +760,30 @@ func (l *Loader) checkImportReady(sourceD *Directory, targetD *Directory) bool {
 	return false
 }
 
-func (l *Loader) ensureDirectory(absPath string) *Directory {
-	l.mDirectories.Lock()
-	d, ok := l.directories[absPath]
+func (l *Loader) ensurePackage(absPath string) *Package {
+	l.caravanMutex.Lock()
+	var p *Package
+	n, ok := l.caravan.Find(collections.Key(absPath))
 	if !ok {
-		d = &Directory{
-			absPath:   absPath,
-			files:     map[string]*File{},
-			loadState: queued,
-			packages:  map[string]*Package{},
-		}
-		d.c = sync.NewCond(&d.m)
-		l.directories[absPath] = d
+		p = CreatePackage(absPath)
+		p.c = sync.NewCond(&p.m)
+		l.caravan.Insert(p)
+	} else {
+		p = n.Element.(*Package)
 	}
-	l.mDirectories.Unlock()
+	l.caravanMutex.Unlock()
 
 	if !ok {
 		l.stateChange <- absPath
 	}
 
-	return d
+	return p
 }
 
 func (l *Loader) findImportPath(path, src string) (string, error) {
 	buildPkg, err := l.context.Import(path, src, build.FindOnly)
 	if err != nil {
-		msg := fmt.Sprintf("Oh dear:\n\tAttemped build.Import('%s', '%s', build.FindOnly)\n\t%s\n", path, src, err.Error())
+		msg := fmt.Sprintf("Oh dear:\n\tAttempted build.Import('%s', '%s', build.FindOnly)\n\t%s\n", path, src, err.Error())
 		fmt.Printf("ERROR: %s", msg)
 		return "", errors.New(msg)
 	}
