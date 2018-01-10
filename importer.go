@@ -45,7 +45,6 @@ func (i *Importer) ImportFrom(path, srcDir string, mode types.ImportMode) (*type
 		return nil, fmt.Errorf("Got nil in packages map")
 	}
 
-	fmt.Printf("\t%s (checked)\n", p.name)
 	return p.typesPkg, nil
 }
 
