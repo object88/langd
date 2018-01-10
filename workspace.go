@@ -97,6 +97,9 @@ func (w *Workspace) LocateIdent(p *token.Position) (*ast.Ident, error) {
 func (w *Workspace) LocateDeclaration(x *ast.Ident) *token.Position {
 	xObj := w.Info.ObjectOf(x)
 	fmt.Printf("Got xObj:    %#v\n", xObj)
+	if xObj == nil {
+		return nil
+	}
 	xObjPos := xObj.Pos()
 	fmt.Printf("Got xObjPos: %d\n", xObjPos)
 	loc := w.Fset.Position(xObjPos)
