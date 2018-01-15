@@ -1,7 +1,6 @@
 package langd
 
 import (
-	"bytes"
 	"errors"
 	"fmt"
 	"go/ast"
@@ -311,18 +310,18 @@ func (l *Loader) processStateChange(absPath string) {
 		p.c.Broadcast()
 		l.stateChange <- absPath
 	case loadedGo:
-		// haveTestGo := l.processTestGoFiles(p)
-		// if haveTestGo && p.buildPkg != nil {
-		// 	imports := make([]string, len(p.testImportPaths))
-		// 	i := 0
-		// 	for k := range p.testImportPaths {
-		// 		imports[i] = k
-		// 		i++
-		// 	}
+		haveTestGo := l.processTestGoFiles(p)
+		if haveTestGo && p.buildPkg != nil {
+			imports := make([]string, len(p.testImportPaths))
+			i := 0
+			for k := range p.testImportPaths {
+				imports[i] = k
+				i++
+			}
 
-		// 	l.processPackages(p, imports, true)
-		// 	l.processComplete(p)
-		// }
+			l.processPackages(p, imports, true)
+			l.processComplete(p)
+		}
 		p.loadState++
 		p.c.Broadcast()
 		l.stateChange <- absPath
@@ -378,7 +377,7 @@ func (l *Loader) processComplete(p *Package) {
 	files := make([]*ast.File, len(p.files))
 	i := 0
 	for _, v := range p.files {
-		// fmt.Fprintf(buf, "\t%s\n", l.fset.Position(v.file.Pos()).Filename)
+		// fmt.Printf("\t%s\n", l.fset.Position(v.file.Pos()).Filename)
 		f := v
 		files[i] = f.file
 		i++
@@ -537,8 +536,7 @@ func (l *Loader) processCgoFiles(p *Package) bool {
 		return false
 	}
 
-	buf := bytes.NewBufferString("")
-	// fmt.Fprintf(buf, "CGO: %s: have %d cgo files\n", l.shortName(p.absPath), len(fnames))
+	// fmt.Printf("CGO: %s: have %d cgo files\n", l.shortName(p.absPath), len(fnames))
 
 	cgoCPPFLAGS, _, _, _ := cflags(p.buildPkg, true)
 	_, cgoexeCFLAGS, _, _ := cflags(p.buildPkg, false)
@@ -546,12 +544,12 @@ func (l *Loader) processCgoFiles(p *Package) bool {
 	if len(p.buildPkg.CgoPkgConfig) > 0 {
 		pcCFLAGS, err := pkgConfigFlags(p.buildPkg)
 		if err != nil {
-			fmt.Fprintf(buf, "CGO: %s: Failed to get flags: %s\n", l.shortName(p.absPath), err.Error())
+			fmt.Printf("CGO: %s: Failed to get flags: %s\n", l.shortName(p.absPath), err.Error())
 			return false
 		}
 		cgoCPPFLAGS = append(cgoCPPFLAGS, pcCFLAGS...)
 	}
-	// fmt.Fprintf(buf, "CGO: %s: CgoPkgConfig: %#v\n", l.shortName(p.absPath), p.buildPkg.CgoPkgConfig)
+	// fmt.Printf("CGO: %s: CgoPkgConfig: %#v\n", l.shortName(p.absPath), p.buildPkg.CgoPkgConfig)
 
 	fpaths := make([]string, len(fnames))
 	for k, v := range fnames {
@@ -571,7 +569,7 @@ func (l *Loader) processCgoFiles(p *Package) bool {
 		displayFiles = append(displayFiles, fname)
 	}
 
-	fmt.Fprintf(buf, "CGO: %s: importPath = %s\n", l.shortName(p.absPath), p.buildPkg.ImportPath)
+	fmt.Printf("CGO: %s: importPath = %s\n", l.shortName(p.absPath), p.buildPkg.ImportPath)
 	var cgoflags []string
 	if p.buildPkg.Goroot && p.buildPkg.ImportPath == "runtime/cgo" {
 		cgoflags = append(cgoflags, "-import_runtime_cgo=false")
@@ -607,19 +605,19 @@ func (l *Loader) processCgoFiles(p *Package) bool {
 	cmd.Stdout = os.Stdout // os.Stderr
 	cmd.Stderr = os.Stdout // os.Stderr
 	if err := cmd.Run(); err != nil {
-		fmt.Fprintf(buf, "CGO: %s: ERROR: cgo failed: %s\n\t%s\n", l.shortName(p.absPath), args, err.Error())
+		fmt.Printf("CGO: %s: ERROR: cgo failed: %s\n\t%s\n", l.shortName(p.absPath), args, err.Error())
 		return false
 	}
 
-	// fmt.Fprintf(buf, "CGO: %s: Processing %d cgo based files\n", l.shortName(p.absPath), len(fpaths))
+	// fmt.Printf("CGO: %s: Processing %d cgo based files\n", l.shortName(p.absPath), len(fpaths))
 	for i, fname := range files {
 		f, err := os.Open(fname)
 		if err != nil {
-			fmt.Fprintf(buf, "CGO: %s: ERROR: failed to open file %s\n\t%s\n", l.shortName(p.absPath), fname, err.Error())
+			fmt.Printf("CGO: %s: ERROR: failed to open file %s\n\t%s\n", l.shortName(p.absPath), fname, err.Error())
 			continue
 		}
 
-		// fmt.Fprintf(buf, "CGO: %s: About to parse %s / %s\n", l.shortName(p.absPath), fname, displayFiles[i])
+		// fmt.Printf("CGO: %s: About to parse %s / %s\n", l.shortName(p.absPath), fname, displayFiles[i])
 
 		l.mFset.Lock()
 		astf, err := parser.ParseFile(l.fset, displayFiles[i], f, 0)
@@ -628,15 +626,13 @@ func (l *Loader) processCgoFiles(p *Package) bool {
 		f.Close()
 
 		if err != nil {
-			fmt.Fprintf(buf, "CGO: %s: ERROR: Failed to parse %s\n\t%s\n", l.shortName(p.absPath), fname, err.Error())
+			fmt.Printf("CGO: %s: ERROR: Failed to parse %s\n\t%s\n", l.shortName(p.absPath), fname, err.Error())
 		}
 
-		// fmt.Fprintf(buf, "CGO: %s: Processing AST %s\n", l.shortName(p.absPath), fname)
+		// fmt.Printf("CGO: %s: Processing AST %s\n", l.shortName(p.absPath), fname)
 		l.processAstFile(p, fname, astf, p.importPaths)
 	}
-	fmt.Fprintf(buf, "CGO: %s: Done processing\n", l.shortName(p.absPath))
-
-	fmt.Printf(buf.String())
+	fmt.Printf("CGO: %s: Done processing\n", l.shortName(p.absPath))
 
 	return true
 }
@@ -644,6 +640,16 @@ func (l *Loader) processCgoFiles(p *Package) bool {
 func (l *Loader) processTestGoFiles(p *Package) bool {
 	if p.absPath == l.unsafePath || p.buildPkg == nil {
 		return false
+	}
+
+	// If we are in vendor; exclude test files.  It is possible for imports to
+	// contain references for packages which are not available.  May want to
+	// revisit this later; loading as much as possible for completion sake,
+	// but not reporting them as complete errors.
+	for _, part := range strings.Split(p.absPath, string(filepath.Separator)) {
+		if part == "vendor" {
+			return false
+		}
 	}
 
 	fnames := p.buildPkg.TestGoFiles
@@ -718,8 +724,7 @@ func (l *Loader) processUnsafe(p *Package) bool {
 }
 
 func (l *Loader) processPackages(p *Package, importPaths []string, testing bool) {
-	buf := bytes.NewBufferString("")
-	fmt.Fprintf(buf, " PP: %s: %d: started\n", l.shortName(p.absPath), p.loadState)
+	fmt.Printf(" PP: %s: %d: started\n", l.shortName(p.absPath), p.loadState)
 
 	imprts := []string{}
 	importedPackages := map[string]bool{}
@@ -739,8 +744,7 @@ func (l *Loader) processPackages(p *Package, importPaths []string, testing bool)
 	}
 
 	allImprts := strings.Join(imprts, ", ")
-	fmt.Fprintf(buf, " PP: %s: %d: -> %s\n", l.shortName(p.absPath), p.loadState, allImprts)
-	fmt.Printf(buf.String())
+	fmt.Printf(" PP: %s: %d: -> %s\n", l.shortName(p.absPath), p.loadState, allImprts)
 
 	for importPath := range importedPackages {
 		l.caravanMutex.Lock()
