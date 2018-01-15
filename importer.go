@@ -20,7 +20,7 @@ func (i *Importer) Import(path string) (*types.Package, error) {
 		return nil, err
 	}
 	if p == nil {
-		return nil, fmt.Errorf("Directory parsed, but does not contain package %s", path)
+		return nil, fmt.Errorf("Path parsed, but does not contain package %s", path)
 	}
 
 	return p.typesPkg, nil
