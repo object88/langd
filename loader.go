@@ -21,6 +21,7 @@ import (
 	"sync"
 	"unicode/utf8"
 
+	"github.com/gobwas/glob"
 	"github.com/object88/langd/collections"
 )
 
@@ -53,9 +54,11 @@ type Loader struct {
 	fset    *token.FileSet
 	info    *types.Info
 
-	unsafePath string
+	unsafePath    string
+	filteredPaths []glob.Glob
 }
 
+// FileError is a translation of the types.Error struct
 type FileError struct {
 	token.Position
 	Message string
@@ -73,23 +76,15 @@ type Package struct {
 	absPath string
 	name    string
 
-	buildPkg    *build.Package
-	files       map[string]*File
-	importPaths map[string]bool
-	typesPkg    *types.Package
+	buildPkg        *build.Package
+	files           map[string]*File
+	importPaths     map[string]bool
+	testImportPaths map[string]bool
+	typesPkg        *types.Package
 
 	loadState loadState
 	m         sync.Mutex
 	c         *sync.Cond
-}
-
-// CreatePackage creates a new Package with the given canonical path and name
-func CreatePackage(absPath string) *Package {
-	return &Package{
-		absPath:     absPath,
-		files:       map[string]*File{},
-		importPaths: map[string]bool{},
-	}
 }
 
 // Key returns the collections.Key for the given Package
@@ -99,15 +94,23 @@ func (p *Package) Key() collections.Key {
 
 var cgoRe = regexp.MustCompile(`[/\\:]`)
 
+// LoaderOption provides a hook for NewLoader to set or modify the new loader's
+// context
 type LoaderOption func(loader *Loader)
 
 // NewLoader creates a new loader
 func NewLoader(options ...LoaderOption) *Loader {
+	// Skipping directories that start with "." (i.e., .git) and testdata.
+	globs := make([]glob.Glob, 2)
+	globs[0] = glob.MustCompile(filepath.Join("**", ".*"))
+	globs[1] = glob.MustCompile(filepath.Join("**", "testdata"))
+
 	l := &Loader{
-		caravan: collections.CreateCaravan(),
-		closer:  make(chan bool),
-		done:    false,
-		fset:    token.NewFileSet(),
+		caravan:       collections.CreateCaravan(),
+		closer:        make(chan bool),
+		done:          false,
+		filteredPaths: globs,
+		fset:          token.NewFileSet(),
 		info: &types.Info{
 			Types: map[ast.Expr]types.TypeAndValue{},
 			Defs:  map[*ast.Ident]types.Object{},
@@ -156,19 +159,29 @@ func NewLoader(options ...LoaderOption) *Loader {
 				position := terror.Fset.Position(terror.Pos)
 				absPath := filepath.Dir(position.Filename)
 				l.caravanMutex.Lock()
-				node, _ := l.caravan.Find(collections.Key(absPath))
+				node, ok := l.caravan.Find(collections.Key(absPath))
 				l.caravanMutex.Unlock()
 
-				p := node.Element.(*Package)
-				f := p.files[filepath.Base(position.Filename)]
+				if !ok {
+					fmt.Printf("ERROR: (missing) No package for %s\n", absPath)
+					return
+				}
+
+				baseFilename := filepath.Base(position.Filename)
 				ferr := FileError{
 					Position: position,
 					Message:  terror.Msg,
 					Warning:  terror.Soft,
 				}
-				f.errs = append(f.errs, ferr)
+				p := node.Element.(*Package)
+				f, ok := p.files[baseFilename]
+				if !ok {
+					fmt.Printf("ERROR: (missing file) %s\n", position.Filename)
+				} else {
+					f.errs = append(f.errs, ferr)
 
-				fmt.Printf("ERROR: (types error) %s\n", terror.Error())
+					fmt.Printf("ERROR: (types error) %s\n", terror.Error())
+				}
 			} else {
 				fmt.Printf("ERROR: (unknown) %#v\n", e)
 			}
@@ -238,9 +251,11 @@ func (l *Loader) LoadDirectory(absPath string) {
 }
 
 func (l *Loader) readDir(absPath string) {
-	// Skipping directories that start with "." (i.e., .git)
-	if strings.HasPrefix(filepath.Base(absPath), ".") {
-		return
+	for _, g := range l.filteredPaths {
+		if g.Match(absPath) {
+			// We are looking at a filtered out path.
+			return
+		}
 	}
 
 	l.ensurePackage(absPath)
@@ -279,20 +294,35 @@ func (l *Loader) processStateChange(absPath string) {
 		l.stateChange <- absPath
 	case unloaded:
 		haveGo := l.processGoFiles(p)
-		haveCGo := l.processCgoFiles(p)
-		if haveGo || haveCGo {
-			l.processPackages(p, false)
+		haveCgo := l.processCgoFiles(p)
+		if (haveGo || haveCgo) && p.buildPkg != nil {
+			imports := make([]string, len(p.importPaths))
+			i := 0
+			for k := range p.importPaths {
+				imports[i] = k
+				i++
+			}
+
+			fmt.Printf("PSC: %s: haveGo: %t; haveCGo: %t\n", l.shortName(absPath), haveGo, haveCgo)
+			l.processPackages(p, imports, false)
 			l.processComplete(p)
 		}
 		p.loadState++
 		p.c.Broadcast()
 		l.stateChange <- absPath
 	case loadedGo:
-		haveTestGo := false // l.processTestGoFiles(p)
-		if haveTestGo {
-			l.processPackages(p, true)
-			l.processComplete(p)
-		}
+		// haveTestGo := l.processTestGoFiles(p)
+		// if haveTestGo && p.buildPkg != nil {
+		// 	imports := make([]string, len(p.testImportPaths))
+		// 	i := 0
+		// 	for k := range p.testImportPaths {
+		// 		imports[i] = k
+		// 		i++
+		// 	}
+
+		// 	l.processPackages(p, imports, true)
+		// 	l.processComplete(p)
+		// }
 		p.loadState++
 		p.c.Broadcast()
 		l.stateChange <- absPath
@@ -304,10 +334,8 @@ func (l *Loader) processStateChange(absPath string) {
 		l.stateChange <- absPath
 	case done:
 		complete := true
-		// l.mDirectories.Lock()
 		l.caravanMutex.Lock()
 
-		// for _, d := range l.directories {
 		for n := range l.caravan.Iter() {
 			p := n.(*Package)
 			if p.loadState != done {
@@ -316,7 +344,6 @@ func (l *Loader) processStateChange(absPath string) {
 			}
 		}
 
-		// l.mDirectories.Unlock()
 		l.caravanMutex.Unlock()
 
 		if !complete {
@@ -347,12 +374,10 @@ func (l *Loader) processComplete(p *Package) {
 	}
 
 	// Loop over packages
-	buf := bytes.NewBufferString("")
-	fmt.Fprintf(buf, " PC: %s: Checking %s, %d files\n", l.shortName(p.absPath), p.name, len(p.files))
-	fmap := p.files
-	files := make([]*ast.File, len(fmap))
+	fmt.Printf(" PC: %s: Checking %s, %d files\n", l.shortName(p.absPath), p.name, len(p.files))
+	files := make([]*ast.File, len(p.files))
 	i := 0
-	for _, v := range fmap {
+	for _, v := range p.files {
 		// fmt.Fprintf(buf, "\t%s\n", l.fset.Position(v.file.Pos()).Filename)
 		f := v
 		files[i] = f.file
@@ -363,13 +388,12 @@ func (l *Loader) processComplete(p *Package) {
 	typesPkg, err := l.conf.Check(p.absPath, l.fset, files, l.info)
 	l.mFset.Unlock()
 	if err != nil {
-		fmt.Fprintf(buf, "Error while checking %s:%s:\n\t%s\n\n", p.absPath, p.name, err.Error())
+		fmt.Printf("Error while checking %s:%s:\n\t%s\n\n", p.absPath, p.name, err.Error())
 	}
 	if !typesPkg.Complete() {
-		fmt.Fprintf(buf, "Incomplete package %s:%s\n", p.absPath, p.name)
+		fmt.Printf("Incomplete package %s:%s\n", p.absPath, p.name)
 	}
 	p.typesPkg = typesPkg
-	fmt.Printf(buf.String())
 }
 
 func (l *Loader) processDirectory(p *Package) {
@@ -381,7 +405,6 @@ func (l *Loader) processDirectory(p *Package) {
 	if err != nil {
 		if _, ok := err.(*build.NoGoError); ok {
 			// There isn't any Go code here.
-			fmt.Printf(" PD: %s: no go code\n", l.shortName(p.absPath))
 			return
 		}
 		fmt.Printf(" PD: %s: proc error:\n\t%s\n", l.shortName(p.absPath), err.Error())
@@ -408,13 +431,12 @@ func (l *Loader) processGoFiles(p *Package) bool {
 		return false
 	}
 
-	buf := bytes.NewBufferString("")
 	for _, fname := range fnames {
 		fpath := filepath.Join(p.absPath, fname)
 
 		r, err := l.context.OpenFile(fpath)
 		if err != nil {
-			fmt.Fprintf(buf, " GF: ERROR: Failed to read file %s:\n\t%s\n", fpath, err.Error())
+			fmt.Printf(" GF: ERROR: Failed to read file %s:\n\t%s\n", fpath, err.Error())
 			continue
 		}
 
@@ -423,15 +445,14 @@ func (l *Loader) processGoFiles(p *Package) bool {
 		l.mFset.Unlock()
 
 		if err != nil {
-			fmt.Fprintf(buf, " GF: ERROR: While parsing %s:\n\t%s\n", fpath, err.Error())
+			fmt.Printf(" GF: ERROR: While parsing %s:\n\t%s\n", fpath, err.Error())
 		}
 
-		// fmt.Fprintf(buf, " GF: %s: Processing AST %s\n", l.shortName(p.absPath), fpath)
+		// fmt.Printf(" GF: %s: Processing AST %s\n", l.shortName(p.absPath), fpath)
 
-		l.processAstFile(p, fname, astf)
+		l.processAstFile(p, fname, astf, p.importPaths)
 	}
 
-	fmt.Printf(buf.String())
 	return true
 }
 
@@ -591,14 +612,14 @@ func (l *Loader) processCgoFiles(p *Package) bool {
 	}
 
 	// fmt.Fprintf(buf, "CGO: %s: Processing %d cgo based files\n", l.shortName(p.absPath), len(fpaths))
-	for i := range files {
-		f, err := os.Open(files[i])
+	for i, fname := range files {
+		f, err := os.Open(fname)
 		if err != nil {
-			fmt.Fprintf(buf, "CGO: %s: ERROR: failed to open file %s\n\t%s\n", l.shortName(p.absPath), files[i], err.Error())
+			fmt.Fprintf(buf, "CGO: %s: ERROR: failed to open file %s\n\t%s\n", l.shortName(p.absPath), fname, err.Error())
 			continue
 		}
 
-		// fmt.Fprintf(buf, "CGO: %s: About to parse %s / %s\n", l.shortName(p.absPath), files[i], displayFiles[i])
+		// fmt.Fprintf(buf, "CGO: %s: About to parse %s / %s\n", l.shortName(p.absPath), fname, displayFiles[i])
 
 		l.mFset.Lock()
 		astf, err := parser.ParseFile(l.fset, displayFiles[i], f, 0)
@@ -607,11 +628,11 @@ func (l *Loader) processCgoFiles(p *Package) bool {
 		f.Close()
 
 		if err != nil {
-			fmt.Fprintf(buf, "CGO: %s: ERROR: Failed to parse %s\n\t%s\n", l.shortName(p.absPath), files[i], err.Error())
+			fmt.Fprintf(buf, "CGO: %s: ERROR: Failed to parse %s\n\t%s\n", l.shortName(p.absPath), fname, err.Error())
 		}
 
-		// fmt.Fprintf(buf, "CGO: %s: Processing AST %s\n", l.shortName(p.absPath), files[i])
-		l.processAstFile(p, files[i], astf)
+		// fmt.Fprintf(buf, "CGO: %s: Processing AST %s\n", l.shortName(p.absPath), fname)
+		l.processAstFile(p, fname, astf, p.importPaths)
 	}
 	fmt.Fprintf(buf, "CGO: %s: Done processing\n", l.shortName(p.absPath))
 
@@ -650,14 +671,14 @@ func (l *Loader) processTestGoFiles(p *Package) bool {
 			fmt.Printf("TGF: ERROR: While parsing %s:\n\t%s\n", fpath, err.Error())
 		}
 
-		l.processAstFile(p, fname, astf)
+		l.processAstFile(p, fname, astf, p.testImportPaths)
 	}
 
 	fmt.Printf("TFG: %s: processing complete\n", l.shortName(p.absPath))
 	return true
 }
 
-func (l *Loader) processAstFile(p *Package, fname string, astf *ast.File) {
+func (l *Loader) processAstFile(p *Package, fname string, astf *ast.File, importPaths map[string]bool) {
 	for _, decl := range astf.Decls {
 		decl, ok := decl.(*ast.GenDecl)
 		if !ok || decl.Tok != token.IMPORT {
@@ -673,7 +694,7 @@ func (l *Loader) processAstFile(p *Package, fname string, astf *ast.File) {
 				continue
 			}
 
-			p.importPaths[path] = true
+			importPaths[path] = true
 		}
 	}
 
@@ -689,25 +710,21 @@ func (l *Loader) processUnsafe(p *Package) bool {
 		return false
 	}
 	fmt.Printf("*** Loading `%s`, replacing with types.Unsafe\n", l.shortName(p.absPath))
-	// p := CreatePackage(l.unsafePath)
 	p.name = "unsafe"
 	p.typesPkg = types.Unsafe
-	// d.packages = map[string]*Package{
-	// 	"unsafe": p,
-	// }
 	l.caravan.Insert(p)
 
 	return true
 }
 
-func (l *Loader) processPackages(p *Package, testing bool) {
+func (l *Loader) processPackages(p *Package, importPaths []string, testing bool) {
 	buf := bytes.NewBufferString("")
 	fmt.Fprintf(buf, " PP: %s: %d: started\n", l.shortName(p.absPath), p.loadState)
 
 	imprts := []string{}
 	importedPackages := map[string]bool{}
 
-	for importPath := range p.importPaths {
+	for _, importPath := range importPaths {
 		targetPkgName := filepath.Base(importPath)
 		targetPath, err := l.findImportPath(importPath, p.absPath)
 		if err != nil {
@@ -778,7 +795,12 @@ func (l *Loader) ensurePackage(absPath string) *Package {
 	var p *Package
 	n, ok := l.caravan.Find(collections.Key(absPath))
 	if !ok {
-		p = CreatePackage(absPath)
+		p = &Package{
+			absPath:         absPath,
+			files:           map[string]*File{},
+			importPaths:     map[string]bool{},
+			testImportPaths: map[string]bool{},
+		}
 		p.c = sync.NewCond(&p.m)
 		l.caravan.Insert(p)
 	} else {
@@ -806,7 +828,7 @@ func (l *Loader) findImportPath(path, src string) (string, error) {
 func (l *Loader) shortName(path string) string {
 	root := runtime.GOROOT()
 	if strings.HasPrefix(path, root) {
-		return path[utf8.RuneCountInString(root)+5:]
+		return path[utf8.RuneCountInString(root):]
 	}
 	return filepath.Base(path)
 }
