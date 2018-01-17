@@ -41,7 +41,7 @@ func (i *Importer) ImportFrom(path, srcDir string, mode types.ImportMode) (*type
 	}
 
 	if p.typesPkg == nil {
-		fmt.Printf("\t%s (nil)\n", p.name)
+		fmt.Printf("\t%s (nil)\n", absPath)
 		return nil, fmt.Errorf("Got nil in packages map")
 	}
 

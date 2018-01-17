@@ -82,8 +82,6 @@ func (h *Handler) readRoot(root string) {
 
 	h.workspace.AssignAST()
 
-	fmt.Printf("Have %d imports...\n", len(h.workspace.PkgNames))
-
 	// Start a routine to process requests
 	h.startProcessingQueue()
 

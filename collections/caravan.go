@@ -194,15 +194,12 @@ func checkLoop(fromKey Key, n *Node) error {
 // for i := range c.Iter() {
 //	// ...
 // }
-func (c *Caravan) Iter() <-chan Keyer {
-	ch := make(chan Keyer)
-	go func() {
-		for _, v := range c.nodes {
-			ch <- v.Element
+func (c *Caravan) Iter(iter func(Key, *Node) bool) {
+	for k, n := range c.nodes {
+		if !iter(k, n) {
+			break
 		}
-		close(ch)
-	}()
-	return ch
+	}
 }
 
 // Walk will traverse the caravan structure, calling the provided `walker`

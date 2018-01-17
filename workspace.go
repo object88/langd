@@ -8,6 +8,7 @@ import (
 	"path/filepath"
 	"sync"
 
+	"github.com/object88/langd/collections"
 	"github.com/object88/langd/log"
 	"github.com/object88/rope"
 )
@@ -16,7 +17,6 @@ import (
 type Workspace struct {
 	Fset        *token.FileSet
 	Info        *types.Info
-	PkgNames    map[string]bool
 	Files       map[string]*ast.File
 	OpenedFiles map[string]*rope.Rope
 	rwm         sync.RWMutex
@@ -41,16 +41,15 @@ func CreateWorkspace(loader *Loader, log *log.Log) *Workspace {
 func (w *Workspace) AssignAST() {
 	w.Fset = w.Loader.fset
 	w.Info = w.Loader.info
-	w.PkgNames = map[string]bool{}
 	w.Files = map[string]*ast.File{}
-	for k := range w.Loader.caravan.Iter() {
-		pkg := k.(*Package)
-		w.PkgNames[pkg.name] = true
+	w.Loader.caravan.Iter(func(_ collections.Key, node *collections.Node) bool {
+		pkg := node.Element.(*Package)
 		for fname, file := range pkg.files {
 			fpath := filepath.Join(pkg.absPath, fname)
 			w.Files[fpath] = file.file
 		}
-	}
+		return true
+	})
 }
 
 // LocateIdent scans the loaded fset for the identifier at the requested

@@ -18,13 +18,14 @@ import (
 	"strconv"
 	"strings"
 	"sync"
+	"sync/atomic"
 	"unicode/utf8"
 
 	"github.com/gobwas/glob"
 	"github.com/object88/langd/collections"
 )
 
-type loadState int
+type loadState int32
 
 const (
 	queued loadState = iota
@@ -33,6 +34,14 @@ const (
 	loadedTest
 	done
 )
+
+func (ls *loadState) increment() int32 {
+	return atomic.AddInt32((*int32)(ls), 1)
+}
+
+func (ls *loadState) get() loadState {
+	return loadState(atomic.LoadInt32((*int32)(ls)))
+}
 
 // Loader is a Go code loader
 type Loader struct {
@@ -73,7 +82,6 @@ type File struct {
 // Package is the contents of a package
 type Package struct {
 	absPath string
-	name    string
 
 	buildPkg        *build.Package
 	files           map[string]*File
@@ -179,7 +187,7 @@ func NewLoader(options ...LoaderOption) *Loader {
 				} else {
 					f.errs = append(f.errs, ferr)
 
-					fmt.Printf("ERROR: (types error) %s\n", terror.Error())
+					fmt.Printf("ERROR: (types error) at %s\n\t%s\n", position.String(), terror.Error())
 				}
 			} else {
 				fmt.Printf("ERROR: (unknown) %#v\n", e)
@@ -229,24 +237,26 @@ func (l *Loader) Close() {
 // basis.
 func (l *Loader) Errors(handleErrs func(file string, errs []FileError)) {
 	l.caravanMutex.Lock()
-	for k := range l.caravan.Iter() {
-		p := k.(*Package)
+	l.caravan.Iter(func(key collections.Key, node *collections.Node) bool {
+		p := node.Element.(*Package)
 		for fname, f := range p.files {
 			if len(f.errs) != 0 {
 				handleErrs(filepath.Join(p.absPath, fname), f.errs)
 			}
 		}
-	}
+		return true
+	})
 	l.caravanMutex.Unlock()
 }
 
 // LoadDirectory adds the contents of a directory to the Loader
-func (l *Loader) LoadDirectory(absPath string) {
+func (l *Loader) LoadDirectory(absPath string) error {
 	if !l.context.IsDir(absPath) {
-		fmt.Printf("Argument '%s' is not a directory\n", absPath)
-		return
+		return fmt.Errorf("Argument '%s' is not a directory\n", absPath)
 	}
+
 	l.readDir(absPath)
+	return nil
 }
 
 func (l *Loader) readDir(absPath string) {
@@ -283,15 +293,26 @@ func (l *Loader) processStateChange(absPath string) {
 	l.caravanMutex.Unlock()
 	p := n.Element.(*Package)
 
-	fmt.Printf("PSC: %s: current state: %d\n", l.shortName(absPath), p.loadState)
+	// p.m.Lock()
+	// loadState := p.loadState
+	// p.m.Unlock()
+	loadState := p.loadState.get()
 
-	switch p.loadState {
+	switch loadState {
 	case queued:
+		fmt.Printf("PSC: %s: current state: %d\n", l.shortName(absPath), loadState)
+
 		l.processDirectory(p)
-		p.loadState++
+
+		// p.m.Lock()
+		// p.loadState++
+		// p.m.Unlock()
+		p.loadState.increment()
 		p.c.Broadcast()
 		l.stateChange <- absPath
 	case unloaded:
+		fmt.Printf("PSC: %s: current state: %d\n", l.shortName(absPath), loadState)
+
 		haveGo := l.processGoFiles(p)
 		haveCgo := l.processCgoFiles(p)
 		if (haveGo || haveCgo) && p.buildPkg != nil {
@@ -306,10 +327,16 @@ func (l *Loader) processStateChange(absPath string) {
 			l.processPackages(p, imports, false)
 			l.processComplete(p)
 		}
-		p.loadState++
+
+		// p.m.Lock()
+		// p.loadState++
+		// p.m.Unlock()
+		p.loadState.increment()
 		p.c.Broadcast()
 		l.stateChange <- absPath
 	case loadedGo:
+		fmt.Printf("PSC: %s: current state: %d\n", l.shortName(absPath), loadState)
+
 		haveTestGo := l.processTestGoFiles(p)
 		if haveTestGo && p.buildPkg != nil {
 			imports := make([]string, len(p.testImportPaths))
@@ -322,26 +349,38 @@ func (l *Loader) processStateChange(absPath string) {
 			l.processPackages(p, imports, true)
 			l.processComplete(p)
 		}
-		p.loadState++
+
+		// p.m.Lock()
+		// p.loadState++
+		// p.m.Unlock()
+		p.loadState.increment()
 		p.c.Broadcast()
 		l.stateChange <- absPath
 	case loadedTest:
 		// Short circuiting directly to next state.  Will add external test
 		// packages later.
-		p.loadState++
+
+		// p.m.Lock()
+		// p.loadState++
+		// p.m.Unlock()
+		p.loadState.increment()
 		p.c.Broadcast()
 		l.stateChange <- absPath
 	case done:
 		complete := true
 		l.caravanMutex.Lock()
 
-		for n := range l.caravan.Iter() {
-			p := n.(*Package)
-			if p.loadState != done {
+		l.caravan.Iter(func(_ collections.Key, n *collections.Node) bool {
+			targetP := n.Element.(*Package)
+			// targetP.m.Lock()
+			// targetLoadState := targetP.loadState
+			// targetP.m.Unlock()
+			targetLoadState := targetP.loadState.get()
+			if targetLoadState != done {
 				complete = false
-				break
 			}
-		}
+			return complete
+		})
 
 		l.caravanMutex.Unlock()
 
@@ -373,7 +412,7 @@ func (l *Loader) processComplete(p *Package) {
 	}
 
 	// Loop over packages
-	fmt.Printf(" PC: %s: Checking %s, %d files\n", l.shortName(p.absPath), p.name, len(p.files))
+	fmt.Printf(" PC: %s: Checking %d files\n", l.shortName(p.absPath), len(p.files))
 	files := make([]*ast.File, len(p.files))
 	i := 0
 	for _, v := range p.files {
@@ -387,10 +426,10 @@ func (l *Loader) processComplete(p *Package) {
 	typesPkg, err := l.conf.Check(p.absPath, l.fset, files, l.info)
 	l.mFset.Unlock()
 	if err != nil {
-		fmt.Printf("Error while checking %s:%s:\n\t%s\n\n", p.absPath, p.name, err.Error())
+		fmt.Printf("Error while checking %s:\n\t%s\n\n", p.absPath, err.Error())
 	}
 	if !typesPkg.Complete() {
-		fmt.Printf("Incomplete package %s:%s\n", p.absPath, p.name)
+		fmt.Printf("Incomplete package %s\n", p.absPath)
 	}
 	p.typesPkg = typesPkg
 }
@@ -411,9 +450,9 @@ func (l *Loader) processDirectory(p *Package) {
 	}
 
 	p.buildPkg = buildPkg
-	if p.name == "" {
-		p.name = buildPkg.Name
-	}
+	// if p.name == "" {
+	// 	p.name = buildPkg.Name
+	// }
 }
 
 func (l *Loader) processGoFiles(p *Package) bool {
@@ -716,75 +755,98 @@ func (l *Loader) processUnsafe(p *Package) bool {
 		return false
 	}
 	fmt.Printf("*** Loading `%s`, replacing with types.Unsafe\n", l.shortName(p.absPath))
-	p.name = "unsafe"
+	// p.name = "unsafe"
 	p.typesPkg = types.Unsafe
+
+	l.caravanMutex.Lock()
 	l.caravan.Insert(p)
+	l.caravanMutex.Unlock()
 
 	return true
 }
 
 func (l *Loader) processPackages(p *Package, importPaths []string, testing bool) {
-	fmt.Printf(" PP: %s: %d: started\n", l.shortName(p.absPath), p.loadState)
+	// p.m.Lock()
+	// loadState := p.loadState
+	// p.m.Unlock()
+	loadState := p.loadState.get()
+	fmt.Printf(" PP: %s: %d: started\n", l.shortName(p.absPath), loadState)
 
 	imprts := []string{}
 	importedPackages := map[string]bool{}
 
 	for _, importPath := range importPaths {
-		targetPkgName := filepath.Base(importPath)
+		// targetPkgName := filepath.Base(importPath)
 		targetPath, err := l.findImportPath(importPath, p.absPath)
 		if err != nil {
 			fmt.Printf(err.Error())
 			continue
 		}
-		targetP := l.ensurePackage(targetPath)
-		targetP.name = targetPkgName
+		l.ensurePackage(targetPath)
+		// targetP := l.ensurePackage(targetPath)
+		// targetP.name = targetPkgName
 
 		imprts = append(imprts, l.shortName(importPath))
 		importedPackages[targetPath] = true
 	}
 
 	allImprts := strings.Join(imprts, ", ")
-	fmt.Printf(" PP: %s: %d: -> %s\n", l.shortName(p.absPath), p.loadState, allImprts)
+	fmt.Printf(" PP: %s: %d: -> %s\n", l.shortName(p.absPath), loadState, allImprts)
 
 	for importPath := range importedPackages {
 		l.caravanMutex.Lock()
-		n, _ := l.caravan.Find(collections.Key(importPath))
+		n, ok := l.caravan.Find(collections.Key(importPath))
 		l.caravanMutex.Unlock()
+		if !ok {
+			fmt.Printf(" PP: %s: %d: import path is missing: %s\n", l.shortName(p.absPath), loadState, importPath)
+			continue
+		}
 		targetP := n.Element.(*Package)
 
 		targetP.m.Lock()
 
-		for !l.checkImportReady(p, targetP) {
-			fmt.Printf(" PP: %s: %d: *** still waiting on %s ***\n", l.shortName(p.absPath), p.loadState, l.shortName(targetP.absPath))
+		for !l.checkImportReady(loadState, targetP) {
+			fmt.Printf(" PP: %s: %d: *** still waiting on %s ***\n", l.shortName(p.absPath), loadState, l.shortName(targetP.absPath))
 			targetP.c.Wait()
 		}
 
 		targetP.m.Unlock()
 
 		if testing {
-			if err := l.caravan.WeakConnect(p, targetP); err != nil {
-				panic(fmt.Sprintf(" PP: %s: %d: weak connect failed:\n\tfrom: %s\n\tto: %s\n\terr: %s\n\n", l.shortName(p.absPath), p.loadState, p.Key(), targetP.Key(), err.Error()))
+			l.caravanMutex.Lock()
+			err := l.caravan.WeakConnect(p, targetP)
+			l.caravanMutex.Unlock()
+			if err != nil {
+				panic(fmt.Sprintf(" PP: %s: %d: weak connect failed:\n\tfrom: %s\n\tto: %s\n\terr: %s\n\n", l.shortName(p.absPath), loadState, p.Key(), targetP.Key(), err.Error()))
 			}
 		} else {
-			if err := l.caravan.Connect(p, targetP); err != nil {
-				panic(fmt.Sprintf(" PP: %s: %d: connect failed:\n\tfrom: %s\n\tto: %s\n\terr: %s\n\n", l.shortName(p.absPath), p.loadState, p.Key(), targetP.Key(), err.Error()))
+			l.caravanMutex.Lock()
+			err := l.caravan.Connect(p, targetP)
+			l.caravanMutex.Unlock()
+			if err != nil {
+				panic(fmt.Sprintf(" PP: %s: %d: connect failed:\n\tfrom: %s\n\tto: %s\n\terr: %s\n\n", l.shortName(p.absPath), loadState, p.Key(), targetP.Key(), err.Error()))
 			}
 		}
 	}
 	// All dependencies are loaded; can proceed.
-	fmt.Printf(" PP: %s: %d: all imports fulfilled.\n", l.shortName(p.absPath), p.loadState)
+	fmt.Printf(" PP: %s: %d: all imports fulfilled.\n", l.shortName(p.absPath), loadState)
 }
 
-func (l *Loader) checkImportReady(sourceP *Package, targetP *Package) bool {
+func (l *Loader) checkImportReady(sourceLoadState loadState, targetP *Package) bool {
 	// return targetD.loadState == done || sourceD.loadState < targetD.loadState
 
-	switch sourceP.loadState {
+	// targetP.m.Lock()
+	// targetLoadState := targetP.loadState
+	// targetP.m.Unlock()
+	targetLoadState := targetP.loadState.get()
+
+	switch sourceLoadState {
 	case queued:
 		// Does not make sense that the source loadState would be here.
 	case unloaded:
-		return targetP.loadState > unloaded
+		return targetLoadState > unloaded
 	case loadedGo:
-		return targetP.loadState > unloaded
+		return targetLoadState > unloaded
 	case loadedTest:
 		// Should pass through here.
 	default:
