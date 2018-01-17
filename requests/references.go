@@ -81,16 +81,20 @@ func (rh *referencesHandler) work() error {
 		return nil
 	}
 
-	usePositions := rh.h.workspace.LocateReferences(x)
+	declPosition := rh.h.workspace.LocateDeclaration(x)
+	declIdent, err := rh.h.workspace.LocateIdent(declPosition)
+	if err != nil {
+		fmt.Printf("Failed to find declaration position: %s\n", err.Error())
+	}
+
+	usePositions := rh.h.workspace.LocateReferences(declIdent)
 
 	size := 0
 	if usePositions != nil && len(*usePositions) > 0 {
 		size = len(*usePositions)
 	}
 
-	var declPosition *token.Position
 	if rh.options.IncludeDeclaration {
-		declPosition = rh.h.workspace.LocateDeclaration(x)
 		if declPosition != nil {
 			size++
 		}
@@ -111,6 +115,7 @@ func (rh *referencesHandler) work() error {
 	}
 	if usePositions != nil {
 		for k, v := range *usePositions {
+			fmt.Printf("\t%d: %v\n", k, v)
 			locs[k+offset] = *LocationFromPosition(x.Name, &v)
 		}
 	}

@@ -3,7 +3,6 @@ package langd
 import (
 	"go/token"
 	"os"
-	"runtime"
 	"testing"
 
 	"github.com/object88/langd/log"
@@ -45,7 +44,6 @@ func CountCall(source string) {
 	}
 	calls[source] = call
 }
-
 `
 
 func Test_FromImports_LocateDeclaration(t *testing.T) {
@@ -90,7 +88,6 @@ func setup2(t *testing.T) *Workspace {
 	}
 
 	fc := buildutil.FakeContext(packages)
-	fc.GOPATH = runtime.GOROOT()
 	loader := NewLoader(func(l *Loader) {
 		l.context = fc
 	})

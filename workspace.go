@@ -41,15 +41,14 @@ func CreateWorkspace(loader *Loader, log *log.Log) *Workspace {
 func (w *Workspace) AssignAST() {
 	w.Fset = w.Loader.fset
 	w.Info = w.Loader.info
-	w.PkgNames = make(map[string]bool, len(w.Loader.directories))
+	w.PkgNames = map[string]bool{}
 	w.Files = map[string]*ast.File{}
-	for _, v := range w.Loader.directories {
-		for k, pkg := range v.pm {
-			w.PkgNames[k] = true
-			for fname, astf := range pkg.files {
-				fpath := filepath.Join(v.absPath, fname)
-				w.Files[fpath] = astf
-			}
+	for k := range w.Loader.caravan.Iter() {
+		pkg := k.(*Package)
+		w.PkgNames[pkg.name] = true
+		for fname, file := range pkg.files {
+			fpath := filepath.Join(pkg.absPath, fname)
+			w.Files[fpath] = file.file
 		}
 	}
 }
@@ -97,8 +96,14 @@ func (w *Workspace) LocateIdent(p *token.Position) (*ast.Ident, error) {
 // declared & defined
 func (w *Workspace) LocateDeclaration(x *ast.Ident) *token.Position {
 	xObj := w.Info.ObjectOf(x)
+	fmt.Printf("Got xObj:    %#v\n", xObj)
+	if xObj == nil {
+		return nil
+	}
 	xObjPos := xObj.Pos()
+	fmt.Printf("Got xObjPos: %d\n", xObjPos)
 	loc := w.Fset.Position(xObjPos)
+	fmt.Printf("Got loc:     %s\n", loc.String())
 	return &loc
 }
 
