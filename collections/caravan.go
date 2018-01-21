@@ -34,41 +34,34 @@ type CaravanWalker func(node *Node)
 // "Oh, dogs.  Sure, I like dags.  I like caravans more."
 // -- http://www.imdb.com/character/ch0003626/quotes
 type Caravan struct {
-	nodes map[Key]*Node
-	roots map[Key]*Node
+	nodes map[string]*Node
+	roots map[string]*Node
 	m     sync.Mutex
 }
 
 // Node is an element in a caravan graph
 type Node struct {
-	Ascendants      map[Key]*Node
-	Descendants     map[Key]*Node
+	Ascendants      map[string]*Node
+	Descendants     map[string]*Node
 	Element         Keyer
-	WeakDescendants map[Key]*Node
+	WeakDescendants map[string]*Node
 }
-
-// Key is some unique identifier for an element in the graph
-type Key string
 
 // Keyer is the interface by which an element in a graph exposes its key
 type Keyer interface {
-	Key() Key
-}
-
-func (k Key) String() string {
-	return string(k)
+	Key() string
 }
 
 // CreateCaravan returns an initialized caravan struct
 func CreateCaravan() *Caravan {
 	return &Caravan{
-		nodes: map[Key]*Node{},
-		roots: map[Key]*Node{},
+		nodes: map[string]*Node{},
+		roots: map[string]*Node{},
 	}
 }
 
 // Find returns the element with the given key
-func (c *Caravan) Find(key Key) (*Node, bool) {
+func (c *Caravan) Find(key string) (*Node, bool) {
 	c.m.Lock()
 	n, ok := c.nodes[key]
 	c.m.Unlock()
@@ -89,10 +82,10 @@ func (c *Caravan) Insert(k Keyer) {
 	}
 
 	n := &Node{
-		Ascendants:      map[Key]*Node{},
-		Descendants:     map[Key]*Node{},
+		Ascendants:      map[string]*Node{},
+		Descendants:     map[string]*Node{},
 		Element:         k,
-		WeakDescendants: map[Key]*Node{},
+		WeakDescendants: map[string]*Node{},
 	}
 	c.nodes[key] = n
 	c.roots[key] = n
@@ -176,7 +169,7 @@ func (c *Caravan) WeakConnect(from, to Keyer) error {
 	return nil
 }
 
-func checkLoop(fromKey Key, n *Node) error {
+func checkLoop(fromKey string, n *Node) error {
 	key := n.Element.Key()
 	if fromKey == key {
 		return fmt.Errorf("Found loop:\n\t%s", key)
@@ -198,7 +191,7 @@ func checkLoop(fromKey Key, n *Node) error {
 // for i := range c.Iter() {
 //	// ...
 // }
-func (c *Caravan) Iter(iter func(Key, *Node) bool) {
+func (c *Caravan) Iter(iter func(string, *Node) bool) {
 	for k, n := range c.nodes {
 		if !iter(k, n) {
 			break
@@ -217,7 +210,7 @@ func (c *Caravan) Iter(iter func(Key, *Node) bool) {
 // start at a leaf or root, pass through some interior nodes, then return
 // to a different root or leaf.
 func (c *Caravan) Walk(direction WalkDirection, walker CaravanWalker) {
-	visits := map[Key]bool{}
+	visits := map[string]bool{}
 
 	c.m.Lock()
 
@@ -234,7 +227,7 @@ func (c *Caravan) Walk(direction WalkDirection, walker CaravanWalker) {
 	c.m.Unlock()
 }
 
-func (c *Caravan) walkNodeDown(visits map[Key]bool, node *Node, walker CaravanWalker) {
+func (c *Caravan) walkNodeDown(visits map[string]bool, node *Node, walker CaravanWalker) {
 	for k := range node.Ascendants {
 		if _, ok := visits[k]; !ok {
 			// An ascendent hasn't been visited; can't process this node yet.
@@ -255,7 +248,7 @@ func (c *Caravan) walkNodeDown(visits map[Key]bool, node *Node, walker CaravanWa
 	}
 }
 
-func (c *Caravan) walkNodeUp(visits map[Key]bool, node *Node, walker CaravanWalker) {
+func (c *Caravan) walkNodeUp(visits map[string]bool, node *Node, walker CaravanWalker) {
 	visits[node.Element.Key()] = true
 
 	for k, v := range node.Descendants {
