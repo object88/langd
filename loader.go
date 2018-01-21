@@ -15,7 +15,6 @@ import (
 	"path/filepath"
 	"regexp"
 	"runtime"
-	"runtime/debug"
 	"strconv"
 	"strings"
 	"sync"
@@ -99,7 +98,6 @@ type Package struct {
 
 // Key returns the collections.Key for the given Package
 func (p *Package) Key() collections.Key {
-	// return collections.Key(p.absPath)
 	return p.absPath
 }
 
@@ -167,11 +165,6 @@ func NewLoader(options ...LoaderOption) *Loader {
 	c := &types.Config{
 		Error: func(e error) {
 			if terror, ok := e.(types.Error); ok {
-				// Let's try to get the stack first.
-
-				stack := debug.Stack()
-				fmt.Printf("ERROR: (stack)\n\t%s\n", string(stack))
-
 				position := terror.Fset.Position(terror.Pos)
 				absPath := filepath.Dir(position.Filename)
 				l.caravanMutex.Lock()
@@ -307,7 +300,7 @@ func (l *Loader) processStateChange(absPath collections.Key) {
 
 	switch loadState {
 	case queued:
-		// fmt.Printf("PSC: %s: current state: %d\n", l.shortName(absPath), loadState)
+		fmt.Printf("PSC: %s: current state: %d\n", l.shortName(absPath), loadState)
 
 		l.processDirectory(p)
 
@@ -315,7 +308,7 @@ func (l *Loader) processStateChange(absPath collections.Key) {
 		p.c.Broadcast()
 		l.stateChange <- absPath
 	case unloaded:
-		// fmt.Printf("PSC: %s: current state: %d\n", l.shortName(absPath), loadState)
+		fmt.Printf("PSC: %s: current state: %d\n", l.shortName(absPath), loadState)
 
 		haveGo := l.processGoFiles(p)
 		haveCgo := l.processCgoFiles(p)
@@ -329,7 +322,7 @@ func (l *Loader) processStateChange(absPath collections.Key) {
 		p.c.Broadcast()
 		l.stateChange <- absPath
 	case loadedGo:
-		// fmt.Printf("PSC: %s: current state: %d\n", l.shortName(absPath), loadState)
+		fmt.Printf("PSC: %s: current state: %d\n", l.shortName(absPath), loadState)
 
 		haveTestGo := l.processTestGoFiles(p)
 		if haveTestGo && p.buildPkg != nil {
@@ -409,7 +402,6 @@ func (l *Loader) processComplete(p *Package) {
 	files := make([]*ast.File, len(p.files))
 	i := 0
 	for _, v := range p.files {
-		// fmt.Printf("\t%s\n", l.fset.Position(v.file.Pos()).Filename)
 		f := v
 		files[i] = f.file
 		i++
@@ -481,8 +473,6 @@ func (l *Loader) processGoFiles(p *Package) bool {
 		if err != nil {
 			fmt.Printf(" GF: ERROR: While parsing %s:\n\t%s\n", fpath, err.Error())
 		}
-
-		// fmt.Printf(" GF: %s: Processing AST %s\n", l.shortName(p.absPath), fpath)
 
 		l.processAstFile(p, fname, astf, p.importPaths)
 	}
@@ -690,7 +680,6 @@ func (l *Loader) processTestGoFiles(p *Package) bool {
 	fnames := p.buildPkg.TestGoFiles
 	if len(fnames) == 0 {
 		// No test files; continue on.
-		// fmt.Printf("TFG: %s: no test Go files\n", l.shortName(d.absPath))
 		return false
 	}
 
