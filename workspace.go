@@ -45,7 +45,7 @@ func (w *Workspace) AssignAST() {
 	w.Loader.caravan.Iter(func(_ collections.Key, node *collections.Node) bool {
 		pkg := node.Element.(*Package)
 		for fname, file := range pkg.files {
-			fpath := filepath.Join(pkg.absPath, fname)
+			fpath := filepath.Join(pkg.absPath.String(), fname)
 			w.Files[fpath] = file.file
 		}
 		return true

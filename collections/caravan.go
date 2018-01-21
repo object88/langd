@@ -55,6 +55,10 @@ type Keyer interface {
 	Key() Key
 }
 
+func (k Key) String() string {
+	return string(k)
+}
+
 // CreateCaravan returns an initialized caravan struct
 func CreateCaravan() *Caravan {
 	return &Caravan{
