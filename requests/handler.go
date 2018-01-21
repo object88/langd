@@ -59,7 +59,9 @@ func NewHandler(imf *IniterMapFactory) *Handler {
 	// will start blocking.
 	incomingQueue := make(chan int, 1024)
 	l := log.CreateLog(os.Stdout)
-	loader := langd.NewLoader()
+	loader := langd.NewLoader(func(loader *langd.Loader) {
+		loader.Log = l
+	})
 	outgoingQueue := make(chan int, 256)
 	sq := sigqueue.CreateSigqueue(outgoingQueue)
 	h := &Handler{
