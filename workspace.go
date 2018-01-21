@@ -42,10 +42,10 @@ func (w *Workspace) AssignAST() {
 	w.Fset = w.Loader.fset
 	w.Info = w.Loader.info
 	w.Files = map[string]*ast.File{}
-	w.Loader.caravan.Iter(func(_ collections.Key, node *collections.Node) bool {
+	w.Loader.caravan.Iter(func(_ string, node *collections.Node) bool {
 		pkg := node.Element.(*Package)
 		for fname, file := range pkg.files {
-			fpath := filepath.Join(pkg.absPath.String(), fname)
+			fpath := filepath.Join(pkg.absPath, fname)
 			w.Files[fpath] = file.file
 		}
 		return true

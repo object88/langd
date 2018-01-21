@@ -5,11 +5,11 @@ import (
 )
 
 type Foo struct {
-	key     Key
+	key     string
 	checked bool
 }
 
-func (f *Foo) Key() Key {
+func (f *Foo) Key() string {
 	return f.key
 }
 
@@ -292,7 +292,7 @@ func Test_Caravan_Walk_Flatten(t *testing.T) {
 					}
 
 					i := 0
-					visited := map[Key]bool{}
+					visited := map[string]bool{}
 					c.Walk(tc.dir, func(n *Node) {
 						// Use this to test the fan-in, fan out, etc.
 						key := n.Element.Key()
@@ -313,8 +313,8 @@ func Test_Caravan_Walk_Flatten(t *testing.T) {
 }
 
 type order struct {
-	first  Key
-	second Key
+	first  string
+	second string
 }
 
 func Test_Caravan_Walk_Cross(t *testing.T) {
@@ -380,7 +380,7 @@ func Test_Caravan_Walk_Diamond(t *testing.T) {
 	tests := []struct {
 		name   string
 		dir    WalkDirection
-		first  Key
+		first  string
 		orders []order
 	}{
 		{
@@ -445,7 +445,7 @@ func Test_Caravan_Walk_Offsided(t *testing.T) {
 	tests := []struct {
 		name   string
 		dir    WalkDirection
-		first  Key
+		first  string
 		orders []order
 	}{
 		{
@@ -578,7 +578,7 @@ func Test_Caravan_Walk_Foo(t *testing.T) {
 	tests := []struct {
 		name   string
 		dir    WalkDirection
-		first  Key
+		first  string
 		orders []order
 	}{
 		{
@@ -853,7 +853,7 @@ func createOffsided(t *testing.T) (*Caravan, []*Foo) {
 	return c, []*Foo{f0, f1, f2, f3a, f3b, f4, f5, f6}
 }
 
-func indexOf(walked []Keyer, key Key) int {
+func indexOf(walked []Keyer, key string) int {
 	for k, v := range walked {
 		if v.Key() == key {
 			return k
