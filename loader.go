@@ -90,8 +90,10 @@ type Package struct {
 	shortPath *string
 
 	buildPkg        *build.Package
+	checker         *types.Checker
 	files           map[string]*File
 	importPaths     map[string]bool
+	testFiles       map[string]*File
 	testImportPaths map[string]bool
 	typesPkg        *types.Package
 
@@ -108,6 +110,23 @@ func (p *Package) Key() string {
 func (p *Package) String() string {
 	p.ensureShortPath()
 	return *p.shortPath
+}
+
+func (p *Package) currentFiles() map[string]*File {
+	loadState := p.loadState.get()
+	switch loadState {
+	case unloaded:
+		if p.files == nil {
+			p.files = map[string]*File{}
+		}
+		return p.files
+	case loadedGo:
+		if p.testFiles == nil {
+			p.testFiles = map[string]*File{}
+		}
+		return p.testFiles
+	}
+	return nil
 }
 
 func (p *Package) ensureShortPath() {
@@ -151,9 +170,12 @@ func NewLoader(options ...LoaderOption) *Loader {
 		filteredPaths: globs,
 		fset:          token.NewFileSet(),
 		info: &types.Info{
-			Types: map[ast.Expr]types.TypeAndValue{},
-			Defs:  map[*ast.Ident]types.Object{},
-			Uses:  map[*ast.Ident]types.Object{},
+			Defs:       map[*ast.Ident]types.Object{},
+			Implicits:  map[ast.Node]types.Object{},
+			Scopes:     map[ast.Node]*types.Scope{},
+			Selections: map[*ast.SelectorExpr]*types.Selection{},
+			Types:      map[ast.Expr]types.TypeAndValue{},
+			Uses:       map[*ast.Ident]types.Object{},
 		},
 		stateChange: make(chan string),
 	}
@@ -213,7 +235,9 @@ func NewLoader(options ...LoaderOption) *Loader {
 					Warning:  terror.Soft,
 				}
 				p := node.Element.(*Package)
-				f, ok := p.files[baseFilename]
+
+				files := p.currentFiles()
+				f, ok := files[baseFilename]
 				if !ok {
 					l.Log.Debugf("ERROR: (missing file) %s\n", position.Filename)
 				} else {
@@ -271,6 +295,11 @@ func (l *Loader) Errors(handleErrs func(file string, errs []FileError)) {
 	l.caravan.Iter(func(key string, node *collections.Node) bool {
 		p := node.Element.(*Package)
 		for fname, f := range p.files {
+			if len(f.errs) != 0 {
+				handleErrs(filepath.Join(p.absPath, fname), f.errs)
+			}
+		}
+		for fname, f := range p.testFiles {
 			if len(f.errs) != 0 {
 				handleErrs(filepath.Join(p.absPath, fname), f.errs)
 			}
@@ -416,38 +445,40 @@ func (l *Loader) processComplete(p *Package) {
 		return
 	}
 
-	// Clear previous errors; all will be rechecked.
-	for _, f := range p.files {
-		f.errs = []FileError{}
+	if p.checker == nil {
+		p.typesPkg = types.NewPackage(p.absPath, p.buildPkg.Name)
+		p.checker = types.NewChecker(l.conf, l.fset, p.typesPkg, l.info)
 	}
 
-	// Loop over packages
+	// Clear previous errors; all will be rechecked.
+	files := p.currentFiles()
+
 	allFiles := []string{}
-	for path := range p.files {
+	for path := range files {
 		allFiles = append(allFiles, filepath.Base(path))
 	}
-	l.Log.Debugf(" PC: %s: Checking %d files: %s\n", p, len(p.files), strings.Join(allFiles, ", "))
-	files := make([]*ast.File, len(p.files))
+	l.Log.Debugf(" PC: %s: Checking %d files: %s\n", p, len(files), strings.Join(allFiles, ", "))
+
+	// Loop over packages
+	astFiles := make([]*ast.File, len(files))
 	i := 0
-	for _, v := range p.files {
+	for _, v := range files {
 		f := v
-		files[i] = f.file
+		f.errs = []FileError{}
+		astFiles[i] = f.file
 		i++
 	}
 
 	l.mFset.Lock()
 	l.Log.Debugf(" PC: %s: Checking...\n", p)
-	typesPkg, err := l.conf.Check(p.absPath, l.fset, files, l.info)
+	err := p.checker.Files(astFiles)
 	l.Log.Debugf(" PC: %s: Checking done.\n", p)
 	l.mFset.Unlock()
 	if err != nil {
 		l.Log.Debugf("Error while checking %s:\n\t%s\n\n", p.absPath, err.Error())
 	}
-	if !typesPkg.Complete() {
+	if !p.typesPkg.Complete() {
 		l.Log.Debugf("Incomplete package %s\n", p.absPath)
-	}
-	if p.typesPkg == nil {
-		p.typesPkg = typesPkg
 	}
 }
 
@@ -750,7 +781,8 @@ func (l *Loader) processAstFile(p *Package, fname string, astf *ast.File, import
 		}
 	}
 
-	p.files[fname] = &File{
+	files := p.currentFiles()
+	files[fname] = &File{
 		errs: []FileError{},
 		file: astf,
 	}
