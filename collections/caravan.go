@@ -120,7 +120,8 @@ func (c *Caravan) Connect(from, to Keyer) error {
 		return nil
 	}
 
-	err := checkLoop(fromKey, toNode)
+	checkedNodes := map[string]bool{}
+	err := checkLoop(fromKey, toNode, checkedNodes)
 	if err != nil {
 		c.m.Unlock()
 		return fmt.Errorf("Connect would create circular loop:\n\t%s", err.Error())
@@ -169,17 +170,22 @@ func (c *Caravan) WeakConnect(from, to Keyer) error {
 	return nil
 }
 
-func checkLoop(fromKey string, n *Node) error {
+func checkLoop(fromKey string, n *Node, checkedNodes map[string]bool) error {
 	key := n.Element.Key()
 	if fromKey == key {
 		return fmt.Errorf("Found loop:\n\t%s", key)
 	}
 
-	for _, v := range n.Descendants {
-		if err := checkLoop(fromKey, v); err != nil {
+	for k, v := range n.Descendants {
+		if _, ok := checkedNodes[k]; ok {
+			continue
+		}
+		if err := checkLoop(fromKey, v, checkedNodes); err != nil {
 			return fmt.Errorf("%s\n\t%s", err.Error(), key)
 		}
 	}
+
+	checkedNodes[key] = true
 
 	return nil
 }
