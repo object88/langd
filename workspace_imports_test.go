@@ -52,7 +52,7 @@ func Test_FromImports_LocateDeclaration(t *testing.T) {
 	callCountDeclOffset := nthIndex(identImportsTestProgram2, "CountCall", 0)
 
 	callCountInvokeOffset := nthIndex(identImportsTestProgram1, "CountCall", 0)
-	callCountInvokePosition := w.Fset.Position(token.Pos(callCountInvokeOffset + 1))
+	callCountInvokePosition := w.Loader.fset.Position(token.Pos(callCountInvokeOffset + 1))
 	callCountInvokeIdent, _ := w.LocateIdent(&callCountInvokePosition)
 
 	declPosition := w.LocateDeclaration(callCountInvokeIdent)
@@ -68,7 +68,7 @@ func Test_FromImports_LocateReferences_AsFunc(t *testing.T) {
 	w := setup2(t)
 
 	callCountInvokeOffset := nthIndex(identImportsTestProgram1, "CountCall", 0)
-	callCountInvokePosition := w.Fset.Position(token.Pos(callCountInvokeOffset + 1))
+	callCountInvokePosition := w.Loader.fset.Position(token.Pos(callCountInvokeOffset + 1))
 	callCountIdent, _ := w.LocateIdent(&callCountInvokePosition)
 
 	refPositions := w.LocateReferences(callCountIdent)

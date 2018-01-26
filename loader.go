@@ -59,9 +59,7 @@ type Loader struct {
 
 	conf    *types.Config
 	context *build.Context
-	mFset   sync.Mutex
 	fset    *token.FileSet
-	info    *types.Info
 
 	unsafePath    string
 	filteredPaths []glob.Glob
@@ -89,13 +87,16 @@ type Package struct {
 	absPath   string
 	shortPath *string
 
-	buildPkg        *build.Package
-	checker         *types.Checker
+	buildPkg  *build.Package
+	checker   *types.Checker
+	checkerMu sync.Mutex
+	info      *types.Info
+	typesPkg  *types.Package
+
 	files           map[string]*File
 	importPaths     map[string]bool
 	testFiles       map[string]*File
 	testImportPaths map[string]bool
-	typesPkg        *types.Package
 
 	loadState loadState
 	m         sync.Mutex
@@ -169,15 +170,7 @@ func NewLoader(options ...LoaderOption) *Loader {
 		done:          false,
 		filteredPaths: globs,
 		fset:          token.NewFileSet(),
-		info: &types.Info{
-			Defs:       map[*ast.Ident]types.Object{},
-			Implicits:  map[ast.Node]types.Object{},
-			Scopes:     map[ast.Node]*types.Scope{},
-			Selections: map[*ast.SelectorExpr]*types.Selection{},
-			Types:      map[ast.Expr]types.TypeAndValue{},
-			Uses:       map[*ast.Ident]types.Object{},
-		},
-		stateChange: make(chan string),
+		stateChange:   make(chan string),
 	}
 
 	for _, opt := range options {
@@ -447,7 +440,7 @@ func (l *Loader) processComplete(p *Package) {
 
 	if p.checker == nil {
 		p.typesPkg = types.NewPackage(p.absPath, p.buildPkg.Name)
-		p.checker = types.NewChecker(l.conf, l.fset, p.typesPkg, l.info)
+		p.checker = types.NewChecker(l.conf, l.fset, p.typesPkg, p.info)
 	}
 
 	// Clear previous errors; all will be rechecked.
@@ -469,11 +462,11 @@ func (l *Loader) processComplete(p *Package) {
 		i++
 	}
 
-	l.mFset.Lock()
+	p.checkerMu.Lock()
 	l.Log.Debugf(" PC: %s: Checking...\n", p)
 	err := p.checker.Files(astFiles)
 	l.Log.Debugf(" PC: %s: Checking done.\n", p)
-	l.mFset.Unlock()
+	p.checkerMu.Unlock()
 	if err != nil {
 		l.Log.Debugf("Error while checking %s:\n\t%s\n\n", p.absPath, err.Error())
 	}
@@ -523,9 +516,7 @@ func (l *Loader) processGoFiles(p *Package) bool {
 			continue
 		}
 
-		l.mFset.Lock()
 		astf, err := parser.ParseFile(l.fset, fpath, r, parser.AllErrors)
-		l.mFset.Unlock()
 
 		r.Close()
 
@@ -696,9 +687,7 @@ func (l *Loader) processCgoFiles(p *Package) bool {
 			continue
 		}
 
-		l.mFset.Lock()
 		astf, err := parser.ParseFile(l.fset, displayFiles[i], f, 0)
-		l.mFset.Unlock()
 
 		f.Close()
 
@@ -744,9 +733,7 @@ func (l *Loader) processTestGoFiles(p *Package) bool {
 			continue
 		}
 
-		l.mFset.Lock()
 		astf, err := parser.ParseFile(l.fset, fpath, r, parser.AllErrors)
-		l.mFset.Unlock()
 
 		r.Close()
 
@@ -885,8 +872,15 @@ func (l *Loader) ensurePackage(absPath string) *Package {
 	n, ok := l.caravan.Find(absPath)
 	if !ok {
 		p = &Package{
-			absPath:         absPath,
-			files:           map[string]*File{},
+			absPath: absPath,
+			info: &types.Info{
+				Defs:       map[*ast.Ident]types.Object{},
+				Implicits:  map[ast.Node]types.Object{},
+				Scopes:     map[ast.Node]*types.Scope{},
+				Selections: map[*ast.SelectorExpr]*types.Selection{},
+				Types:      map[ast.Expr]types.TypeAndValue{},
+				Uses:       map[*ast.Ident]types.Object{},
+			},
 			importPaths:     map[string]bool{},
 			testImportPaths: map[string]bool{},
 		}
