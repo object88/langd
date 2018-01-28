@@ -54,7 +54,7 @@ func (rh *didOpenHandler) work() error {
 		return fmt.Errorf("FAILED: Workspace doesn't exist on handler")
 	}
 
-	astFile, err := parser.ParseFile(rh.h.workspace.Fset, rh.fpath, rh.text, 0)
+	astFile, err := parser.ParseFile(rh.h.workspace.Loader.Fset, rh.fpath, rh.text, 0)
 	if err != nil {
 		rh.h.log.Warnf("Failed to parse file as provided by didOpen: %s\n", err.Error())
 	}

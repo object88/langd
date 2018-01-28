@@ -57,9 +57,10 @@ type Loader struct {
 
 	stateChange chan string
 
-	conf    *types.Config
-	context *build.Context
-	fset    *token.FileSet
+	checkerMu sync.Mutex
+	conf      *types.Config
+	context   *build.Context
+	Fset      *token.FileSet
 
 	unsafePath    string
 	filteredPaths []glob.Glob
@@ -85,13 +86,11 @@ type File struct {
 // Package is the contents of a package
 type Package struct {
 	absPath   string
-	shortPath *string
+	shortPath string
 
-	buildPkg  *build.Package
-	checker   *types.Checker
-	checkerMu sync.Mutex
-	info      *types.Info
-	typesPkg  *types.Package
+	buildPkg *build.Package
+	checker  *types.Checker
+	typesPkg *types.Package
 
 	files           map[string]*File
 	importPaths     map[string]bool
@@ -109,8 +108,7 @@ func (p *Package) Key() string {
 }
 
 func (p *Package) String() string {
-	p.ensureShortPath()
-	return *p.shortPath
+	return p.shortPath
 }
 
 func (p *Package) currentFiles() map[string]*File {
@@ -128,27 +126,6 @@ func (p *Package) currentFiles() map[string]*File {
 		return p.testFiles
 	}
 	return nil
-}
-
-func (p *Package) ensureShortPath() {
-	if p.shortPath != nil {
-		return
-	}
-	root := runtime.GOROOT()
-	if strings.HasPrefix(p.absPath, root) {
-		path := fmt.Sprintf("(stdlib) %s", p.absPath[utf8.RuneCountInString(root)+5:])
-		p.shortPath = &path
-	}
-	// Want a way to shorten the canonical name for logging purposes, but
-	// this would require knowing the path of the starting workspace.  Need to
-	// figure out best way to approach this.
-	// n := utf8.RuneCountInString(l.startDir)
-	// if len(p.absPath) < n {
-	// 	*p.shortPath = p.absPath
-	// } else {
-	// 	*p.shortPath = p.absPath[n:]
-	// }
-	p.shortPath = &p.absPath
 }
 
 var cgoRe = regexp.MustCompile(`[/\\:]`)
@@ -169,7 +146,7 @@ func NewLoader(options ...LoaderOption) *Loader {
 		closer:        make(chan bool),
 		done:          false,
 		filteredPaths: globs,
-		fset:          token.NewFileSet(),
+		Fset:          token.NewFileSet(),
 		stateChange:   make(chan string),
 	}
 
@@ -440,7 +417,15 @@ func (l *Loader) processComplete(p *Package) {
 
 	if p.checker == nil {
 		p.typesPkg = types.NewPackage(p.absPath, p.buildPkg.Name)
-		p.checker = types.NewChecker(l.conf, l.fset, p.typesPkg, p.info)
+		info := &types.Info{
+			Defs:       map[*ast.Ident]types.Object{},
+			Implicits:  map[ast.Node]types.Object{},
+			Scopes:     map[ast.Node]*types.Scope{},
+			Selections: map[*ast.SelectorExpr]*types.Selection{},
+			Types:      map[ast.Expr]types.TypeAndValue{},
+			Uses:       map[*ast.Ident]types.Object{},
+		}
+		p.checker = types.NewChecker(l.conf, l.Fset, p.typesPkg, info)
 	}
 
 	// Clear previous errors; all will be rechecked.
@@ -462,11 +447,12 @@ func (l *Loader) processComplete(p *Package) {
 		i++
 	}
 
-	p.checkerMu.Lock()
+	l.checkerMu.Lock()
 	l.Log.Debugf(" PC: %s: Checking...\n", p)
 	err := p.checker.Files(astFiles)
 	l.Log.Debugf(" PC: %s: Checking done.\n", p)
-	p.checkerMu.Unlock()
+	l.checkerMu.Unlock()
+
 	if err != nil {
 		l.Log.Debugf("Error while checking %s:\n\t%s\n\n", p.absPath, err.Error())
 	}
@@ -516,7 +502,7 @@ func (l *Loader) processGoFiles(p *Package) bool {
 			continue
 		}
 
-		astf, err := parser.ParseFile(l.fset, fpath, r, parser.AllErrors)
+		astf, err := parser.ParseFile(l.Fset, fpath, r, parser.AllErrors)
 
 		r.Close()
 
@@ -687,7 +673,7 @@ func (l *Loader) processCgoFiles(p *Package) bool {
 			continue
 		}
 
-		astf, err := parser.ParseFile(l.fset, displayFiles[i], f, 0)
+		astf, err := parser.ParseFile(l.Fset, displayFiles[i], f, 0)
 
 		f.Close()
 
@@ -733,7 +719,7 @@ func (l *Loader) processTestGoFiles(p *Package) bool {
 			continue
 		}
 
-		astf, err := parser.ParseFile(l.fset, fpath, r, parser.AllErrors)
+		astf, err := parser.ParseFile(l.Fset, fpath, r, parser.AllErrors)
 
 		r.Close()
 
@@ -871,16 +857,26 @@ func (l *Loader) ensurePackage(absPath string) *Package {
 	var p *Package
 	n, ok := l.caravan.Find(absPath)
 	if !ok {
+		shortPath := absPath
+		root := runtime.GOROOT()
+		if strings.HasPrefix(absPath, root) {
+			path := fmt.Sprintf("(stdlib) %s", absPath[utf8.RuneCountInString(root)+5:])
+			shortPath = path
+		} else {
+			// Want a way to shorten the canonical name for logging purposes, but
+			// this would require knowing the path of the starting workspace.  Need to
+			// figure out best way to approach this.
+			// n := utf8.RuneCountInString(l.startDir)
+			// if len(p.absPath) < n {
+			// 	*p.shortPath = p.absPath
+			// } else {
+			// 	*p.shortPath = p.absPath[n:]
+			// }
+		}
+
 		p = &Package{
-			absPath: absPath,
-			info: &types.Info{
-				Defs:       map[*ast.Ident]types.Object{},
-				Implicits:  map[ast.Node]types.Object{},
-				Scopes:     map[ast.Node]*types.Scope{},
-				Selections: map[*ast.SelectorExpr]*types.Selection{},
-				Types:      map[ast.Expr]types.TypeAndValue{},
-				Uses:       map[*ast.Ident]types.Object{},
-			},
+			absPath:         absPath,
+			shortPath:       shortPath,
 			importPaths:     map[string]bool{},
 			testImportPaths: map[string]bool{},
 		}

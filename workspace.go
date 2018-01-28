@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"go/ast"
 	"go/token"
+	"go/types"
 	"path/filepath"
 	"sync"
 
@@ -14,8 +15,6 @@ import (
 
 // Workspace is a mass of code
 type Workspace struct {
-	// Fset *token.FileSet
-	// Info        *types.Info
 	Files       map[string]*ast.File
 	OpenedFiles map[string]*rope.Rope
 	rwm         sync.RWMutex
@@ -38,8 +37,6 @@ func CreateWorkspace(loader *Loader, log *log.Log) *Workspace {
 
 // AssignAST will inform the workspace of its file set, info, paths, etc.
 func (w *Workspace) AssignAST() {
-	// w.Fset = w.Loader.fset
-	// w.Info = w.Loader.info
 	w.Files = map[string]*ast.File{}
 	w.Loader.caravan.Iter(func(_ string, node *collections.Node) bool {
 		pkg := node.Element.(*Package)
@@ -70,8 +67,8 @@ func (w *Workspace) LocateIdent(p *token.Position) (*ast.Ident, error) {
 		if n == nil {
 			return false
 		}
-		pStart := w.Loader.fset.Position(n.Pos())
-		pEnd := w.Loader.fset.Position(n.End())
+		pStart := w.Loader.Fset.Position(n.Pos())
+		pEnd := w.Loader.Fset.Position(n.End())
 
 		if WithinPosition(p, &pStart, &pEnd) {
 			switch v := n.(type) {
@@ -108,8 +105,8 @@ func (w *Workspace) LocateDeclaration2(p *token.Position) (*token.Position, erro
 			return false
 		}
 
-		pStart := w.Loader.fset.Position(n.Pos())
-		pEnd := w.Loader.fset.Position(n.End())
+		pStart := w.Loader.Fset.Position(n.Pos())
+		pEnd := w.Loader.Fset.Position(n.End())
 
 		fmt.Printf("Checking between %s (%d) and %s (%d)...", pStart.String(), pStart.Offset, pEnd.String(), pEnd.Offset)
 		if !WithinPosition(p, &pStart, &pEnd) {
@@ -125,10 +122,10 @@ func (w *Workspace) LocateDeclaration2(p *token.Position) (*token.Position, erro
 			return false
 		case *ast.SelectorExpr:
 			selPos := v.Sel
-			pSelStart := w.Loader.fset.Position(selPos.Pos())
-			pSelEnd := w.Loader.fset.Position(selPos.End())
+			pSelStart := w.Loader.Fset.Position(selPos.Pos())
+			pSelEnd := w.Loader.Fset.Position(selPos.End())
 			if WithinPosition(p, &pSelStart, &pSelEnd) {
-				s := pkg.info.Selections[v]
+				s := pkg.checker.Selections[v]
 				fmt.Printf("Selector: %#v\n", s)
 				x = v
 				return false
@@ -148,12 +145,12 @@ func (w *Workspace) LocateDeclaration2(p *token.Position) (*token.Position, erro
 		fmt.Printf("Have ident\n")
 		if v.Obj != nil {
 			fmt.Printf("Ident has obj %#v (%d)\n", v.Obj, v.Pos())
-			identPosition := w.Loader.fset.Position(v.Obj.Pos())
+			identPosition := w.Loader.Fset.Position(v.Obj.Pos())
 			return &identPosition, nil
 		}
 		// xObj := pkg.info.ObjectOf(v)
 		// if xObj != nil {
-		// 	identPosition := w.Loader.fset.Position(xObj.Pos())
+		// 	identPosition := w.Loader.Fset.Position(xObj.Pos())
 		// 	return &identPosition, nil
 		// }
 	case *ast.SelectorExpr:
@@ -181,6 +178,49 @@ func (w *Workspace) LocateDeclaration2(p *token.Position) (*token.Position, erro
 			fmt.Printf("v.X not in ObjectOf\n")
 		} else {
 			fmt.Printf("checker.ObjectOf(v.X): %#v\n", vXObj)
+			switch v1 := vXObj.(type) {
+			case *types.PkgName:
+				fmt.Printf("Have PkgName %s, type %s\n", v1.Name(), v1.Type())
+				absPath := v1.Imported().Path()
+				e, _ := w.Loader.caravan.Find(absPath)
+				pkg1 := e.Element.(*Package)
+				fmt.Printf("From pkg %#v\n", pkg1)
+
+				oooo := pkg1.typesPkg.Scope().Lookup(v.Sel.Name)
+				if oooo != nil {
+					// Have thingy from scope!
+					declPos := w.Loader.Fset.Position(oooo.Pos())
+					return &declPos, nil
+				}
+
+				fmt.Printf("\tDefs:\n")
+				for k, v := range pkg1.checker.Defs {
+					fmt.Printf("\t\t%#v -> %#v\n", k, v)
+				}
+				fmt.Printf("\tSelections:\n")
+				for k, v := range pkg1.checker.Selections {
+					fmt.Printf("\t\t%#v -> %#v\n", k, v)
+				}
+				fmt.Printf("\tImplicits:\n")
+				for k, v := range pkg1.checker.Implicits {
+					fmt.Printf("\t\t%#v -> %#v\n", k, v)
+				}
+				fmt.Printf("\tUses:\n")
+				for k, v := range pkg1.checker.Uses {
+					fmt.Printf("\t\t%#v -> %#v\n", k, v)
+				}
+
+				selIdent := ast.NewIdent(v.Sel.Name)
+				fmt.Printf("Using new ident %#v\n", selIdent)
+				def, ok := pkg1.checker.Defs[selIdent]
+				if !ok {
+					fmt.Printf("Not from Defs\n")
+				} else {
+					fmt.Printf("From defs: %#v\n", def)
+					declPos := w.Loader.Fset.Position(def.Pos())
+					return &declPos, nil
+				}
+			}
 		}
 
 	default:
@@ -202,9 +242,9 @@ func (w *Workspace) expressionType(n ast.Node) {
 func (w *Workspace) LocateDeclaration(x *ast.Ident) *token.Position {
 	var xObjPos token.Pos
 
-	fmt.Printf("Name position: %d, %s\n", x.NamePos, w.Loader.fset.Position(x.NamePos).String())
+	fmt.Printf("Name position: %d, %s\n", x.NamePos, w.Loader.Fset.Position(x.NamePos).String())
 	if x.Obj != nil {
-		fmt.Printf("Obj position: %d, %s\n", x.Obj.Pos(), w.Loader.fset.Position(x.Obj.Pos()).String())
+		fmt.Printf("Obj position: %d, %s\n", x.Obj.Pos(), w.Loader.Fset.Position(x.Obj.Pos()).String())
 	}
 
 	// xObj := x.Obj
@@ -225,7 +265,7 @@ func (w *Workspace) LocateDeclaration(x *ast.Ident) *token.Position {
 	// 	}
 	// }
 	fmt.Printf("Got xObjPos: %d\n", xObjPos)
-	loc := w.Loader.fset.Position(xObjPos)
+	loc := w.Loader.Fset.Position(xObjPos)
 	fmt.Printf("Got loc:     %s\n", loc.String())
 	return &loc
 }

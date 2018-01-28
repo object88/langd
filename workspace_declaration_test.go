@@ -131,7 +131,7 @@ func workspaceSetup(t *testing.T, startingPath string, packages map[string]map[s
 }
 
 func test(t *testing.T, w *Workspace, declOffset, usageOffset int) {
-	usagePosition := w.Loader.fset.Position(token.Pos(usageOffset + 1))
+	usagePosition := w.Loader.Fset.Position(token.Pos(usageOffset + 1))
 	declPosition, err := w.LocateDeclaration2(&usagePosition)
 	if err != nil {
 		t.Fatal(err.Error())
