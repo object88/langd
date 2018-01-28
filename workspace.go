@@ -88,7 +88,9 @@ func (w *Workspace) LocateIdent(p *token.Position) (*ast.Ident, error) {
 	return x, nil
 }
 
-func (w *Workspace) LocateDeclaration2(p *token.Position) (*token.Position, error) {
+// LocateDeclaration returns the position where the provided identifier is
+// declared & defined
+func (w *Workspace) LocateDeclaration(p *token.Position) (*token.Position, error) {
 	f := w.Files[p.Filename]
 	if f == nil {
 		// Failure response is failure.
@@ -227,47 +229,6 @@ func (w *Workspace) LocateDeclaration2(p *token.Position) (*token.Position, erro
 		fmt.Printf("Is %#v\n", x)
 	}
 	return nil, nil
-}
-
-func (w *Workspace) expressionType(n ast.Node) {
-	switch x := n.(type) {
-	case *ast.Ident:
-		obj := x.Obj
-		fmt.Printf("expressionType: %#v\n", obj)
-	}
-}
-
-// LocateDeclaration returns the position where the provided identifier is
-// declared & defined
-func (w *Workspace) LocateDeclaration(x *ast.Ident) *token.Position {
-	var xObjPos token.Pos
-
-	fmt.Printf("Name position: %d, %s\n", x.NamePos, w.Loader.Fset.Position(x.NamePos).String())
-	if x.Obj != nil {
-		fmt.Printf("Obj position: %d, %s\n", x.Obj.Pos(), w.Loader.Fset.Position(x.Obj.Pos()).String())
-	}
-
-	// xObj := x.Obj
-	// if xObj != nil {
-	// 	xObjPos = xObj.Pos()
-	// } else {
-	// 	xObj := w.Info.ObjectOf(x)
-	// 	if xObj != nil {
-	// 		xObjPos = xObj.Pos()
-	// 	} else {
-	// 		xObj := w.Info.Defs[x]
-	// 		if xObj != nil {
-	// 			xObjPos = xObj.Pos()
-	// 		} else {
-	// 			fmt.Printf("Ident did not have Obj and not in Info.ObjectOf and not in Info.Defs\n")
-	// 			return nil
-	// 		}
-	// 	}
-	// }
-	fmt.Printf("Got xObjPos: %d\n", xObjPos)
-	loc := w.Loader.Fset.Position(xObjPos)
-	fmt.Printf("Got loc:     %s\n", loc.String())
-	return &loc
 }
 
 // LocateReferences returns the array of positions where the given identifier
