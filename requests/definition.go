@@ -69,11 +69,11 @@ func (rh *definitionHandler) work() error {
 		return err
 	}
 
-	// if x == nil {
-	// 	return nil
-	// }
+	declPosition, err := rh.h.workspace.LocateDeclaration(rh.p)
+	if err != nil {
+		return err
+	}
 
-	declPosition, _ := rh.h.workspace.LocateDeclaration(rh.p)
 	if declPosition != nil {
 		rh.result = LocationFromPosition(x.Name, declPosition)
 	}

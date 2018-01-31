@@ -5,7 +5,6 @@ import (
 	"go/ast"
 	"go/token"
 	"go/types"
-	"os"
 	"path/filepath"
 	"sync"
 
@@ -113,17 +112,10 @@ func (w *Workspace) LocateDeclaration(p *token.Position) (*token.Position, error
 		pStart := w.Loader.Fset.Position(n.Pos())
 		pEnd := w.Loader.Fset.Position(n.End())
 
-		s := func(p *token.Position) string {
-			return fmt.Sprintf("%s%s%s:%d:%d", pkg.shortPath, string(os.PathSeparator), filepath.Base(p.Filename), p.Line, p.Column)
-		}
-
-		fmt.Printf("Checking between %s (%d) and %s (%d)...", s(&pStart), pStart.Offset, s(&pEnd), pEnd.Offset)
 		if !WithinPosition(p, &pStart, &pEnd) {
-			fmt.Printf(" WITHOUT\n")
 			return false
 		}
 
-		fmt.Printf(" within\n\t(%#v)\n", n)
 		switch v := n.(type) {
 		case *ast.Ident:
 			fmt.Printf("Found;     %#v\n", n)
@@ -133,7 +125,6 @@ func (w *Workspace) LocateDeclaration(p *token.Position) (*token.Position, error
 			selPos := v.Sel
 			pSelStart := w.Loader.Fset.Position(selPos.Pos())
 			pSelEnd := w.Loader.Fset.Position(selPos.End())
-			fmt.Printf("In selector!  %s : %s\n", s(&pSelStart), s(&pSelEnd))
 			if WithinPosition(p, &pSelStart, &pSelEnd) {
 				s := pkg.checker.Selections[v]
 				fmt.Printf("Selector: %#v\n", s)
@@ -166,39 +157,6 @@ func (w *Workspace) LocateDeclaration(p *token.Position) (*token.Position, error
 	case *ast.SelectorExpr:
 		fmt.Printf("Have SelectorExpr\n")
 
-		vXPosition := w.Loader.Fset.Position(v.X.Pos())
-		fmt.Printf("v.X -> Position: %s\n", vXPosition.String())
-
-		fmt.Printf("X: %#v\n", v.X)
-		fmt.Printf("Sel: %#v\n", v.Sel)
-		fmt.Printf("Def (v.X) -> %#v\n", pkg.checker.Defs[v.X.(*ast.Ident)])
-		fmt.Printf("Def (v.Sel) -> %#v\n", pkg.checker.Defs[v.Sel])
-		// fmt.Printf("Defs:\n")
-		// for k, v := range pkg.checker.Defs {
-		// 	fmt.Printf("\t%#v -> %#v\n", k, v)
-		// }
-		fmt.Printf("Selections (v) -> %#v\n", pkg.checker.Selections[v])
-		// fmt.Printf("Selections:\n")
-		// for k, v := range pkg.checker.Selections {
-		// 	fmt.Printf("\t%#v -> %#v\n", k, v)
-		// }
-		fmt.Printf("Implicits (v) -> %#v\n", pkg.checker.Implicits[v])
-		fmt.Printf("Implicits (v.X) -> %#v\n", pkg.checker.Implicits[v.X])
-		fmt.Printf("Implicits (v.Sel) -> %#v\n", pkg.checker.Implicits[v.Sel])
-		// fmt.Printf("Implicits:\n")
-		// for k, v := range pkg.checker.Implicits {
-		// 	fmt.Printf("\t%#v -> %#v\n", k, v)
-		// }
-		fmt.Printf("Uses (v.X) -> %#v\n", pkg.checker.Uses[v.X.(*ast.Ident)])
-		fmt.Printf("Uses (v.Sel) -> %#v\n", pkg.checker.Uses[v.X.(*ast.Ident)])
-		// fmt.Printf("Uses:\n")
-		// for k, v := range pkg.checker.Uses {
-		// 	fmt.Printf("\t%#v -> %#v\n", k, v)
-		// }
-		fmt.Printf("Types (v) -> %#v\n", pkg.checker.Types[v])
-		fmt.Printf("Types (v.X) -> %#v\n", pkg.checker.Types[v.X])
-		fmt.Printf("Types (v.Sel) -> %#v\n", pkg.checker.Types[v.Sel])
-
 		scopedObj := f.Scope.Lookup(v.X.(*ast.Ident).Name)
 		fmt.Printf("Scoped object... %#v\n", scopedObj)
 
@@ -221,23 +179,6 @@ func (w *Workspace) LocateDeclaration(p *token.Position) (*token.Position, error
 					declPos := w.Loader.Fset.Position(oooo.Pos())
 					return &declPos, nil
 				}
-
-				// fmt.Printf("\tDefs:\n")
-				// for k, v := range pkg1.checker.Defs {
-				// 	fmt.Printf("\t\t%#v -> %#v\n", k, v)
-				// }
-				// fmt.Printf("\tSelections:\n")
-				// for k, v := range pkg1.checker.Selections {
-				// 	fmt.Printf("\t\t%#v -> %#v\n", k, v)
-				// }
-				// fmt.Printf("\tImplicits:\n")
-				// for k, v := range pkg1.checker.Implicits {
-				// 	fmt.Printf("\t\t%#v -> %#v\n", k, v)
-				// }
-				// fmt.Printf("\tUses:\n")
-				// for k, v := range pkg1.checker.Uses {
-				// 	fmt.Printf("\t\t%#v -> %#v\n", k, v)
-				// }
 
 				selIdent := ast.NewIdent(v.Sel.Name)
 				fmt.Printf("Using new ident %#v\n", selIdent)
