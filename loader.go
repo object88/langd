@@ -57,11 +57,11 @@ type Loader struct {
 
 	stateChange chan string
 
-	conf    *types.Config
-	context *build.Context
-	mFset   sync.Mutex
-	fset    *token.FileSet
-	info    *types.Info
+	checkerMu sync.Mutex
+	conf      *types.Config
+	context   *build.Context
+	Fset      *token.FileSet
+	info      *types.Info
 
 	unsafePath    string
 	filteredPaths []glob.Glob
@@ -87,15 +87,16 @@ type File struct {
 // Package is the contents of a package
 type Package struct {
 	absPath   string
-	shortPath *string
+	shortPath string
 
-	buildPkg        *build.Package
-	checker         *types.Checker
+	buildPkg *build.Package
+	checker  *types.Checker
+	typesPkg *types.Package
+
 	files           map[string]*File
 	importPaths     map[string]bool
 	testFiles       map[string]*File
 	testImportPaths map[string]bool
-	typesPkg        *types.Package
 
 	loadState loadState
 	m         sync.Mutex
@@ -108,8 +109,7 @@ func (p *Package) Key() string {
 }
 
 func (p *Package) String() string {
-	p.ensureShortPath()
-	return *p.shortPath
+	return p.shortPath
 }
 
 func (p *Package) currentFiles() map[string]*File {
@@ -127,27 +127,6 @@ func (p *Package) currentFiles() map[string]*File {
 		return p.testFiles
 	}
 	return nil
-}
-
-func (p *Package) ensureShortPath() {
-	if p.shortPath != nil {
-		return
-	}
-	root := runtime.GOROOT()
-	if strings.HasPrefix(p.absPath, root) {
-		path := fmt.Sprintf("(stdlib) %s", p.absPath[utf8.RuneCountInString(root)+5:])
-		p.shortPath = &path
-	}
-	// Want a way to shorten the canonical name for logging purposes, but
-	// this would require knowing the path of the starting workspace.  Need to
-	// figure out best way to approach this.
-	// n := utf8.RuneCountInString(l.startDir)
-	// if len(p.absPath) < n {
-	// 	*p.shortPath = p.absPath
-	// } else {
-	// 	*p.shortPath = p.absPath[n:]
-	// }
-	p.shortPath = &p.absPath
 }
 
 var cgoRe = regexp.MustCompile(`[/\\:]`)
@@ -168,7 +147,7 @@ func NewLoader(options ...LoaderOption) *Loader {
 		closer:        make(chan bool),
 		done:          false,
 		filteredPaths: globs,
-		fset:          token.NewFileSet(),
+		Fset:          token.NewFileSet(),
 		info: &types.Info{
 			Defs:       map[*ast.Ident]types.Object{},
 			Implicits:  map[ast.Node]types.Object{},
@@ -447,17 +426,11 @@ func (l *Loader) processComplete(p *Package) {
 
 	if p.checker == nil {
 		p.typesPkg = types.NewPackage(p.absPath, p.buildPkg.Name)
-		p.checker = types.NewChecker(l.conf, l.fset, p.typesPkg, l.info)
+		p.checker = types.NewChecker(l.conf, l.Fset, p.typesPkg, l.info)
 	}
 
 	// Clear previous errors; all will be rechecked.
 	files := p.currentFiles()
-
-	allFiles := []string{}
-	for path := range files {
-		allFiles = append(allFiles, filepath.Base(path))
-	}
-	l.Log.Debugf(" PC: %s: Checking %d files: %s\n", p, len(files), strings.Join(allFiles, ", "))
 
 	// Loop over packages
 	astFiles := make([]*ast.File, len(files))
@@ -469,11 +442,10 @@ func (l *Loader) processComplete(p *Package) {
 		i++
 	}
 
-	l.mFset.Lock()
-	l.Log.Debugf(" PC: %s: Checking...\n", p)
+	l.checkerMu.Lock()
 	err := p.checker.Files(astFiles)
-	l.Log.Debugf(" PC: %s: Checking done.\n", p)
-	l.mFset.Unlock()
+	l.checkerMu.Unlock()
+
 	if err != nil {
 		l.Log.Debugf("Error while checking %s:\n\t%s\n\n", p.absPath, err.Error())
 	}
@@ -523,9 +495,7 @@ func (l *Loader) processGoFiles(p *Package) bool {
 			continue
 		}
 
-		l.mFset.Lock()
-		astf, err := parser.ParseFile(l.fset, fpath, r, parser.AllErrors)
-		l.mFset.Unlock()
+		astf, err := parser.ParseFile(l.Fset, fpath, r, parser.AllErrors)
 
 		r.Close()
 
@@ -696,9 +666,7 @@ func (l *Loader) processCgoFiles(p *Package) bool {
 			continue
 		}
 
-		l.mFset.Lock()
-		astf, err := parser.ParseFile(l.fset, displayFiles[i], f, 0)
-		l.mFset.Unlock()
+		astf, err := parser.ParseFile(l.Fset, displayFiles[i], f, 0)
 
 		f.Close()
 
@@ -744,9 +712,7 @@ func (l *Loader) processTestGoFiles(p *Package) bool {
 			continue
 		}
 
-		l.mFset.Lock()
-		astf, err := parser.ParseFile(l.fset, fpath, r, parser.AllErrors)
-		l.mFset.Unlock()
+		astf, err := parser.ParseFile(l.Fset, fpath, r, parser.AllErrors)
 
 		r.Close()
 
@@ -806,7 +772,6 @@ func (l *Loader) processPackages(p *Package, importPaths []string, testing bool)
 	loadState := p.loadState.get()
 	l.Log.Debugf(" PP: %s: %d: started\n", p, loadState)
 
-	imprts := []string{}
 	importedPackages := map[string]bool{}
 
 	for _, importPath := range importPaths {
@@ -815,14 +780,25 @@ func (l *Loader) processPackages(p *Package, importPaths []string, testing bool)
 			l.Log.Debugf(" PP: %s: %d: Failed to find import %s\n\t%s\n", p, loadState, importPath, err.Error())
 			continue
 		}
-		targetP := l.ensurePackage(targetPath)
+		l.ensurePackage(targetPath)
 
-		imprts = append(imprts, targetP.String())
 		importedPackages[targetPath] = true
 	}
 
-	allImprts := strings.Join(imprts, ", ")
-	l.Log.Debugf(" PP: %s: %d: -> %s\n", p, loadState, allImprts)
+	// TEMPORARY
+	func() {
+		imprts := []string{}
+		for _, importPath := range importPaths {
+			targetPath, err := l.findImportPath(importPath, p.absPath)
+			if err != nil {
+				continue
+			}
+			targetP := l.ensurePackage(targetPath)
+			imprts = append(imprts, targetP.String())
+		}
+		allImprts := strings.Join(imprts, ", ")
+		l.Log.Debugf(" PP: %s: %d: -> %s\n", p, loadState, allImprts)
+	}()
 
 	for importPath := range importedPackages {
 		l.caravanMutex.Lock()
@@ -850,6 +826,7 @@ func (l *Loader) processPackages(p *Package, importPaths []string, testing bool)
 			err = l.caravan.Connect(p, targetP)
 		}
 		l.caravanMutex.Unlock()
+
 		if err != nil {
 			panic(fmt.Sprintf(" PP: %s: %d: [weak] connect failed:\n\tfrom: %s\n\tto: %s\n\terr: %s\n\n", p, loadState, p.Key(), targetP.Key(), err.Error()))
 		}
@@ -884,9 +861,21 @@ func (l *Loader) ensurePackage(absPath string) *Package {
 	var p *Package
 	n, ok := l.caravan.Find(absPath)
 	if !ok {
+		shortPath := absPath
+		root := runtime.GOROOT()
+		if strings.HasPrefix(absPath, root) {
+			shortPath = fmt.Sprintf("(stdlib) %s", absPath[utf8.RuneCountInString(root)+5:])
+		} else {
+			// Shorten the canonical name for logging purposes.
+			n := utf8.RuneCountInString(l.startDir)
+			if len(absPath) >= n {
+				shortPath = absPath[n:]
+			}
+		}
+
 		p = &Package{
 			absPath:         absPath,
-			files:           map[string]*File{},
+			shortPath:       shortPath,
 			importPaths:     map[string]bool{},
 			testImportPaths: map[string]bool{},
 		}

@@ -4,7 +4,6 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
-	"go/parser"
 	"strings"
 
 	"github.com/object88/rope"
@@ -54,12 +53,13 @@ func (rh *didOpenHandler) work() error {
 		return fmt.Errorf("FAILED: Workspace doesn't exist on handler")
 	}
 
-	astFile, err := parser.ParseFile(rh.h.workspace.Fset, rh.fpath, rh.text, 0)
-	if err != nil {
-		rh.h.log.Warnf("Failed to parse file as provided by didOpen: %s\n", err.Error())
-	}
+	// DISABLE UNTIL WE ARE ABLE TO RERUN TYPECHECKER
+	// astFile, err := parser.ParseFile(rh.h.workspace.Loader.Fset, rh.fpath, rh.text, 0)
+	// if err != nil {
+	// 	rh.h.log.Warnf("Failed to parse file as provided by didOpen: %s\n", err.Error())
+	// }
 
-	rh.h.workspace.Files[rh.fpath] = astFile
+	// rh.h.workspace.Files[rh.fpath] = astFile
 
 	rh.h.log.Debugf("Shadowed file '%s'\n", rh.fpath)
 

@@ -53,7 +53,7 @@ func (rh *didCloseHandler) work() error {
 	rh.h.log.Debugf("File %s is open...\n", rh.fpath)
 	delete(rh.h.workspace.OpenedFiles, rh.fpath)
 
-	astFile, err := parser.ParseFile(rh.h.workspace.Fset, rh.fpath, nil, 0)
+	astFile, err := parser.ParseFile(rh.h.workspace.Loader.Fset, rh.fpath, nil, 0)
 	if err != nil {
 		rh.h.log.Errorf("Failed to parse file as provided by didOpen: %s\n", err.Error())
 	}

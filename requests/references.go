@@ -81,10 +81,13 @@ func (rh *referencesHandler) work() error {
 		return nil
 	}
 
-	declPosition := rh.h.workspace.LocateDeclaration(x)
-	declIdent, err := rh.h.workspace.LocateIdent(declPosition)
+	declPosition, err := rh.h.workspace.LocateDeclaration(rh.p)
 	if err != nil {
 		fmt.Printf("Failed to find declaration position: %s\n", err.Error())
+	}
+	declIdent, err := rh.h.workspace.LocateIdent(declPosition)
+	if err != nil {
+		fmt.Printf("Failed to find ident: %s\n", err.Error())
 	}
 
 	usePositions := rh.h.workspace.LocateReferences(declIdent)
