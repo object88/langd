@@ -6,7 +6,6 @@ import (
 	"fmt"
 	"strings"
 
-	"github.com/object88/rope"
 	"github.com/sourcegraph/jsonrpc2"
 )
 
@@ -33,7 +32,6 @@ func (rh *didOpenHandler) preprocess(params *json.RawMessage) error {
 	var typedParams DidOpenTextDocumentParams
 	if err := json.Unmarshal(*params, &typedParams); err != nil {
 		return fmt.Errorf("Failed to unmarshal params")
-		// return noopHandleFuncer
 	}
 
 	fmt.Printf("Got parameters: %#v\n", typedParams)
@@ -47,21 +45,9 @@ func (rh *didOpenHandler) preprocess(params *json.RawMessage) error {
 }
 
 func (rh *didOpenHandler) work() error {
-	rh.h.workspace.OpenedFiles[rh.fpath] = rope.CreateRope(rh.text)
-
 	if rh.h.workspace == nil {
 		return fmt.Errorf("FAILED: Workspace doesn't exist on handler")
 	}
 
-	// DISABLE UNTIL WE ARE ABLE TO RERUN TYPECHECKER
-	// astFile, err := parser.ParseFile(rh.h.workspace.Loader.Fset, rh.fpath, rh.text, 0)
-	// if err != nil {
-	// 	rh.h.log.Warnf("Failed to parse file as provided by didOpen: %s\n", err.Error())
-	// }
-
-	// rh.h.workspace.Files[rh.fpath] = astFile
-
-	rh.h.log.Debugf("Shadowed file '%s'\n", rh.fpath)
-
-	return nil
+	return rh.h.workspace.OpenFile(rh.fpath, rh.text)
 }

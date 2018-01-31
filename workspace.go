@@ -214,6 +214,24 @@ func (w *Workspace) LocateReferences(x *ast.Ident) *[]token.Position {
 	return &ps
 }
 
+// OpenFile shadows the file read from the disk with an in-memory version,
+// which the workspace can accept edits to.
+func (w *Workspace) OpenFile(absPath, text string) error {
+	w.OpenedFiles[absPath] = rope.CreateRope(text)
+
+	// DISABLE UNTIL WE ARE ABLE TO RERUN TYPECHECKER
+	// astFile, err := parser.ParseFile(w.Loader.Fset, rh.fpath, rh.text, 0)
+	// if err != nil {
+	// 	rh.h.log.Warnf("Failed to parse file as provided by didOpen: %s\n", err.Error())
+	// }
+
+	// w.Files[rh.fpath] = astFile
+
+	w.log.Debugf("Shadowed file '%s'\n", absPath)
+
+	return nil
+}
+
 // Lock will synchronize access to the workspace for read or write access
 func (w *Workspace) Lock(write bool) {
 	if write {
