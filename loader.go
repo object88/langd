@@ -61,6 +61,7 @@ type Loader struct {
 	conf      *types.Config
 	context   *build.Context
 	Fset      *token.FileSet
+	info      *types.Info
 
 	unsafePath    string
 	filteredPaths []glob.Glob
@@ -147,7 +148,15 @@ func NewLoader(options ...LoaderOption) *Loader {
 		done:          false,
 		filteredPaths: globs,
 		Fset:          token.NewFileSet(),
-		stateChange:   make(chan string),
+		info: &types.Info{
+			Defs:       map[*ast.Ident]types.Object{},
+			Implicits:  map[ast.Node]types.Object{},
+			Scopes:     map[ast.Node]*types.Scope{},
+			Selections: map[*ast.SelectorExpr]*types.Selection{},
+			Types:      map[ast.Expr]types.TypeAndValue{},
+			Uses:       map[*ast.Ident]types.Object{},
+		},
+		stateChange: make(chan string),
 	}
 
 	for _, opt := range options {
@@ -417,25 +426,20 @@ func (l *Loader) processComplete(p *Package) {
 
 	if p.checker == nil {
 		p.typesPkg = types.NewPackage(p.absPath, p.buildPkg.Name)
-		info := &types.Info{
-			Defs:       map[*ast.Ident]types.Object{},
-			Implicits:  map[ast.Node]types.Object{},
-			Scopes:     map[ast.Node]*types.Scope{},
-			Selections: map[*ast.SelectorExpr]*types.Selection{},
-			Types:      map[ast.Expr]types.TypeAndValue{},
-			Uses:       map[*ast.Ident]types.Object{},
-		}
-		p.checker = types.NewChecker(l.conf, l.Fset, p.typesPkg, info)
+		p.checker = types.NewChecker(l.conf, l.Fset, p.typesPkg, l.info)
 	}
 
 	// Clear previous errors; all will be rechecked.
 	files := p.currentFiles()
 
-	allFiles := []string{}
-	for path := range files {
-		allFiles = append(allFiles, filepath.Base(path))
-	}
-	l.Log.Debugf(" PC: %s: Checking %d files: %s\n", p, len(files), strings.Join(allFiles, ", "))
+	// TEMPORARY
+	func() {
+		allFiles := []string{}
+		for path := range files {
+			allFiles = append(allFiles, filepath.Base(path))
+		}
+		l.Log.Debugf(" PC: %s: Checking %d files: %s\n", p, len(files), strings.Join(allFiles, ", "))
+	}()
 
 	// Loop over packages
 	astFiles := make([]*ast.File, len(files))
@@ -779,7 +783,6 @@ func (l *Loader) processPackages(p *Package, importPaths []string, testing bool)
 	loadState := p.loadState.get()
 	l.Log.Debugf(" PP: %s: %d: started\n", p, loadState)
 
-	imprts := []string{}
 	importedPackages := map[string]bool{}
 
 	for _, importPath := range importPaths {
@@ -788,14 +791,25 @@ func (l *Loader) processPackages(p *Package, importPaths []string, testing bool)
 			l.Log.Debugf(" PP: %s: %d: Failed to find import %s\n\t%s\n", p, loadState, importPath, err.Error())
 			continue
 		}
-		targetP := l.ensurePackage(targetPath)
+		l.ensurePackage(targetPath)
 
-		imprts = append(imprts, targetP.String())
 		importedPackages[targetPath] = true
 	}
 
-	allImprts := strings.Join(imprts, ", ")
-	l.Log.Debugf(" PP: %s: %d: -> %s\n", p, loadState, allImprts)
+	// TEMPORARY
+	func() {
+		imprts := []string{}
+		for _, importPath := range importPaths {
+			targetPath, err := l.findImportPath(importPath, p.absPath)
+			if err != nil {
+				continue
+			}
+			targetP := l.ensurePackage(targetPath)
+			imprts = append(imprts, targetP.String())
+		}
+		allImprts := strings.Join(imprts, ", ")
+		l.Log.Debugf(" PP: %s: %d: -> %s\n", p, loadState, allImprts)
+	}()
 
 	for importPath := range importedPackages {
 		l.caravanMutex.Lock()
@@ -860,18 +874,15 @@ func (l *Loader) ensurePackage(absPath string) *Package {
 		shortPath := absPath
 		root := runtime.GOROOT()
 		if strings.HasPrefix(absPath, root) {
-			path := fmt.Sprintf("(stdlib) %s", absPath[utf8.RuneCountInString(root)+5:])
-			shortPath = path
+			shortPath = fmt.Sprintf("(stdlib) %s", absPath[utf8.RuneCountInString(root)+5:])
 		} else {
 			// Want a way to shorten the canonical name for logging purposes, but
 			// this would require knowing the path of the starting workspace.  Need to
 			// figure out best way to approach this.
-			// n := utf8.RuneCountInString(l.startDir)
-			// if len(p.absPath) < n {
-			// 	*p.shortPath = p.absPath
-			// } else {
-			// 	*p.shortPath = p.absPath[n:]
-			// }
+			n := utf8.RuneCountInString(l.startDir)
+			if len(absPath) >= n {
+				shortPath = absPath[n:]
+			}
 		}
 
 		p = &Package{
