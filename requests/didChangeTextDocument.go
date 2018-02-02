@@ -3,11 +3,8 @@ package requests
 import (
 	"context"
 	"encoding/json"
-	"fmt"
 	"strings"
 
-	"github.com/object88/langd"
-	"github.com/object88/rope"
 	"github.com/sourcegraph/jsonrpc2"
 )
 
@@ -17,7 +14,6 @@ const (
 
 type didChangeTextDocumentHandler struct {
 	requestBase
-
 	uri     string
 	changes []TextDocumentContentChangeEvent
 }
@@ -49,39 +45,13 @@ func (rh *didChangeTextDocumentHandler) work() error {
 	// Wait in this until we have a way to validate the edits.
 	uri := rh.uri
 
-	buf, ok := rh.h.workspace.OpenedFiles[uri]
-	if !ok {
-		return fmt.Errorf("File %s is not opened\n", uri)
-	}
-
-	for k, v := range rh.changes {
+	for _, v := range rh.changes {
 		if v.Range == nil || v.RangeLength == nil {
-			// Replace the entire document
-			buf = rope.CreateRope(v.Text)
+			rh.h.workspace.ReplaceFile(uri, v.Text)
 		} else {
-			// Have position (line, character), need to transform into offset into file
-			// Then replace starting from there.
-			r1 := buf.NewReader()
-			startOffset, err := langd.CalculateOffsetForPosition(r1, v.Range.Start.Line, v.Range.Start.Character)
-			if err != nil {
-				// Crap crap crap crap.
-				fmt.Printf("Error from start: %s", err.Error())
-			}
-
-			r2 := buf.NewReader()
-			endOffset, err := langd.CalculateOffsetForPosition(r2, v.Range.End.Line, v.Range.End.Character)
-			if err != nil {
-				// Crap crap crap crap.
-				fmt.Printf("Error from end: %s", err.Error())
-			}
-
-			fmt.Printf("%d: offsets: [%d:%d]; %s\n", k, startOffset, endOffset, v.String())
-
-			buf.Alter(startOffset, endOffset, v.Text)
+			rh.h.workspace.ChangeFile(uri, v.Range.Start.Line, v.Range.Start.Character, v.Range.End.Line, v.Range.End.Character, v.Text)
 		}
 	}
-
-	rh.h.workspace.OpenedFiles[uri] = buf
 
 	return nil
 }

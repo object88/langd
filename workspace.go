@@ -3,6 +3,7 @@ package langd
 import (
 	"fmt"
 	"go/ast"
+	"go/parser"
 	"go/token"
 	"go/types"
 	"path/filepath"
@@ -46,6 +47,59 @@ func (w *Workspace) AssignAST() {
 		}
 		return true
 	})
+}
+
+// ChangeFile applies changes to an opened file
+func (w *Workspace) ChangeFile(absPath string, startLine, startCharacter, endLine, endCharacter int, text string) error {
+	buf, ok := w.OpenedFiles[absPath]
+	if !ok {
+		return fmt.Errorf("File %s is not opened\n", absPath)
+	}
+
+	// Have position (line, character), need to transform into offset into file
+	// Then replace starting from there.
+	r1 := buf.NewReader()
+	startOffset, err := CalculateOffsetForPosition(r1, startLine, startCharacter)
+	if err != nil {
+		// Crap crap crap crap.
+		fmt.Printf("Error from start: %s", err.Error())
+	}
+
+	r2 := buf.NewReader()
+	endOffset, err := CalculateOffsetForPosition(r2, endLine, endCharacter)
+	if err != nil {
+		// Crap crap crap crap.
+		fmt.Printf("Error from end: %s", err.Error())
+	}
+
+	fmt.Printf("offsets: [%d:%d]\n", startOffset, endOffset)
+
+	buf.Alter(startOffset, endOffset, text)
+
+	return nil
+}
+
+// CloseFile will take a file out of the OpenedFiles struct and reparse
+func (w *Workspace) CloseFile(absPath string) error {
+	_, ok := w.OpenedFiles[absPath]
+	if !ok {
+		w.log.Warnf("File %s is not opened\n", absPath)
+		return nil
+	}
+
+	w.log.Debugf("File %s is open...\n", absPath)
+	delete(w.OpenedFiles, absPath)
+
+	astFile, err := parser.ParseFile(w.Loader.Fset, absPath, nil, 0)
+	if err != nil {
+		w.log.Errorf("Failed to parse file as provided by didOpen: %s\n", err.Error())
+	}
+
+	w.Files[absPath] = astFile
+
+	w.log.Debugf("File %s is closed\n", absPath)
+
+	return nil
 }
 
 // LocateIdent scans the loaded fset for the identifier at the requested
@@ -228,6 +282,20 @@ func (w *Workspace) OpenFile(absPath, text string) error {
 	// w.Files[rh.fpath] = astFile
 
 	w.log.Debugf("Shadowed file '%s'\n", absPath)
+
+	return nil
+}
+
+// ReplaceFile replaces the entire contents of an opened file
+func (w *Workspace) ReplaceFile(absPath, text string) error {
+	_, ok := w.OpenedFiles[absPath]
+	if !ok {
+		return fmt.Errorf("File %s is not opened\n", absPath)
+	}
+
+	// Replace the entire document
+	buf := rope.CreateRope(text)
+	w.OpenedFiles[absPath] = buf
 
 	return nil
 }
