@@ -73,6 +73,52 @@ func Test_Workspace_Declaration_Package_Var(t *testing.T) {
 	test(t, w, declOffset, usageOffset)
 }
 
+func Test_Workspace_Declaration_Package_Var_CrossFiles(t *testing.T) {
+	src1 := `package foo
+	func foof() int {
+		ival += 1
+		return ival
+	}
+	`
+
+	src2 := `package foo
+	var ival int = 100
+	`
+
+	packages := map[string]map[string]string{
+		"foo": map[string]string{
+			"foo1.go": src1,
+			"foo2.go": src2,
+		},
+	}
+
+	w := workspaceSetup(t, "/go/src/foo", packages, false)
+	usagePosition := &token.Position{
+		Filename: "/go/src/foo/foo1.go",
+		Line:     3,
+		Column:   3,
+	}
+	declPosition, err := w.LocateDeclaration(usagePosition)
+	if err != nil {
+		t.Fatalf("Got error: %s", err.Error())
+	}
+	if declPosition == nil {
+		t.Fatalf("Got nil decl position")
+	}
+	if !declPosition.IsValid() {
+		t.Fatalf("Got invalid decl position")
+	}
+	if declPosition.Filename != "/go/src/foo/foo2.go" {
+		t.Fatalf("Got wrong filename: %s", declPosition.Filename)
+	}
+	if declPosition.Line != 2 {
+		t.Fatalf("Got wrong line: %d", declPosition.Line)
+	}
+	if declPosition.Column != 6 {
+		t.Fatalf("Got wrong column: %d", declPosition.Column)
+	}
+}
+
 func Test_Workspace_Declaration_Package_Var_Shadowed(t *testing.T) {
 	src1 := `package foo
 	var fooval = 1
@@ -106,10 +152,16 @@ func workspaceSetup(t *testing.T, startingPath string, packages map[string]map[s
 	loader.LoadDirectory(startingPath)
 	<-done
 
-	w.AssignAST()
+	// w.AssignAST()
 
 	if expectFailure {
-		panic("Write this.")
+		errCount := 0
+		w.Loader.Errors(func(file string, errs []FileError) {
+			errCount += len(errs)
+		})
+		if errCount == 0 {
+			t.Fatal("Expected errors, but got none\n")
+		}
 	} else {
 		errCount := 0
 		var buf bytes.Buffer

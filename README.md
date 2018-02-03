@@ -41,7 +41,7 @@ The `initialize` request points to a filesystem path, which will be the root of 
 
 During the loading process, the loader keeps a map of discovered packages.  Each time that a package is encountered, the map be checked, and if the entry is missing, a goroutine will be started to load the AST.
 
-Once all imports have been discovered and loaded, the complete map is iterated over and fed to `config.Check` to build the map os uses, definitions, etc.
+Once all imports have been discovered and loaded, the complete map is iterated over and fed to `config.Check` to build the map of uses, definitions, etc.
 
 ### Processing requests
 
@@ -54,3 +54,11 @@ Replies are supposed to be sent in same order as the requests. However, if the r
 The connection handler may need a RWMutex to handle requests. Requests which do not alter state (`textDocument/definition`, `textDocument/references`, etc) enter with a Read lock, allowing any other non-altering requests to enter as well. Once a request which would alter state is processed (`textDocument/didChange`, `textDocument/rename`, etc), a Write lock is requested. All currently running read operations will need to complete before the write can proceed, and each write operation will need to proceed synchronously. (Conceivably, some write operations could be performed asynchronously, but that is out of scope for an initial implementation.)
 
 Because replies may be generated out of order with asynchronous processing, they must be queued up in the `outgoingQueue`.
+
+### Changes to files
+
+When the IDE opens a file for the user, a `textDocument/didOpen` request is sent to the server.  The server creates a `rope` representation of the file contents, which is altered with `textDocument/didChange` requests.
+
+* Mark the package as altered
+* Debounce edits coming in -- rapid typing should prevent the engine from recompiling too quickly.
+* Go through caravan and re-check packages that are altered, and the packages that consume those altered packages.

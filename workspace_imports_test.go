@@ -80,7 +80,7 @@ func setup2(t *testing.T) *Workspace {
 	loader.LoadDirectory("/go/src/foo")
 	<-done
 
-	w.AssignAST()
+	// w.AssignAST()
 
 	errCount := 0
 	w.Loader.Errors(func(file string, errs []FileError) {

@@ -26,6 +26,7 @@ func (i *Importer) Import(path string) (*types.Package, error) {
 
 // ImportFrom is the implementation of types.ImporterFrom
 func (i *Importer) ImportFrom(path, srcDir string, mode types.ImportMode) (*types.Package, error) {
+	// fmt.Printf("Got ImportFrom:\n\t%s\n\t%s\n", path, srcDir)
 	absPath, err := i.l.findImportPath(path, srcDir)
 	if err != nil {
 		fmt.Printf("Failed to locate import path for %s, %s:\n\t%s", path, srcDir, err.Error())
@@ -42,6 +43,13 @@ func (i *Importer) ImportFrom(path, srcDir string, mode types.ImportMode) (*type
 		fmt.Printf("\t%s (nil)\n", absPath)
 		return nil, fmt.Errorf("Got nil in packages map")
 	}
+
+	// srcP, err := i.locatePackages(srcDir)
+	// if err != nil {
+	// 	return nil, err
+	// }
+	// (*srcP.importedLocks)[absPath] = true
+	// p.checkerRWMu.RLock()
 
 	return p.typesPkg, nil
 }

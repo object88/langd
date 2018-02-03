@@ -21,6 +21,8 @@ import (
 	"sync/atomic"
 	"unicode/utf8"
 
+	"github.com/object88/rope"
+
 	"github.com/gobwas/glob"
 	"github.com/object88/langd/collections"
 	"github.com/object88/langd/log"
@@ -61,7 +63,8 @@ type Loader struct {
 	conf      *types.Config
 	context   *build.Context
 	Fset      *token.FileSet
-	info      *types.Info
+
+	openedFiles map[string]*rope.Rope
 
 	unsafePath    string
 	filteredPaths []glob.Glob
@@ -89,9 +92,10 @@ type Package struct {
 	absPath   string
 	shortPath string
 
-	buildPkg *build.Package
-	checker  *types.Checker
-	typesPkg *types.Package
+	buildPkg    *build.Package
+	checker     *types.Checker
+	checkerRWMu sync.RWMutex
+	typesPkg    *types.Package
 
 	files           map[string]*File
 	importPaths     map[string]bool
@@ -106,6 +110,11 @@ type Package struct {
 // Key returns the collection key for the given Package
 func (p *Package) Key() string {
 	return p.absPath
+}
+
+// ResetChecker sets the checker to nil
+func (p *Package) ResetChecker() {
+	p.checker = nil
 }
 
 func (p *Package) String() string {
@@ -148,15 +157,8 @@ func NewLoader(options ...LoaderOption) *Loader {
 		done:          false,
 		filteredPaths: globs,
 		Fset:          token.NewFileSet(),
-		info: &types.Info{
-			Defs:       map[*ast.Ident]types.Object{},
-			Implicits:  map[ast.Node]types.Object{},
-			Scopes:     map[ast.Node]*types.Scope{},
-			Selections: map[*ast.SelectorExpr]*types.Selection{},
-			Types:      map[ast.Expr]types.TypeAndValue{},
-			Uses:       map[*ast.Ident]types.Object{},
-		},
-		stateChange: make(chan string),
+		openedFiles:   map[string]*rope.Rope{},
+		stateChange:   make(chan string),
 	}
 
 	for _, opt := range options {
@@ -425,8 +427,17 @@ func (l *Loader) processComplete(p *Package) {
 	}
 
 	if p.checker == nil {
+		info := &types.Info{
+			Defs:       map[*ast.Ident]types.Object{},
+			Implicits:  map[ast.Node]types.Object{},
+			Scopes:     map[ast.Node]*types.Scope{},
+			Selections: map[*ast.SelectorExpr]*types.Selection{},
+			Types:      map[ast.Expr]types.TypeAndValue{},
+			Uses:       map[*ast.Ident]types.Object{},
+		}
+
 		p.typesPkg = types.NewPackage(p.absPath, p.buildPkg.Name)
-		p.checker = types.NewChecker(l.conf, l.Fset, p.typesPkg, l.info)
+		p.checker = types.NewChecker(l.conf, l.Fset, p.typesPkg, info)
 	}
 
 	// Clear previous errors; all will be rechecked.
@@ -443,7 +454,27 @@ func (l *Loader) processComplete(p *Package) {
 	}
 
 	l.checkerMu.Lock()
+	// imports := make([]*Package, len(p.importPaths))
+	// i = 0
+	// for k := range p.importPaths {
+	// 	imports[i] = l.ensurePackage(k)
+	// 	i++
+	// }
+
+	// for _, impPkg := range imports {
+	// 	impPkg.checkerRWMu.RLock()
+	// }
+
+	// p.checkerRWMu.Lock()
+
 	err := p.checker.Files(astFiles)
+
+	// p.checkerRWMu.Unlock()
+
+	// for _, impPkg := range imports {
+	// 	impPkg.checkerRWMu.RUnlock()
+	// }
+
 	l.checkerMu.Unlock()
 
 	if err != nil {
@@ -489,15 +520,23 @@ func (l *Loader) processGoFiles(p *Package) bool {
 	for _, fname := range fnames {
 		fpath := filepath.Join(p.absPath, fname)
 
-		r, err := l.context.OpenFile(fpath)
-		if err != nil {
-			l.Log.Debugf(" GF: ERROR: Failed to read file %s:\n\t%s\n", fpath, err.Error())
-			continue
+		var r io.Reader
+		if of, ok := l.openedFiles[fpath]; ok {
+			r = of.NewReader()
+		} else {
+			var err error
+			r, err = l.context.OpenFile(fpath)
+			if err != nil {
+				l.Log.Debugf(" GF: ERROR: Failed to read file %s:\n\t%s\n", fpath, err.Error())
+				continue
+			}
 		}
 
 		astf, err := parser.ParseFile(l.Fset, fpath, r, parser.AllErrors)
 
-		r.Close()
+		if c, ok := r.(io.Closer); ok {
+			c.Close()
+		}
 
 		if err != nil {
 			l.Log.Debugf(" GF: ERROR: While parsing %s:\n\t%s\n", fpath, err.Error())

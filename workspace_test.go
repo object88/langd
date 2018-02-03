@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"go/token"
 	"os"
+	"path/filepath"
 	"strings"
 	"sync"
 	"testing"
@@ -168,7 +169,7 @@ func setup(t *testing.T) *Workspace {
 		loader.LoadDirectory("/go/src/foo")
 		<-done
 
-		w.AssignAST()
+		// w.AssignAST()
 
 		errCount := 0
 		w.Loader.Errors(func(file string, errs []FileError) {
@@ -229,7 +230,17 @@ func nthIndex(s string, sub string, n int) int {
 }
 
 func nthIndex2(w *Workspace, path, s, sub string, n int) int {
-	astFile, ok := w.Files[path]
+	absPath := filepath.Dir(path)
+
+	node, ok := w.Loader.caravan.Find(absPath)
+	if !ok {
+		// This is a problem.
+	}
+	pkg := node.Element.(*Package)
+	fi := pkg.files[filepath.Base(path)]
+	astFile := fi.file
+
+	// astFile, ok := w.Files[path]
 	if !ok {
 		panic(fmt.Sprintf("No ast.File at %s\n", path))
 	}
