@@ -84,6 +84,7 @@ func (w *Workspace) ChangeFile(absFilepath string, startLine, startCharacter, en
 	p := n.Element.(*Package)
 
 	p.loadState = unloaded
+	p.ResetChecker()
 	w.Loader.done = false
 	w.Loader.stateChange <- absPath
 
@@ -142,8 +143,10 @@ func (w *Workspace) LocateIdent(p *token.Position) (*ast.Ident, error) {
 		if n == nil {
 			return false
 		}
-		pStart := w.Loader.Fset.Position(n.Pos())
-		pEnd := w.Loader.Fset.Position(n.End())
+		// pStart := w.Loader.Fset.Position(n.Pos())
+		// pEnd := w.Loader.Fset.Position(n.End())
+		pStart := pkg.Fset.Position(n.Pos())
+		pEnd := pkg.Fset.Position(n.End())
 
 		if WithinPosition(p, &pStart, &pEnd) {
 			switch v := n.(type) {
@@ -184,19 +187,24 @@ func (w *Workspace) LocateDeclaration(p *token.Position) (*token.Position, error
 
 	var x ast.Node
 
-	fmt.Printf("LocateDeclaration: %s\n", p.Filename)
+	fmt.Printf("LocateDeclaration: %s\n", p.String())
 
-	i := 0
+	// i := 0
 	ast.Inspect(f, func(n ast.Node) bool {
-		i++
+		// fmt.Printf("%03d", i)
+		// i++
 		if n == nil {
+			// fmt.Printf(" (nil)\n")
 			return false
 		}
 
-		pStart := w.Loader.Fset.Position(n.Pos())
-		pEnd := w.Loader.Fset.Position(n.End())
+		// pStart := w.Loader.Fset.Position(n.Pos())
+		// pEnd := w.Loader.Fset.Position(n.End())
+		pStart := pkg.Fset.Position(n.Pos())
+		pEnd := pkg.Fset.Position(n.End())
 
 		if !WithinPosition(p, &pStart, &pEnd) {
+			// fmt.Printf(" out [%s:%s]\n", pStart, pEnd)
 			return false
 		}
 
@@ -208,8 +216,10 @@ func (w *Workspace) LocateDeclaration(p *token.Position) (*token.Position, error
 		case *ast.SelectorExpr:
 			fmt.Printf("... found selector; %#v\n", v)
 			selPos := v.Sel
-			pSelStart := w.Loader.Fset.Position(selPos.Pos())
-			pSelEnd := w.Loader.Fset.Position(selPos.End())
+			// pSelStart := w.Loader.Fset.Position(selPos.Pos())
+			// pSelEnd := w.Loader.Fset.Position(selPos.End())
+			pSelStart := pkg.Fset.Position(selPos.Pos())
+			pSelEnd := pkg.Fset.Position(selPos.End())
 			if WithinPosition(p, &pSelStart, &pSelEnd) {
 				s := pkg.checker.Selections[v]
 				fmt.Printf("Selector: %#v\n", s)
@@ -217,6 +227,8 @@ func (w *Workspace) LocateDeclaration(p *token.Position) (*token.Position, error
 				return false
 			}
 		}
+
+		// fmt.Printf("... %#v\n", n)
 
 		return true
 	})
@@ -231,7 +243,8 @@ func (w *Workspace) LocateDeclaration(p *token.Position) (*token.Position, error
 		fmt.Printf("Have ident %#v\n", v)
 		if v.Obj != nil {
 			fmt.Printf("Ident has obj %#v (%d)\n", v.Obj, v.Pos())
-			identPosition := w.Loader.Fset.Position(v.Obj.Pos())
+			// identPosition := w.Loader.Fset.Position(v.Obj.Pos())
+			identPosition := pkg.Fset.Position(v.Obj.Pos())
 			return &identPosition, nil
 		}
 		// xObj := pkg.info.ObjectOf(v)
@@ -241,13 +254,15 @@ func (w *Workspace) LocateDeclaration(p *token.Position) (*token.Position, error
 		// }
 		if vDef, ok := pkg.checker.Defs[v]; ok {
 			fmt.Printf("Have vDef from Defs: %#v\n", vDef)
-			identPosition := w.Loader.Fset.Position(vDef.Pos())
+			// identPosition := w.Loader.Fset.Position(vDef.Pos())
+			identPosition := pkg.Fset.Position(vDef.Pos())
 			return &identPosition, nil
 		}
 		if vUse, ok := pkg.checker.Uses[v]; ok {
 			// Used when var is defined in a package, in another file
 			fmt.Printf("Have vUse from Uses: %#v\n", vUse)
-			identPosition := w.Loader.Fset.Position(vUse.Pos())
+			// identPosition := w.Loader.Fset.Position(vUse.Pos())
+			identPosition := pkg.Fset.Position(vUse.Pos())
 			return &identPosition, nil
 
 			// switch v1 := vUse.(type) {
@@ -281,7 +296,8 @@ func (w *Workspace) LocateDeclaration(p *token.Position) (*token.Position, error
 				oooo := pkg1.typesPkg.Scope().Lookup(v.Sel.Name)
 				if oooo != nil {
 					// Have thingy from scope!
-					declPos := w.Loader.Fset.Position(oooo.Pos())
+					// declPos := w.Loader.Fset.Position(oooo.Pos())
+					declPos := pkg1.Fset.Position(oooo.Pos())
 					return &declPos, nil
 				}
 
@@ -292,7 +308,8 @@ func (w *Workspace) LocateDeclaration(p *token.Position) (*token.Position, error
 					fmt.Printf("Not from Defs\n")
 				} else {
 					fmt.Printf("From defs: %#v\n", def)
-					declPos := w.Loader.Fset.Position(def.Pos())
+					// declPos := w.Loader.Fset.Position(def.Pos())
+					declPos := pkg1.Fset.Position(def.Pos())
 					return &declPos, nil
 				}
 			}

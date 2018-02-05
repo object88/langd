@@ -13,8 +13,7 @@ func Test_Workspace_Modify_File(t *testing.T) {
 	func foof() int {
 		ival += 1
 		return ival
-	}
-	`
+	}`
 
 	packages := map[string]map[string]string{
 		"foo": map[string]string{
@@ -32,17 +31,21 @@ func Test_Workspace_Modify_File(t *testing.T) {
 
 	<-done
 
-	declOffset := nthIndex(src1, "ival", 0)
-	usageOffset := nthIndex(src1, "ival", 1)
-	declPosition := w.Loader.Fset.Position(token.Pos(declOffset + 1))
-	usagePosition := w.Loader.Fset.Position(token.Pos(usageOffset + 1))
-	pos, err := w.LocateDeclaration(&usagePosition)
+	declPosition := &token.Position{
+		Filename: "/go/src/foo/foo.go",
+		Line:     2,
+		Column:   6,
+	}
+	usagePosition := &token.Position{
+		Filename: "/go/src/foo/foo.go",
+		Line:     4,
+		Column:   3,
+	}
+	pos, err := w.LocateDeclaration(usagePosition)
 	if err != nil {
 		t.Errorf(err.Error())
 	}
-	if declPosition.Offset != pos.Offset {
-		t.Fatalf("Incorrect declaration position: expected %d, got %d\n", declPosition.Offset, pos.Offset)
-	}
+	comparePosition(t, pos, declPosition)
 
 	if err := w.ChangeFile("/go/src/foo/foo.go", 2, 6, 2, 10, "foos"); err != nil {
 		t.Errorf(err.Error())
@@ -60,15 +63,11 @@ func Test_Workspace_Modify_File(t *testing.T) {
 
 	<-done
 
-	pos, err = w.LocateDeclaration(&usagePosition)
+	pos, err = w.LocateDeclaration(usagePosition)
 	if err != nil {
 		t.Errorf(err.Error())
 	}
-	if declPosition.Offset != pos.Offset {
-		t.Fatalf("Incorrect declaration position: expected %d, got %d\n", declPosition.Offset, pos.Offset)
-	}
-
-	// t.Error("Dump")
+	comparePosition(t, pos, declPosition)
 }
 
 func Test_Workspace_Modify_Cross_File(t *testing.T) {
@@ -76,8 +75,7 @@ func Test_Workspace_Modify_Cross_File(t *testing.T) {
 	func foof() int {
 		ival += 1
 		return ival
-	}
-	`
+	}`
 
 	src2 := `package foo
 	var intval int = 100
@@ -129,17 +127,14 @@ func Test_Workspace_Modify_Cross_File(t *testing.T) {
 		Line:     3,
 		Column:   3,
 	}
-	declPosition, err := w.LocateDeclaration(usagePosition)
+	declPosition := &token.Position{
+		Filename: "/go/src/foo/foo2.go",
+		Line:     2,
+		Column:   6,
+	}
+	decl, err := w.LocateDeclaration(usagePosition)
 	if err != nil {
 		t.Fatalf("Error while finding declaration: %s", err.Error())
 	}
-	if declPosition == nil {
-		t.Fatalf("declPosition is nil")
-	}
-	if !declPosition.IsValid() {
-		t.Fatalf("declPosition is not valid")
-	}
-	if declPosition.Filename != "/go/src/foo/foo2.go" {
-		t.Fatalf("Incorrect filename: '%s'", declPosition.Filename)
-	}
+	comparePosition(t, decl, declPosition)
 }

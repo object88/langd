@@ -28,9 +28,17 @@ func Test_Workspace_Declaration_Package_Const(t *testing.T) {
 
 	w := workspaceSetup(t, "/go/src/foo", packages, false)
 
-	declOffset := nthIndex(src1, "fooval", 0)
-	usageOffset := nthIndex(src1, "fooval", 1)
-	test(t, w, declOffset, usageOffset)
+	usagePosition := &token.Position{
+		Filename: "/go/src/foo/foo.go",
+		Line:     6,
+		Column:   10,
+	}
+	declPosition := &token.Position{
+		Filename: "/go/src/foo/foo.go",
+		Line:     3,
+		Column:   3,
+	}
+	test(t, w, usagePosition, declPosition)
 }
 
 func Test_Workspace_Declaration_Package_Func(t *testing.T) {
@@ -48,9 +56,17 @@ func Test_Workspace_Declaration_Package_Func(t *testing.T) {
 
 	w := workspaceSetup(t, "/go/src/foo", packages, false)
 
-	declOffset := nthIndex(src1, "fooer", 0)
-	usageOffset := nthIndex(src1, "fooer", 1)
-	test(t, w, declOffset, usageOffset)
+	usagePosition := &token.Position{
+		Filename: "/go/src/foo/foo.go",
+		Line:     4,
+		Column:   3,
+	}
+	declPosition := &token.Position{
+		Filename: "/go/src/foo/foo.go",
+		Line:     2,
+		Column:   7,
+	}
+	test(t, w, usagePosition, declPosition)
 }
 
 func Test_Workspace_Declaration_Package_Var(t *testing.T) {
@@ -68,9 +84,17 @@ func Test_Workspace_Declaration_Package_Var(t *testing.T) {
 
 	w := workspaceSetup(t, "/go/src/foo", packages, false)
 
-	declOffset := nthIndex(src1, "fooval", 0)
-	usageOffset := nthIndex(src1, "fooval", 1)
-	test(t, w, declOffset, usageOffset)
+	usagePosition := &token.Position{
+		Filename: "/go/src/foo/foo.go",
+		Line:     4,
+		Column:   10,
+	}
+	declPosition := &token.Position{
+		Filename: "/go/src/foo/foo.go",
+		Line:     2,
+		Column:   6,
+	}
+	test(t, w, usagePosition, declPosition)
 }
 
 func Test_Workspace_Declaration_Package_Var_CrossFiles(t *testing.T) {
@@ -78,12 +102,10 @@ func Test_Workspace_Declaration_Package_Var_CrossFiles(t *testing.T) {
 	func foof() int {
 		ival += 1
 		return ival
-	}
-	`
+	}`
 
 	src2 := `package foo
-	var ival int = 100
-	`
+	var ival int = 100`
 
 	packages := map[string]map[string]string{
 		"foo": map[string]string{
@@ -98,25 +120,12 @@ func Test_Workspace_Declaration_Package_Var_CrossFiles(t *testing.T) {
 		Line:     3,
 		Column:   3,
 	}
-	declPosition, err := w.LocateDeclaration(usagePosition)
-	if err != nil {
-		t.Fatalf("Got error: %s", err.Error())
+	declPosition := &token.Position{
+		Filename: "/go/src/foo/foo2.go",
+		Line:     2,
+		Column:   6,
 	}
-	if declPosition == nil {
-		t.Fatalf("Got nil decl position")
-	}
-	if !declPosition.IsValid() {
-		t.Fatalf("Got invalid decl position")
-	}
-	if declPosition.Filename != "/go/src/foo/foo2.go" {
-		t.Fatalf("Got wrong filename: %s", declPosition.Filename)
-	}
-	if declPosition.Line != 2 {
-		t.Fatalf("Got wrong line: %d", declPosition.Line)
-	}
-	if declPosition.Column != 6 {
-		t.Fatalf("Got wrong column: %d", declPosition.Column)
-	}
+	test(t, w, usagePosition, declPosition)
 }
 
 func Test_Workspace_Declaration_Package_Var_Shadowed(t *testing.T) {
@@ -135,9 +144,17 @@ func Test_Workspace_Declaration_Package_Var_Shadowed(t *testing.T) {
 
 	w := workspaceSetup(t, "/go/src/foo", packages, false)
 
-	declOffset := nthIndex(src1, "fooval", 1)
-	usageOffset := nthIndex(src1, "fooval", 2)
-	test(t, w, declOffset, usageOffset)
+	declPosition := &token.Position{
+		Filename: "/go/src/foo/foo.go",
+		Line:     4,
+		Column:   3,
+	}
+	usagePosition := &token.Position{
+		Filename: "/go/src/foo/foo.go",
+		Line:     5,
+		Column:   10,
+	}
+	test(t, w, usagePosition, declPosition)
 }
 
 func workspaceSetup(t *testing.T, startingPath string, packages map[string]map[string]string, expectFailure bool) *Workspace {
@@ -151,8 +168,6 @@ func workspaceSetup(t *testing.T, startingPath string, packages map[string]map[s
 	done := loader.Start()
 	loader.LoadDirectory(startingPath)
 	<-done
-
-	// w.AssignAST()
 
 	if expectFailure {
 		errCount := 0
@@ -182,18 +197,35 @@ func workspaceSetup(t *testing.T, startingPath string, packages map[string]map[s
 	return w
 }
 
-func test(t *testing.T, w *Workspace, declOffset, usageOffset int) {
-	usagePosition := w.Loader.Fset.Position(token.Pos(usageOffset + 1))
-	declPosition, err := w.LocateDeclaration(&usagePosition)
+// func test(t *testing.T, w *Workspace, declOffset, usageOffset int) {
+func test(t *testing.T, w *Workspace, usagePosition, expectedDeclPosition *token.Position) {
+	declPosition, err := w.LocateDeclaration(usagePosition)
 	if err != nil {
 		t.Fatal(err.Error())
 	}
 
-	if !declPosition.IsValid() {
-		t.Fatalf("Returned position '%s' is not valid", declPosition.String())
+	comparePosition(t, declPosition, expectedDeclPosition)
+}
+
+func comparePosition(t *testing.T, actual, expected *token.Position) {
+	if actual == nil {
+		t.Fatalf("actual is nil")
 	}
 
-	if declPosition.Offset != declOffset {
-		t.Fatalf("Incorrect decl position: expected %d, got %d\n", declOffset, declPosition.Offset)
+	if !actual.IsValid() {
+		t.Fatalf("Returned position '%s' is not valid", actual.String())
 	}
+
+	if actual.Filename != expected.Filename {
+		t.Fatalf("Incorrect filename: got '%s', expected '%s'", actual.Filename, expected.Filename)
+	}
+
+	if actual.Line != expected.Line {
+		t.Fatalf("Incorrect line: got %d, expected %d", actual.Line, expected.Line)
+	}
+
+	if actual.Column != expected.Column {
+		t.Fatalf("Incorrect column: got %d, expected %d", actual.Column, expected.Column)
+	}
+
 }

@@ -1,7 +1,6 @@
 package langd
 
 import (
-	"go/token"
 	"os"
 	"testing"
 
@@ -46,18 +45,18 @@ func CountCall(source string) {
 }
 `
 
-func Test_FromImports_LocateReferences_AsFunc(t *testing.T) {
-	w := setup2(t)
+// func Test_FromImports_LocateReferences_AsFunc(t *testing.T) {
+// 	w := setup2(t)
 
-	callCountInvokeOffset := nthIndex(identImportsTestProgram1, "CountCall", 0)
-	callCountInvokePosition := w.Loader.Fset.Position(token.Pos(callCountInvokeOffset + 1))
-	callCountIdent, _ := w.LocateIdent(&callCountInvokePosition)
+// 	callCountInvokeOffset := nthIndex(identImportsTestProgram1, "CountCall", 0)
+// 	callCountInvokePosition := w.Loader.Fset.Position(token.Pos(callCountInvokeOffset + 1))
+// 	callCountIdent, _ := w.LocateIdent(&callCountInvokePosition)
 
-	refPositions := w.LocateReferences(callCountIdent)
-	if nil == refPositions {
-		t.Fatalf("Returned nil from LocateReferences")
-	}
-}
+// 	refPositions := w.LocateReferences(callCountIdent)
+// 	if nil == refPositions {
+// 		t.Fatalf("Returned nil from LocateReferences")
+// 	}
+// }
 
 func setup2(t *testing.T) *Workspace {
 	packages := map[string]map[string]string{
@@ -79,8 +78,6 @@ func setup2(t *testing.T) *Workspace {
 	done := loader.Start()
 	loader.LoadDirectory("/go/src/foo")
 	<-done
-
-	// w.AssignAST()
 
 	errCount := 0
 	w.Loader.Errors(func(file string, errs []FileError) {

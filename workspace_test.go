@@ -1,10 +1,7 @@
 package langd
 
 import (
-	"fmt"
-	"go/token"
 	"os"
-	"path/filepath"
 	"strings"
 	"sync"
 	"testing"
@@ -46,106 +43,106 @@ func addWhilePos(addWhilePosParam1, addWhilePosParam2 int) int {
 }
 `
 
-func Test_LocateIdent_OnIdent(t *testing.T) {
-	identName := "add1result"
-	w := setup(t)
+// func Test_LocateIdent_OnIdent(t *testing.T) {
+// 	identName := "add1result"
+// 	w := setup(t)
 
-	tests := []struct {
-		name   string
-		offset int
-	}{
-		{
-			name:   "AtStart",
-			offset: 0,
-		},
-		{
-			name:   "Within",
-			offset: 2,
-		},
-		{
-			name:   "AtEnd",
-			offset: len(identName) - 1,
-		},
-	}
+// 	tests := []struct {
+// 		name   string
+// 		offset int
+// 	}{
+// 		{
+// 			name:   "AtStart",
+// 			offset: 0,
+// 		},
+// 		{
+// 			name:   "Within",
+// 			offset: 2,
+// 		},
+// 		{
+// 			name:   "AtEnd",
+// 			offset: len(identName) - 1,
+// 		},
+// 	}
 
-	for _, tc := range tests {
-		t.Run(tc.name, func(t *testing.T) {
-			offset := nthIndex(identTestProgram, identName, 0)
-			pos := offset + 1
+// 	for _, tc := range tests {
+// 		t.Run(tc.name, func(t *testing.T) {
+// 			offset := nthIndex(identTestProgram, identName, 0)
+// 			pos := offset + 1
 
-			p := w.Loader.Fset.Position(token.Pos(pos + tc.offset))
-			ident, err := w.LocateIdent(&p)
-			if err != nil {
-				t.Errorf("Got error: %s", err.Error())
-			}
-			if ident == nil {
-				t.Errorf("Did not get ident back")
-			}
-			if int(ident.Pos()) != pos {
-				t.Errorf("Ident is at wrong position: got %d; expected %d", ident.Pos(), pos)
-			}
-			if ident.Name != identName {
-				t.Errorf("Ident has wrong name; got '%s'; expected '%s'", ident.Name, identName)
-			}
-		})
-	}
-}
+// 			p := w.Loader.Fset.Position(token.Pos(pos + tc.offset))
+// 			ident, err := w.LocateIdent(&p)
+// 			if err != nil {
+// 				t.Errorf("Got error: %s", err.Error())
+// 			}
+// 			if ident == nil {
+// 				t.Errorf("Did not get ident back")
+// 			}
+// 			if int(ident.Pos()) != pos {
+// 				t.Errorf("Ident is at wrong position: got %d; expected %d", ident.Pos(), pos)
+// 			}
+// 			if ident.Name != identName {
+// 				t.Errorf("Ident has wrong name; got '%s'; expected '%s'", ident.Name, identName)
+// 			}
+// 		})
+// 	}
+// }
 
-func Test_LocateIdent_OnKeyword(t *testing.T) {
-	identName := "func"
-	w := setup(t)
+// func Test_LocateIdent_OnKeyword(t *testing.T) {
+// 	identName := "func"
+// 	w := setup(t)
 
-	offset := nthIndex(identTestProgram, identName, 0)
-	pos := offset + 1
+// 	offset := nthIndex(identTestProgram, identName, 0)
+// 	pos := offset + 1
 
-	p := w.Loader.Fset.Position(token.Pos(pos))
-	ident, err := w.LocateIdent(&p)
-	if err != nil {
-		t.Errorf("Got error: %s", err.Error())
-	}
-	if ident != nil {
-		t.Errorf("Got ident back at %d", ident.Pos())
-	}
-}
+// 	p := w.Loader.Fset.Position(token.Pos(pos))
+// 	ident, err := w.LocateIdent(&p)
+// 	if err != nil {
+// 		t.Errorf("Got error: %s", err.Error())
+// 	}
+// 	if ident != nil {
+// 		t.Errorf("Got ident back at %d", ident.Pos())
+// 	}
+// }
 
-func Test_LocateReferences(t *testing.T) {
-	w := setup(t)
+// func Test_LocateReferences(t *testing.T) {
+// 	w := setup(t)
 
-	identName := "add1result"
-	offset := nthIndex(identTestProgram, identName, 0)
+// 	identName := "add1result"
+// 	offset := nthIndex(identTestProgram, identName, 0)
 
-	// Find an ident a couple of characters into the word
-	// Must add 1, then nudging in 2 characters.
-	p := w.Loader.Fset.Position(token.Pos(offset + 3))
-	fmt.Printf("p: %#v\n", p)
-	ident, _ := w.LocateIdent(&p)
-	if ident == nil {
-		t.Fatalf("Did not get ident back")
-	}
+// 	// Find an ident a couple of characters into the word
+// 	// Must add 1, then nudging in 2 characters.
+// 	p := w.Loader.Fset.Position(token.Pos(offset + 3))
+// 	fmt.Printf("p: %#v\n", p)
+// 	ident, _ := w.LocateIdent(&p)
+// 	if ident == nil {
+// 		t.Fatalf("Did not get ident back")
+// 	}
 
-	refPositions := w.LocateReferences(ident)
-	if nil == refPositions {
-		t.Errorf("Did not get any references back")
-	}
+// 	refPositions := w.LocateReferences(ident)
+// 	if nil == refPositions {
+// 		t.Errorf("Did not get any references back")
+// 	}
 
-	expectedOffsets := []int{
-		nthIndex(identTestProgram, identName, 1),
-		nthIndex(identTestProgram, identName, 2),
-	}
+// 	expectedOffsets := []int{
+// 		nthIndex(identTestProgram, identName, 1),
+// 		nthIndex(identTestProgram, identName, 2),
+// 	}
 
-	for _, v := range *refPositions {
-		found := false
-		for _, v2 := range expectedOffsets {
-			if v.Offset == v2 {
-				found = true
-				break
-			}
-		}
-		if !found {
-			t.Errorf("Got refPosition %d is not among expected offsets", v.Offset)
-		}
-	}
-}
+// 	for _, v := range *refPositions {
+// 		found := false
+// 		for _, v2 := range expectedOffsets {
+// 			if v.Offset == v2 {
+// 				found = true
+// 				break
+// 			}
+// 		}
+// 		if !found {
+// 			t.Errorf("Got refPosition %d is not among expected offsets", v.Offset)
+// 		}
+// 	}
+// }
 
 var _o sync.Once
 var _w *Workspace
@@ -229,31 +226,31 @@ func nthIndex(s string, sub string, n int) int {
 	return offset + strings.Index(s, sub)
 }
 
-func nthIndex2(w *Workspace, path, s, sub string, n int) int {
-	absPath := filepath.Dir(path)
+// func nthIndex2(w *Workspace, path, s, sub string, n int) int {
+// 	absPath := filepath.Dir(path)
 
-	node, ok := w.Loader.caravan.Find(absPath)
-	if !ok {
-		// This is a problem.
-	}
-	pkg := node.Element.(*Package)
-	fi := pkg.files[filepath.Base(path)]
-	astFile := fi.file
+// 	node, ok := w.Loader.caravan.Find(absPath)
+// 	if !ok {
+// 		// This is a problem.
+// 	}
+// 	pkg := node.Element.(*Package)
+// 	fi := pkg.files[filepath.Base(path)]
+// 	astFile := fi.file
 
-	// astFile, ok := w.Files[path]
-	if !ok {
-		panic(fmt.Sprintf("No ast.File at %s\n", path))
-	}
-	w.Loader.Fset.Position(astFile.Pos())
+// 	// astFile, ok := w.Files[path]
+// 	if !ok {
+// 		panic(fmt.Sprintf("No ast.File at %s\n", path))
+// 	}
+// 	w.Loader.Fset.Position(astFile.Pos())
 
-	offset := 0
-	for i := 0; i < n; i++ {
-		loc := strings.Index(s, sub)
-		if loc == -1 {
-			return loc
-		}
-		offset += loc + 1
-		s = s[loc+1:]
-	}
-	return offset + strings.Index(s, sub)
-}
+// 	offset := 0
+// 	for i := 0; i < n; i++ {
+// 		loc := strings.Index(s, sub)
+// 		if loc == -1 {
+// 			return loc
+// 		}
+// 		offset += loc + 1
+// 		s = s[loc+1:]
+// 	}
+// 	return offset + strings.Index(s, sub)
+// }

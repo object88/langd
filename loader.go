@@ -62,7 +62,7 @@ type Loader struct {
 	checkerMu sync.Mutex
 	conf      *types.Config
 	context   *build.Context
-	Fset      *token.FileSet
+	// Fset      *token.FileSet
 
 	openedFiles map[string]*rope.Rope
 
@@ -95,6 +95,7 @@ type Package struct {
 	buildPkg    *build.Package
 	checker     *types.Checker
 	checkerRWMu sync.RWMutex
+	Fset        *token.FileSet
 	typesPkg    *types.Package
 
 	files           map[string]*File
@@ -156,9 +157,9 @@ func NewLoader(options ...LoaderOption) *Loader {
 		closer:        make(chan bool),
 		done:          false,
 		filteredPaths: globs,
-		Fset:          token.NewFileSet(),
-		openedFiles:   map[string]*rope.Rope{},
-		stateChange:   make(chan string),
+		// Fset:          token.NewFileSet(),
+		openedFiles: map[string]*rope.Rope{},
+		stateChange: make(chan string),
 	}
 
 	for _, opt := range options {
@@ -437,7 +438,7 @@ func (l *Loader) processComplete(p *Package) {
 		}
 
 		p.typesPkg = types.NewPackage(p.absPath, p.buildPkg.Name)
-		p.checker = types.NewChecker(l.conf, l.Fset, p.typesPkg, info)
+		p.checker = types.NewChecker(l.conf, p.Fset, p.typesPkg, info)
 	}
 
 	// Clear previous errors; all will be rechecked.
@@ -532,7 +533,7 @@ func (l *Loader) processGoFiles(p *Package) bool {
 			}
 		}
 
-		astf, err := parser.ParseFile(l.Fset, fpath, r, parser.AllErrors)
+		astf, err := parser.ParseFile(p.Fset, fpath, r, parser.AllErrors)
 
 		if c, ok := r.(io.Closer); ok {
 			c.Close()
@@ -705,7 +706,7 @@ func (l *Loader) processCgoFiles(p *Package) bool {
 			continue
 		}
 
-		astf, err := parser.ParseFile(l.Fset, displayFiles[i], f, 0)
+		astf, err := parser.ParseFile(p.Fset, displayFiles[i], f, 0)
 
 		f.Close()
 
@@ -751,7 +752,7 @@ func (l *Loader) processTestGoFiles(p *Package) bool {
 			continue
 		}
 
-		astf, err := parser.ParseFile(l.Fset, fpath, r, parser.AllErrors)
+		astf, err := parser.ParseFile(p.Fset, fpath, r, parser.AllErrors)
 
 		r.Close()
 
@@ -915,6 +916,7 @@ func (l *Loader) ensurePackage(absPath string) *Package {
 		p = &Package{
 			absPath:         absPath,
 			shortPath:       shortPath,
+			Fset:            token.NewFileSet(),
 			importPaths:     map[string]bool{},
 			testImportPaths: map[string]bool{},
 		}
