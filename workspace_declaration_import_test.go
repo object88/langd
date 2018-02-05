@@ -40,7 +40,7 @@ func Test_Workspace_Declaration_Import_Const(t *testing.T) {
 		Line:     3,
 		Column:   3,
 	}
-	test(t, w, usagePosition, declPosition)
+	testDeclaration(t, w, usagePosition, declPosition)
 }
 
 func Test_Workspace_Declaration_Import_Func(t *testing.T) {
@@ -78,5 +78,5 @@ func Test_Workspace_Declaration_Import_Func(t *testing.T) {
 		Line:     2,
 		Column:   7,
 	}
-	test(t, w, usagePosition, declPosition)
+	testDeclaration(t, w, usagePosition, declPosition)
 }

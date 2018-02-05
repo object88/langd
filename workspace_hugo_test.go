@@ -58,8 +58,6 @@ func Test_Workspace_Hugo(t *testing.T) {
 		t.Fatal(buf.String())
 	}
 
-	// w.AssignAST()
-
 	p := &token.Position{
 		Filename: "/Users/bropa18/work/src/github.com/gohugoio/hugo/helpers/processing_stats.go",
 		Line:     109,

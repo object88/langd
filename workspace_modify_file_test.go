@@ -107,10 +107,6 @@ func Test_Workspace_Modify_Cross_File(t *testing.T) {
 
 	fmt.Printf("foo2.go:\n%s\n", w.Loader.openedFiles["/go/src/foo/foo2.go"].String())
 
-	// n, _ := w.Loader.caravan.Find("/go/src/foo")
-	// pkg := n.Element.(*Package)
-	// pkg.
-
 	errCount := 0
 	w.Loader.Errors(func(file string, errs []FileError) {
 		for _, err := range errs {
