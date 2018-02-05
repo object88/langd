@@ -47,9 +47,7 @@ func (i *Importer) ImportFrom(path, srcDir string, mode types.ImportMode) (*type
 }
 
 func (i *Importer) locatePackages(path string) (*Package, error) {
-	i.l.caravanMutex.Lock()
 	n, ok := i.l.caravan.Find(path)
-	i.l.caravanMutex.Unlock()
 	if !ok {
 		fmt.Printf("**** Not found! *****\n")
 		return nil, fmt.Errorf("Failed to import %s", path)

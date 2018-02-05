@@ -28,6 +28,59 @@ func Test_Caravan_Create(t *testing.T) {
 	}
 }
 
+func Test_Caravan_Ensure_Existing(t *testing.T) {
+	c := CreateCaravan()
+	f0 := &Foo{key: "123"}
+	c.Insert(f0)
+
+	n, created := c.Ensure("123", func() Keyer {
+		return &Foo{key: "123"}
+	})
+	if created {
+		t.Error("Got 'true' created")
+	}
+	if n == nil {
+		t.Error("Got nil node back from Ensure")
+	}
+	if n.Element == nil {
+		t.Error("Got nil element back from Ensure")
+	}
+	f, ok := n.Element.(*Foo)
+	if !ok {
+		t.Error("Element is not a Foo")
+	}
+	if f != f0 {
+		t.Error("Returned Foo pointer does not match the original inserted Foo")
+	}
+}
+
+func Test_Caravan_Ensure_New(t *testing.T) {
+	c := CreateCaravan()
+	f0 := &Foo{key: "123"}
+	c.Insert(f0)
+
+	f1 := &Foo{key: "234"}
+	n, created := c.Ensure("234", func() Keyer {
+		return f1
+	})
+	if !created {
+		t.Error("Got 'false' created")
+	}
+	if n == nil {
+		t.Error("Got nil node back from Ensure")
+	}
+	if n.Element == nil {
+		t.Error("Got nil element back from Ensure")
+	}
+	f, ok := n.Element.(*Foo)
+	if !ok {
+		t.Error("Element is not a Foo")
+	}
+	if f != f1 {
+		t.Error("Returned Foo pointer does not match the newly inserted Foo")
+	}
+}
+
 func Test_Caravan_Insert(t *testing.T) {
 	f0 := &Foo{key: "123"}
 	f0a := &Foo{key: "123"}

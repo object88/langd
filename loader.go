@@ -53,8 +53,7 @@ type Loader struct {
 
 	done bool
 
-	caravanMutex sync.Mutex
-	caravan      *collections.Caravan
+	caravan *collections.Caravan
 
 	stateChange chan string
 
@@ -197,9 +196,7 @@ func NewLoader(options ...LoaderOption) *Loader {
 			if terror, ok := e.(types.Error); ok {
 				position := terror.Fset.Position(terror.Pos)
 				absPath := filepath.Dir(position.Filename)
-				l.caravanMutex.Lock()
 				node, ok := l.caravan.Find(absPath)
-				l.caravanMutex.Unlock()
 
 				if !ok {
 					l.Log.Debugf("ERROR: (missing) No package for %s\n", absPath)
@@ -269,7 +266,6 @@ func (l *Loader) Close() {
 // Errors exposes problems with code found during compilation on a file-by-file
 // basis.
 func (l *Loader) Errors(handleErrs func(file string, errs []FileError)) {
-	l.caravanMutex.Lock()
 	l.caravan.Iter(func(key string, node *collections.Node) bool {
 		p := node.Element.(*Package)
 		for fname, f := range p.files {
@@ -284,7 +280,6 @@ func (l *Loader) Errors(handleErrs func(file string, errs []FileError)) {
 		}
 		return true
 	})
-	l.caravanMutex.Unlock()
 }
 
 // LoadDirectory adds the contents of a directory to the Loader
@@ -328,9 +323,7 @@ func (l *Loader) readDir(absPath string) {
 }
 
 func (l *Loader) processStateChange(absPath string) {
-	l.caravanMutex.Lock()
 	n, _ := l.caravan.Find(absPath)
-	l.caravanMutex.Unlock()
 	p := n.Element.(*Package)
 
 	loadState := p.loadState.get()
@@ -380,7 +373,6 @@ func (l *Loader) processStateChange(absPath string) {
 		l.stateChange <- absPath
 	case done:
 		complete := true
-		l.caravanMutex.Lock()
 
 		l.caravan.Iter(func(_ string, n *collections.Node) bool {
 			targetP := n.Element.(*Package)
@@ -390,8 +382,6 @@ func (l *Loader) processStateChange(absPath string) {
 			}
 			return complete
 		})
-
-		l.caravanMutex.Unlock()
 
 		if !complete {
 			return
@@ -777,9 +767,7 @@ func (l *Loader) processUnsafe(p *Package) bool {
 	l.Log.Debugf("*** Loading `%s`, replacing with types.Unsafe\n", p)
 	p.typesPkg = types.Unsafe
 
-	l.caravanMutex.Lock()
 	l.caravan.Insert(p)
-	l.caravanMutex.Unlock()
 
 	return true
 }
@@ -817,9 +805,7 @@ func (l *Loader) processPackages(p *Package, importPaths []string, testing bool)
 	}()
 
 	for importPath := range importedPackages {
-		l.caravanMutex.Lock()
 		n, ok := l.caravan.Find(importPath)
-		l.caravanMutex.Unlock()
 		if !ok {
 			l.Log.Debugf(" PP: %s: %d: import path is missing: %s\n", p, loadState, importPath)
 			continue
@@ -835,13 +821,11 @@ func (l *Loader) processPackages(p *Package, importPaths []string, testing bool)
 
 		var err error
 
-		l.caravanMutex.Lock()
 		if testing {
 			err = l.caravan.WeakConnect(p, targetP)
 		} else {
 			err = l.caravan.Connect(p, targetP)
 		}
-		l.caravanMutex.Unlock()
 
 		if err != nil {
 			panic(fmt.Sprintf(" PP: %s: %d: [weak] connect failed:\n\tfrom: %s\n\tto: %s\n\terr: %s\n\n", p, loadState, p.Key(), targetP.Key(), err.Error()))
@@ -873,10 +857,7 @@ func (l *Loader) checkImportReady(sourceLoadState loadState, targetP *Package) b
 }
 
 func (l *Loader) ensurePackage(absPath string) *Package {
-	l.caravanMutex.Lock()
-	var p *Package
-	n, ok := l.caravan.Find(absPath)
-	if !ok {
+	n, created := l.caravan.Ensure(absPath, func() collections.Keyer {
 		shortPath := absPath
 		root := runtime.GOROOT()
 		if strings.HasPrefix(absPath, root) {
@@ -889,7 +870,7 @@ func (l *Loader) ensurePackage(absPath string) *Package {
 			}
 		}
 
-		p = &Package{
+		p := &Package{
 			absPath:         absPath,
 			shortPath:       shortPath,
 			Fset:            token.NewFileSet(),
@@ -897,13 +878,11 @@ func (l *Loader) ensurePackage(absPath string) *Package {
 			testImportPaths: map[string]bool{},
 		}
 		p.c = sync.NewCond(&p.m)
-		l.caravan.Insert(p)
-	} else {
-		p = n.Element.(*Package)
-	}
-	l.caravanMutex.Unlock()
+		return p
+	})
+	p := n.Element.(*Package)
 
-	if !ok {
+	if created {
 		l.stateChange <- absPath
 	}
 
