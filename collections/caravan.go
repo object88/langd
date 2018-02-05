@@ -60,6 +60,23 @@ func CreateCaravan() *Caravan {
 	}
 }
 
+// Ensure will look up a key.  If there is a match in the caravan, that node
+// is returned.  Otherwise, the create function is invoked.  The results of
+// that are put into the caravan, and the resulting node is returned.  The
+// returned bool is true if the node already existed, and false if the create
+// method was invoked.
+func (c *Caravan) Ensure(key string, create func() Keyer) (*Node, bool) {
+	c.m.Lock()
+	n, ok := c.nodes[key]
+	if !ok {
+		newK := create()
+		n = c.insert(key, newK)
+	}
+	c.m.Unlock()
+
+	return n, !ok
+}
+
 // Find returns the element with the given key
 func (c *Caravan) Find(key string) (*Node, bool) {
 	c.m.Lock()
@@ -81,6 +98,12 @@ func (c *Caravan) Insert(k Keyer) {
 		return
 	}
 
+	c.insert(key, k)
+
+	c.m.Unlock()
+}
+
+func (c *Caravan) insert(key string, k Keyer) *Node {
 	n := &Node{
 		Ascendants:      map[string]*Node{},
 		Descendants:     map[string]*Node{},
@@ -90,7 +113,7 @@ func (c *Caravan) Insert(k Keyer) {
 	c.nodes[key] = n
 	c.roots[key] = n
 
-	c.m.Unlock()
+	return n
 }
 
 // Connect establishes an edge between two elements
@@ -198,11 +221,15 @@ func checkLoop(fromKey string, n *Node, checkedNodes map[string]bool) error {
 //	// ...
 // }
 func (c *Caravan) Iter(iter func(string, *Node) bool) {
+	c.m.Lock()
+
 	for k, n := range c.nodes {
 		if !iter(k, n) {
 			break
 		}
 	}
+
+	c.m.Unlock()
 }
 
 // Walk will traverse the caravan structure, calling the provided `walker`

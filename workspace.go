@@ -59,9 +59,7 @@ func (w *Workspace) ChangeFile(absFilepath string, startLine, startCharacter, en
 	}
 
 	absPath := filepath.Dir(absFilepath)
-	w.Loader.caravanMutex.Lock()
 	n, ok := w.Loader.caravan.Find(absPath)
-	w.Loader.caravanMutex.Unlock()
 
 	if !ok {
 		// Crapola.
@@ -299,9 +297,7 @@ func (w *Workspace) OpenFile(absFilepath, text string) error {
 	w.Loader.openedFiles[absFilepath] = rope.CreateRope(text)
 
 	absPath := filepath.Dir(absFilepath)
-	w.Loader.caravanMutex.Lock()
 	n, ok := w.Loader.caravan.Find(absPath)
-	w.Loader.caravanMutex.Unlock()
 
 	if !ok {
 		// Crapola.
