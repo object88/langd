@@ -21,11 +21,10 @@ import (
 	"sync/atomic"
 	"unicode/utf8"
 
-	"github.com/object88/rope"
-
 	"github.com/gobwas/glob"
 	"github.com/object88/langd/collections"
 	"github.com/object88/langd/log"
+	"github.com/object88/rope"
 )
 
 type loadState int32
@@ -62,7 +61,6 @@ type Loader struct {
 	checkerMu sync.Mutex
 	conf      *types.Config
 	context   *build.Context
-	// Fset      *token.FileSet
 
 	openedFiles map[string]*rope.Rope
 
@@ -92,11 +90,10 @@ type Package struct {
 	absPath   string
 	shortPath string
 
-	buildPkg    *build.Package
-	checker     *types.Checker
-	checkerRWMu sync.RWMutex
-	Fset        *token.FileSet
-	typesPkg    *types.Package
+	buildPkg *build.Package
+	checker  *types.Checker
+	Fset     *token.FileSet
+	typesPkg *types.Package
 
 	files           map[string]*File
 	importPaths     map[string]bool
@@ -157,9 +154,8 @@ func NewLoader(options ...LoaderOption) *Loader {
 		closer:        make(chan bool),
 		done:          false,
 		filteredPaths: globs,
-		// Fset:          token.NewFileSet(),
-		openedFiles: map[string]*rope.Rope{},
-		stateChange: make(chan string),
+		openedFiles:   map[string]*rope.Rope{},
+		stateChange:   make(chan string),
 	}
 
 	for _, opt := range options {
@@ -455,27 +451,7 @@ func (l *Loader) processComplete(p *Package) {
 	}
 
 	l.checkerMu.Lock()
-	// imports := make([]*Package, len(p.importPaths))
-	// i = 0
-	// for k := range p.importPaths {
-	// 	imports[i] = l.ensurePackage(k)
-	// 	i++
-	// }
-
-	// for _, impPkg := range imports {
-	// 	impPkg.checkerRWMu.RLock()
-	// }
-
-	// p.checkerRWMu.Lock()
-
 	err := p.checker.Files(astFiles)
-
-	// p.checkerRWMu.Unlock()
-
-	// for _, impPkg := range imports {
-	// 	impPkg.checkerRWMu.RUnlock()
-	// }
-
 	l.checkerMu.Unlock()
 
 	if err != nil {

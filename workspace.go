@@ -14,7 +14,6 @@ import (
 
 // Workspace is a mass of code
 type Workspace struct {
-	// Files map[string]*ast.File
 	rwm sync.RWMutex
 
 	Loader *Loader
@@ -29,19 +28,6 @@ func CreateWorkspace(loader *Loader, log *log.Log) *Workspace {
 		log:    log,
 	}
 }
-
-// AssignAST will inform the workspace of its file set, info, paths, etc.
-// func (w *Workspace) AssignAST() {
-// 	w.Files = map[string]*ast.File{}
-// 	w.Loader.caravan.Iter(func(_ string, node *collections.Node) bool {
-// 		pkg := node.Element.(*Package)
-// 		for fname, file := range pkg.files {
-// 			fpath := filepath.Join(pkg.absPath, fname)
-// 			w.Files[fpath] = file.file
-// 		}
-// 		return true
-// 	})
-// }
 
 // ChangeFile applies changes to an opened file
 func (w *Workspace) ChangeFile(absFilepath string, startLine, startCharacter, endLine, endCharacter int, text string) error {
@@ -99,15 +85,7 @@ func (w *Workspace) CloseFile(absPath string) error {
 		return nil
 	}
 
-	w.log.Debugf("File %s is open...\n", absPath)
 	delete(w.Loader.openedFiles, absPath)
-
-	// astFile, err := parser.ParseFile(w.Loader.Fset, absPath, nil, 0)
-	// if err != nil {
-	// 	w.log.Errorf("Failed to parse file as provided by didOpen: %s\n", err.Error())
-	// }
-
-	// w.Files[absPath] = astFile
 
 	w.log.Debugf("File %s is closed\n", absPath)
 
@@ -131,7 +109,6 @@ func (w *Workspace) LocateIdent(p *token.Position) (*ast.Ident, error) {
 	fi := pkg.files[filepath.Base(p.Filename)]
 	f := fi.file
 
-	// f := w.Files[p.Filename]
 	if f == nil {
 		// Failure response is failure.
 		return nil, fmt.Errorf("File %s isn't in our workspace\n", p.Filename)
@@ -143,8 +120,6 @@ func (w *Workspace) LocateIdent(p *token.Position) (*ast.Ident, error) {
 		if n == nil {
 			return false
 		}
-		// pStart := w.Loader.Fset.Position(n.Pos())
-		// pEnd := w.Loader.Fset.Position(n.End())
 		pStart := pkg.Fset.Position(n.Pos())
 		pEnd := pkg.Fset.Position(n.End())
 
@@ -179,7 +154,6 @@ func (w *Workspace) LocateDeclaration(p *token.Position) (*token.Position, error
 	fi := pkg.files[filepath.Base(p.Filename)]
 	f := fi.file
 
-	// f := w.Files[p.Filename]
 	if f == nil {
 		// Failure response is failure.
 		return nil, fmt.Errorf("File %s isn't in our workspace\n", p.Filename)
@@ -189,22 +163,15 @@ func (w *Workspace) LocateDeclaration(p *token.Position) (*token.Position, error
 
 	fmt.Printf("LocateDeclaration: %s\n", p.String())
 
-	// i := 0
 	ast.Inspect(f, func(n ast.Node) bool {
-		// fmt.Printf("%03d", i)
-		// i++
 		if n == nil {
-			// fmt.Printf(" (nil)\n")
 			return false
 		}
 
-		// pStart := w.Loader.Fset.Position(n.Pos())
-		// pEnd := w.Loader.Fset.Position(n.End())
 		pStart := pkg.Fset.Position(n.Pos())
 		pEnd := pkg.Fset.Position(n.End())
 
 		if !WithinPosition(p, &pStart, &pEnd) {
-			// fmt.Printf(" out [%s:%s]\n", pStart, pEnd)
 			return false
 		}
 
@@ -216,8 +183,6 @@ func (w *Workspace) LocateDeclaration(p *token.Position) (*token.Position, error
 		case *ast.SelectorExpr:
 			fmt.Printf("... found selector; %#v\n", v)
 			selPos := v.Sel
-			// pSelStart := w.Loader.Fset.Position(selPos.Pos())
-			// pSelEnd := w.Loader.Fset.Position(selPos.End())
 			pSelStart := pkg.Fset.Position(selPos.Pos())
 			pSelEnd := pkg.Fset.Position(selPos.End())
 			if WithinPosition(p, &pSelStart, &pSelEnd) {
@@ -227,8 +192,6 @@ func (w *Workspace) LocateDeclaration(p *token.Position) (*token.Position, error
 				return false
 			}
 		}
-
-		// fmt.Printf("... %#v\n", n)
 
 		return true
 	})
@@ -243,7 +206,6 @@ func (w *Workspace) LocateDeclaration(p *token.Position) (*token.Position, error
 		fmt.Printf("Have ident %#v\n", v)
 		if v.Obj != nil {
 			fmt.Printf("Ident has obj %#v (%d)\n", v.Obj, v.Pos())
-			// identPosition := w.Loader.Fset.Position(v.Obj.Pos())
 			identPosition := pkg.Fset.Position(v.Obj.Pos())
 			return &identPosition, nil
 		}
@@ -254,14 +216,12 @@ func (w *Workspace) LocateDeclaration(p *token.Position) (*token.Position, error
 		// }
 		if vDef, ok := pkg.checker.Defs[v]; ok {
 			fmt.Printf("Have vDef from Defs: %#v\n", vDef)
-			// identPosition := w.Loader.Fset.Position(vDef.Pos())
 			identPosition := pkg.Fset.Position(vDef.Pos())
 			return &identPosition, nil
 		}
 		if vUse, ok := pkg.checker.Uses[v]; ok {
 			// Used when var is defined in a package, in another file
 			fmt.Printf("Have vUse from Uses: %#v\n", vUse)
-			// identPosition := w.Loader.Fset.Position(vUse.Pos())
 			identPosition := pkg.Fset.Position(vUse.Pos())
 			return &identPosition, nil
 
@@ -296,7 +256,6 @@ func (w *Workspace) LocateDeclaration(p *token.Position) (*token.Position, error
 				oooo := pkg1.typesPkg.Scope().Lookup(v.Sel.Name)
 				if oooo != nil {
 					// Have thingy from scope!
-					// declPos := w.Loader.Fset.Position(oooo.Pos())
 					declPos := pkg1.Fset.Position(oooo.Pos())
 					return &declPos, nil
 				}
@@ -308,7 +267,6 @@ func (w *Workspace) LocateDeclaration(p *token.Position) (*token.Position, error
 					fmt.Printf("Not from Defs\n")
 				} else {
 					fmt.Printf("From defs: %#v\n", def)
-					// declPos := w.Loader.Fset.Position(def.Pos())
 					declPos := pkg1.Fset.Position(def.Pos())
 					return &declPos, nil
 				}
@@ -343,17 +301,6 @@ func (w *Workspace) OpenFile(absFilepath, text string) error {
 		return fmt.Errorf("File %s is already opened\n", absFilepath)
 	}
 	w.Loader.openedFiles[absFilepath] = rope.CreateRope(text)
-
-	// DISABLE UNTIL WE ARE ABLE TO RERUN TYPECHECKER
-	// astFile, err := parser.ParseFile(w.Loader.Fset, absPath, text, 0)
-	// if err != nil {
-	// 	w.Loader.Log.Warnf("Failed to parse file as provided by didOpen: %s\n", err.Error())
-	// }
-
-	// w.Files[absPath] = astFile
-
-	// n, err := w.Loader.caravan.Find(filepath.Dir(absPath))
-	// p := n.Element.(*Package)
 
 	absPath := filepath.Dir(absFilepath)
 	w.Loader.caravanMutex.Lock()
