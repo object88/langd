@@ -95,15 +95,11 @@ func (w *Workspace) CloseFile(absPath string) error {
 // LocateIdent scans the loaded fset for the identifier at the requested
 // position
 func (w *Workspace) LocateIdent(p *token.Position) (*ast.Ident, error) {
-	if _, ok := w.Loader.openedFiles[p.Filename]; ok {
-		// Force reprocessing the AST before we can continue.
-	}
-
 	absPath := filepath.Dir(p.Filename)
 
 	n, ok := w.Loader.caravan.Find(absPath)
 	if !ok {
-		// This is a problem.
+		return nil, fmt.Errorf("No package loaded for '%s'", p.Filename)
 	}
 	pkg := n.Element.(*Package)
 	fi := pkg.files[filepath.Base(p.Filename)]
@@ -148,7 +144,7 @@ func (w *Workspace) LocateDeclaration(p *token.Position) (*token.Position, error
 
 	n, ok := w.Loader.caravan.Find(absPath)
 	if !ok {
-		// This is a problem.
+		return nil, fmt.Errorf("No package loaded for '%s'", p.Filename)
 	}
 	pkg := n.Element.(*Package)
 	fi := pkg.files[filepath.Base(p.Filename)]
