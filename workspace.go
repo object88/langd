@@ -3,22 +3,18 @@ package langd
 import (
 	"fmt"
 	"go/ast"
-	"go/parser"
 	"go/token"
 	"go/types"
 	"path/filepath"
 	"sync"
 
-	"github.com/object88/langd/collections"
 	"github.com/object88/langd/log"
 	"github.com/object88/rope"
 )
 
 // Workspace is a mass of code
 type Workspace struct {
-	Files       map[string]*ast.File
-	OpenedFiles map[string]*rope.Rope
-	rwm         sync.RWMutex
+	rwm sync.RWMutex
 
 	Loader *Loader
 
@@ -27,33 +23,17 @@ type Workspace struct {
 
 // CreateWorkspace returns a new instance of the Workspace struct
 func CreateWorkspace(loader *Loader, log *log.Log) *Workspace {
-	openedFiles := map[string]*rope.Rope{}
-
 	return &Workspace{
-		OpenedFiles: openedFiles,
-		Loader:      loader,
-		log:         log,
+		Loader: loader,
+		log:    log,
 	}
 }
 
-// AssignAST will inform the workspace of its file set, info, paths, etc.
-func (w *Workspace) AssignAST() {
-	w.Files = map[string]*ast.File{}
-	w.Loader.caravan.Iter(func(_ string, node *collections.Node) bool {
-		pkg := node.Element.(*Package)
-		for fname, file := range pkg.files {
-			fpath := filepath.Join(pkg.absPath, fname)
-			w.Files[fpath] = file.file
-		}
-		return true
-	})
-}
-
 // ChangeFile applies changes to an opened file
-func (w *Workspace) ChangeFile(absPath string, startLine, startCharacter, endLine, endCharacter int, text string) error {
-	buf, ok := w.OpenedFiles[absPath]
+func (w *Workspace) ChangeFile(absFilepath string, startLine, startCharacter, endLine, endCharacter int, text string) error {
+	buf, ok := w.Loader.openedFiles[absFilepath]
 	if !ok {
-		return fmt.Errorf("File %s is not opened\n", absPath)
+		return fmt.Errorf("File %s is not opened\n", absFilepath)
 	}
 
 	// Have position (line, character), need to transform into offset into file
@@ -74,28 +54,38 @@ func (w *Workspace) ChangeFile(absPath string, startLine, startCharacter, endLin
 
 	fmt.Printf("offsets: [%d:%d]\n", startOffset, endOffset)
 
-	buf.Alter(startOffset, endOffset, text)
+	if err = buf.Alter(startOffset, endOffset, text); err != nil {
+		return err
+	}
+
+	absPath := filepath.Dir(absFilepath)
+	w.Loader.caravanMutex.Lock()
+	n, ok := w.Loader.caravan.Find(absPath)
+	w.Loader.caravanMutex.Unlock()
+
+	if !ok {
+		// Crapola.
+		return fmt.Errorf("Failed to find package for file %s", absFilepath)
+	}
+	p := n.Element.(*Package)
+
+	p.loadState = unloaded
+	p.ResetChecker()
+	w.Loader.done = false
+	w.Loader.stateChange <- absPath
 
 	return nil
 }
 
 // CloseFile will take a file out of the OpenedFiles struct and reparse
 func (w *Workspace) CloseFile(absPath string) error {
-	_, ok := w.OpenedFiles[absPath]
+	_, ok := w.Loader.openedFiles[absPath]
 	if !ok {
 		w.log.Warnf("File %s is not opened\n", absPath)
 		return nil
 	}
 
-	w.log.Debugf("File %s is open...\n", absPath)
-	delete(w.OpenedFiles, absPath)
-
-	astFile, err := parser.ParseFile(w.Loader.Fset, absPath, nil, 0)
-	if err != nil {
-		w.log.Errorf("Failed to parse file as provided by didOpen: %s\n", err.Error())
-	}
-
-	w.Files[absPath] = astFile
+	delete(w.Loader.openedFiles, absPath)
 
 	w.log.Debugf("File %s is closed\n", absPath)
 
@@ -105,11 +95,16 @@ func (w *Workspace) CloseFile(absPath string) error {
 // LocateIdent scans the loaded fset for the identifier at the requested
 // position
 func (w *Workspace) LocateIdent(p *token.Position) (*ast.Ident, error) {
-	if _, ok := w.OpenedFiles[p.Filename]; ok {
-		// Force reprocessing the AST before we can continue.
-	}
+	absPath := filepath.Dir(p.Filename)
 
-	f := w.Files[p.Filename]
+	n, ok := w.Loader.caravan.Find(absPath)
+	if !ok {
+		return nil, fmt.Errorf("No package loaded for '%s'", p.Filename)
+	}
+	pkg := n.Element.(*Package)
+	fi := pkg.files[filepath.Base(p.Filename)]
+	f := fi.file
+
 	if f == nil {
 		// Failure response is failure.
 		return nil, fmt.Errorf("File %s isn't in our workspace\n", p.Filename)
@@ -121,8 +116,8 @@ func (w *Workspace) LocateIdent(p *token.Position) (*ast.Ident, error) {
 		if n == nil {
 			return false
 		}
-		pStart := w.Loader.Fset.Position(n.Pos())
-		pEnd := w.Loader.Fset.Position(n.End())
+		pStart := pkg.Fset.Position(n.Pos())
+		pEnd := pkg.Fset.Position(n.End())
 
 		if WithinPosition(p, &pStart, &pEnd) {
 			switch v := n.(type) {
@@ -145,7 +140,16 @@ func (w *Workspace) LocateIdent(p *token.Position) (*ast.Ident, error) {
 // LocateDeclaration returns the position where the provided identifier is
 // declared & defined
 func (w *Workspace) LocateDeclaration(p *token.Position) (*token.Position, error) {
-	f := w.Files[p.Filename]
+	absPath := filepath.Dir(p.Filename)
+
+	n, ok := w.Loader.caravan.Find(absPath)
+	if !ok {
+		return nil, fmt.Errorf("No package loaded for '%s'", p.Filename)
+	}
+	pkg := n.Element.(*Package)
+	fi := pkg.files[filepath.Base(p.Filename)]
+	f := fi.file
+
 	if f == nil {
 		// Failure response is failure.
 		return nil, fmt.Errorf("File %s isn't in our workspace\n", p.Filename)
@@ -153,18 +157,15 @@ func (w *Workspace) LocateDeclaration(p *token.Position) (*token.Position, error
 
 	var x ast.Node
 
-	fmt.Printf("LocateDeclaration: %s\n", p.Filename)
-
-	e, _ := w.Loader.caravan.Find(filepath.Dir(p.Filename))
-	pkg := e.Element.(*Package)
+	fmt.Printf("LocateDeclaration: %s\n", p.String())
 
 	ast.Inspect(f, func(n ast.Node) bool {
 		if n == nil {
 			return false
 		}
 
-		pStart := w.Loader.Fset.Position(n.Pos())
-		pEnd := w.Loader.Fset.Position(n.End())
+		pStart := pkg.Fset.Position(n.Pos())
+		pEnd := pkg.Fset.Position(n.End())
 
 		if !WithinPosition(p, &pStart, &pEnd) {
 			return false
@@ -172,13 +173,14 @@ func (w *Workspace) LocateDeclaration(p *token.Position) (*token.Position, error
 
 		switch v := n.(type) {
 		case *ast.Ident:
-			fmt.Printf("Found;     %#v\n", n)
+			fmt.Printf("... found ident; %#v\n", v)
 			x = v
 			return false
 		case *ast.SelectorExpr:
+			fmt.Printf("... found selector; %#v\n", v)
 			selPos := v.Sel
-			pSelStart := w.Loader.Fset.Position(selPos.Pos())
-			pSelEnd := w.Loader.Fset.Position(selPos.End())
+			pSelStart := pkg.Fset.Position(selPos.Pos())
+			pSelEnd := pkg.Fset.Position(selPos.End())
 			if WithinPosition(p, &pSelStart, &pSelEnd) {
 				s := pkg.checker.Selections[v]
 				fmt.Printf("Selector: %#v\n", s)
@@ -197,10 +199,10 @@ func (w *Workspace) LocateDeclaration(p *token.Position) (*token.Position, error
 
 	switch v := x.(type) {
 	case *ast.Ident:
-		fmt.Printf("Have ident\n")
+		fmt.Printf("Have ident %#v\n", v)
 		if v.Obj != nil {
 			fmt.Printf("Ident has obj %#v (%d)\n", v.Obj, v.Pos())
-			identPosition := w.Loader.Fset.Position(v.Obj.Pos())
+			identPosition := pkg.Fset.Position(v.Obj.Pos())
 			return &identPosition, nil
 		}
 		// xObj := pkg.info.ObjectOf(v)
@@ -208,6 +210,26 @@ func (w *Workspace) LocateDeclaration(p *token.Position) (*token.Position, error
 		// 	identPosition := w.Loader.Fset.Position(xObj.Pos())
 		// 	return &identPosition, nil
 		// }
+		if vDef, ok := pkg.checker.Defs[v]; ok {
+			fmt.Printf("Have vDef from Defs: %#v\n", vDef)
+			identPosition := pkg.Fset.Position(vDef.Pos())
+			return &identPosition, nil
+		}
+		if vUse, ok := pkg.checker.Uses[v]; ok {
+			// Used when var is defined in a package, in another file
+			fmt.Printf("Have vUse from Uses: %#v\n", vUse)
+			identPosition := pkg.Fset.Position(vUse.Pos())
+			return &identPosition, nil
+
+			// switch v1 := vUse.(type) {
+			// case *types.Var:
+			// 	scope := v1.Parent()
+			// 	scopedObj := scope.Lookup(v.Name)
+			// 	identPosition := w.Loader.Fset.Position(scopedObj.Pos())
+			// 	return &identPosition, nil
+			// }
+		}
+
 	case *ast.SelectorExpr:
 		fmt.Printf("Have SelectorExpr\n")
 
@@ -230,7 +252,7 @@ func (w *Workspace) LocateDeclaration(p *token.Position) (*token.Position, error
 				oooo := pkg1.typesPkg.Scope().Lookup(v.Sel.Name)
 				if oooo != nil {
 					// Have thingy from scope!
-					declPos := w.Loader.Fset.Position(oooo.Pos())
+					declPos := pkg1.Fset.Position(oooo.Pos())
 					return &declPos, nil
 				}
 
@@ -241,7 +263,7 @@ func (w *Workspace) LocateDeclaration(p *token.Position) (*token.Position, error
 					fmt.Printf("Not from Defs\n")
 				} else {
 					fmt.Printf("From defs: %#v\n", def)
-					declPos := w.Loader.Fset.Position(def.Pos())
+					declPos := pkg1.Fset.Position(def.Pos())
 					return &declPos, nil
 				}
 			}
@@ -270,32 +292,43 @@ func (w *Workspace) LocateReferences(x *ast.Ident) *[]token.Position {
 
 // OpenFile shadows the file read from the disk with an in-memory version,
 // which the workspace can accept edits to.
-func (w *Workspace) OpenFile(absPath, text string) error {
-	w.OpenedFiles[absPath] = rope.CreateRope(text)
+func (w *Workspace) OpenFile(absFilepath, text string) error {
+	if _, ok := w.Loader.openedFiles[absFilepath]; ok {
+		return fmt.Errorf("File %s is already opened\n", absFilepath)
+	}
+	w.Loader.openedFiles[absFilepath] = rope.CreateRope(text)
 
-	// DISABLE UNTIL WE ARE ABLE TO RERUN TYPECHECKER
-	// astFile, err := parser.ParseFile(w.Loader.Fset, rh.fpath, rh.text, 0)
-	// if err != nil {
-	// 	rh.h.log.Warnf("Failed to parse file as provided by didOpen: %s\n", err.Error())
-	// }
+	absPath := filepath.Dir(absFilepath)
+	w.Loader.caravanMutex.Lock()
+	n, ok := w.Loader.caravan.Find(absPath)
+	w.Loader.caravanMutex.Unlock()
 
-	// w.Files[rh.fpath] = astFile
+	if !ok {
+		// Crapola.
+		return fmt.Errorf("Failed to find package for file %s", absFilepath)
+	}
+	p := n.Element.(*Package)
 
-	w.log.Debugf("Shadowed file '%s'\n", absPath)
+	p.loadState = unloaded
+	p.ResetChecker()
+	w.Loader.done = false
+	w.Loader.stateChange <- absPath
+
+	w.log.Debugf("Shadowed file '%s'\n", absFilepath)
 
 	return nil
 }
 
 // ReplaceFile replaces the entire contents of an opened file
 func (w *Workspace) ReplaceFile(absPath, text string) error {
-	_, ok := w.OpenedFiles[absPath]
+	_, ok := w.Loader.openedFiles[absPath]
 	if !ok {
 		return fmt.Errorf("File %s is not opened\n", absPath)
 	}
 
 	// Replace the entire document
 	buf := rope.CreateRope(text)
-	w.OpenedFiles[absPath] = buf
+	w.Loader.openedFiles[absPath] = buf
 
 	return nil
 }

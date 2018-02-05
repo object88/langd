@@ -1,6 +1,7 @@
 package langd
 
 import (
+	"go/token"
 	"testing"
 )
 
@@ -29,9 +30,17 @@ func Test_Workspace_Declaration_Import_Const(t *testing.T) {
 
 	w := workspaceSetup(t, "/go/src/bar", packages, false)
 
-	declOffset := nthIndex2(w, "/go/src/foo/foo.go", src1, "Fooval", 0)
-	usageOffset := nthIndex2(w, "/go/src/bar/bar.go", src2, "Fooval", 0)
-	test(t, w, declOffset, usageOffset)
+	usagePosition := &token.Position{
+		Filename: "/go/src/bar/bar.go",
+		Line:     6,
+		Column:   14,
+	}
+	declPosition := &token.Position{
+		Filename: "/go/src/foo/foo.go",
+		Line:     3,
+		Column:   3,
+	}
+	testDeclaration(t, w, usagePosition, declPosition)
 }
 
 func Test_Workspace_Declaration_Import_Func(t *testing.T) {
@@ -59,7 +68,15 @@ func Test_Workspace_Declaration_Import_Func(t *testing.T) {
 
 	w := workspaceSetup(t, "/go/src/bar", packages, false)
 
-	declOffset := nthIndex2(w, "/go/src/foo/foo.go", src1, "FooFunc", 0)
-	usageOffset := nthIndex2(w, "/go/src/bar/bar.go", src2, "FooFunc", 0)
-	test(t, w, declOffset, usageOffset)
+	usagePosition := &token.Position{
+		Filename: "/go/src/bar/bar.go",
+		Line:     6,
+		Column:   14,
+	}
+	declPosition := &token.Position{
+		Filename: "/go/src/foo/foo.go",
+		Line:     2,
+		Column:   7,
+	}
+	testDeclaration(t, w, usagePosition, declPosition)
 }

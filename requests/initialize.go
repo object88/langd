@@ -80,8 +80,6 @@ func (h *Handler) readRoot(root string) {
 	fmt.Printf("Waiting...\n")
 	<-done
 
-	h.workspace.AssignAST()
-
 	// Start a routine to process requests
 	h.startProcessingQueue()
 

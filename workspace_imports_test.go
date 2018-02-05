@@ -1,14 +1,5 @@
 package langd
 
-import (
-	"go/token"
-	"os"
-	"testing"
-
-	"github.com/object88/langd/log"
-	"golang.org/x/tools/go/buildutil"
-)
-
 const identImportsTestProgram1 = `package foo
 
 import (
@@ -46,56 +37,15 @@ func CountCall(source string) {
 }
 `
 
-func Test_FromImports_LocateReferences_AsFunc(t *testing.T) {
-	w := setup2(t)
+// func Test_FromImports_LocateReferences_AsFunc(t *testing.T) {
+// 	w := setup2(t)
 
-	callCountInvokeOffset := nthIndex(identImportsTestProgram1, "CountCall", 0)
-	callCountInvokePosition := w.Loader.Fset.Position(token.Pos(callCountInvokeOffset + 1))
-	callCountIdent, _ := w.LocateIdent(&callCountInvokePosition)
+// 	callCountInvokeOffset := nthIndex(identImportsTestProgram1, "CountCall", 0)
+// 	callCountInvokePosition := w.Loader.Fset.Position(token.Pos(callCountInvokeOffset + 1))
+// 	callCountIdent, _ := w.LocateIdent(&callCountInvokePosition)
 
-	refPositions := w.LocateReferences(callCountIdent)
-	if nil == refPositions {
-		t.Fatalf("Returned nil from LocateReferences")
-	}
-}
-
-func setup2(t *testing.T) *Workspace {
-	packages := map[string]map[string]string{
-		"foo": map[string]string{
-			"foo.go": identImportsTestProgram1,
-		},
-		"bar": map[string]string{
-			"bar.go": identImportsTestProgram2,
-		},
-	}
-
-	fc := buildutil.FakeContext(packages)
-	loader := NewLoader(func(l *Loader) {
-		l.context = fc
-	})
-	w := CreateWorkspace(loader, log.CreateLog(os.Stdout))
-	w.log.SetLevel(log.Verbose)
-
-	done := loader.Start()
-	loader.LoadDirectory("/go/src/foo")
-	<-done
-
-	w.AssignAST()
-
-	errCount := 0
-	w.Loader.Errors(func(file string, errs []FileError) {
-		if errCount == 0 {
-			t.Errorf("Loading error in %s:\n", file)
-		}
-		for k, err := range errs {
-			t.Errorf("\t%d: %s\n", k, err.Message)
-		}
-		errCount++
-	})
-
-	if errCount != 0 {
-		t.Fatalf("Found %d errors", errCount)
-	}
-
-	return w
-}
+// 	refPositions := w.LocateReferences(callCountIdent)
+// 	if nil == refPositions {
+// 		t.Fatalf("Returned nil from LocateReferences")
+// 	}
+// }
