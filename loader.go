@@ -53,7 +53,6 @@ type Loader struct {
 
 	done bool
 
-	// caravanMu sync.Mutex
 	caravan *collections.Caravan
 
 	stateChange chan string
@@ -888,42 +887,6 @@ func (l *Loader) ensurePackage(absPath string) *Package {
 	}
 
 	return p
-
-	// l.caravanMu.Lock()
-	// var p *Package
-	// n, ok := l.caravan.Find(absPath)
-	// if !ok {
-	// 	shortPath := absPath
-	// 	root := runtime.GOROOT()
-	// 	if strings.HasPrefix(absPath, root) {
-	// 		shortPath = fmt.Sprintf("(stdlib) %s", absPath[utf8.RuneCountInString(root)+5:])
-	// 	} else {
-	// 		// Shorten the canonical name for logging purposes.
-	// 		n := utf8.RuneCountInString(l.startDir)
-	// 		if len(absPath) >= n {
-	// 			shortPath = absPath[n:]
-	// 		}
-	// 	}
-
-	// 	p = &Package{
-	// 		absPath:         absPath,
-	// 		shortPath:       shortPath,
-	// 		Fset:            token.NewFileSet(),
-	// 		importPaths:     map[string]bool{},
-	// 		testImportPaths: map[string]bool{},
-	// 	}
-	// 	p.c = sync.NewCond(&p.m)
-	// 	l.caravan.Insert(p)
-	// } else {
-	// 	p = n.Element.(*Package)
-	// }
-	// l.caravanMu.Unlock()
-
-	// if !ok {
-	// 	l.stateChange <- absPath
-	// }
-
-	// return p
 }
 
 func (l *Loader) findImportPath(path, src string) (string, error) {
