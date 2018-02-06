@@ -17,7 +17,7 @@ type handleReqFunc func(ctx context.Context, req *jsonrpc2.Request)
 // Handler implements jsonrpc2.Handle
 type Handler struct {
 	conn          *jsonrpc2.Conn
-	imap          IniterFuncMap
+	rq            *requestMap
 	workspace     *langd.Workspace
 	log           *log.Log
 	incomingQueue chan int
@@ -54,7 +54,7 @@ type replyHandler interface {
 }
 
 // NewHandler creates a new Handler
-func NewHandler(imf *IniterMapFactory) *Handler {
+func NewHandler() *Handler {
 	// Hopefully this queue is sufficiently deep.  Otherwise, the handler
 	// will start blocking.
 	incomingQueue := make(chan int, 1024)
@@ -71,7 +71,7 @@ func NewHandler(imf *IniterMapFactory) *Handler {
 		rm: map[int]requestHandler{},
 		sq: sq,
 
-		imap: imf.Imap,
+		rq: newRequestMap(),
 
 		log:       l,
 		workspace: langd.CreateWorkspace(loader, l),
@@ -148,7 +148,7 @@ func (h *Handler) uninitedHandler(ctx context.Context, req *jsonrpc2.Request) {
 func (h *Handler) initedHandler(ctx context.Context, req *jsonrpc2.Request) {
 	meth := req.Method
 
-	f, ok := h.imap[meth]
+	f, ok := h.rq.Lookup(meth)
 	if !ok {
 		h.log.Verbosef("Unhandled method '%s'\n", meth)
 		return
