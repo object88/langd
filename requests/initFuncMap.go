@@ -2,6 +2,7 @@ package requests
 
 import (
 	"context"
+	"sync"
 
 	"github.com/sourcegraph/jsonrpc2"
 )
@@ -10,32 +11,30 @@ import (
 type IniterFunc func(ctx context.Context, h *Handler, req *jsonrpc2.Request) requestHandler
 
 // IniterFuncMap maps method names to their initializer functions
-type IniterFuncMap map[string]IniterFunc
+type initerFuncMap map[string]IniterFunc
 
-// IniterMapFactory contains the one instance of IniterFuncMaps
-type IniterMapFactory struct {
-	Imap IniterFuncMap
-}
+var initerFuncs initerFuncMap
+var initerFuncsSync sync.Once
 
 // CreateIniterMapFactory creates the (theorically, one) factory for initer
 // methods.  This should be invoked once when the service starts, and shared
 // among all connections, because these initer maps will always be the same.
-func CreateIniterMapFactory() *IniterMapFactory {
-	imap := IniterFuncMap{
-		definitionMethod:                  createDefinitionHandler,
-		didChangeConfigurationMethod:      createDidChangeConfigurationHandler,
-		didChangeTextDocumentNotification: createDidChangeTextDocumentHandler,
-		didCloseNotification:              createDidCloseHandler,
-		didOpenNotification:               createDidOpenHandler,
-		didSaveNotification:               createDidSaveHandler,
-		exitNotification:                  createExitHandler,
-		initializedNotification:           createNoopNotificationHandler,
-		referencesMethod:                  createReferencesHandler,
-		shutdownMethod:                    createShutdownHandler,
-		willSaveNotification:              createNoopNotificationHandler,
-	}
+func getIniterFuncs() initerFuncMap {
+	initerFuncsSync.Do(func() {
+		initerFuncs = initerFuncMap{
+			definitionMethod:                  createDefinitionHandler,
+			didChangeConfigurationMethod:      createDidChangeConfigurationHandler,
+			didChangeTextDocumentNotification: createDidChangeTextDocumentHandler,
+			didCloseNotification:              createDidCloseHandler,
+			didOpenNotification:               createDidOpenHandler,
+			didSaveNotification:               createDidSaveHandler,
+			exitNotification:                  createExitHandler,
+			initializedNotification:           createNoopNotificationHandler,
+			referencesMethod:                  createReferencesHandler,
+			shutdownMethod:                    createShutdownHandler,
+			willSaveNotification:              createNoopNotificationHandler,
+		}
+	})
 
-	return &IniterMapFactory{
-		Imap: imap,
-	}
+	return initerFuncs
 }

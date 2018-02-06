@@ -44,8 +44,6 @@ func InitializeService() error {
 func socketService() {
 	fmt.Printf("JSON server starting\n")
 
-	imf := requests.CreateIniterMapFactory()
-
 	lis, err := net.Listen("tcp", jsonPort)
 	if err != nil {
 		fmt.Printf("Error listening on port %s: %s\n", jsonPort, err.Error())
@@ -62,7 +60,7 @@ func socketService() {
 		}
 
 		go func(c net.Conn) {
-			h := requests.NewHandler(imf)
+			h := requests.NewHandler()
 			os := jsonrpc2.NewBufferedStream(c, jsonrpc2.VSCodeObjectCodec{})
 			conn := jsonrpc2.NewConn(context.Background(), os, h)
 			h.SetConnection(conn)
