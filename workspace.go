@@ -494,6 +494,13 @@ func (w *Workspace) locateDeclaration(p *token.Position) (types.Object, *Package
 					// declPos := pkg1.Fset.Position(def.Pos())
 					return def, pkg1, nil
 				}
+			case *types.Var:
+				fmt.Printf("Have Var %s, type %s\n\t%#v\n\tSel: %#v\n", v1.Name(), v1.Type(), v1, v.Sel)
+				sel := pkg.checker.Selections[v]
+				fmt.Printf("Sel: %#v\n", sel)
+				if sel != nil {
+					return sel.Obj(), pkg, nil
+				}
 			}
 		}
 
