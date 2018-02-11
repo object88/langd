@@ -33,7 +33,7 @@ func CreateWorkspace(loader *Loader, log *log.Log) *Workspace {
 func (w *Workspace) ChangeFile(absFilepath string, startLine, startCharacter, endLine, endCharacter int, text string) error {
 	buf, ok := w.Loader.openedFiles[absFilepath]
 	if !ok {
-		return fmt.Errorf("File %s is not opened\n", absFilepath)
+		return fmt.Errorf("File %s is not opened", absFilepath)
 	}
 
 	// Have position (line, character), need to transform into offset into file
@@ -105,7 +105,7 @@ func (w *Workspace) LocateIdent(p *token.Position) (*ast.Ident, error) {
 
 	if f == nil {
 		// Failure response is failure.
-		return nil, fmt.Errorf("File %s isn't in our workspace\n", p.Filename)
+		return nil, fmt.Errorf("File %s isn't in our workspace", p.Filename)
 	}
 
 	var x *ast.Ident
@@ -150,7 +150,7 @@ func (w *Workspace) LocateDeclaration(p *token.Position) (*token.Position, error
 
 	if f == nil {
 		// Failure response is failure.
-		return nil, fmt.Errorf("File %s isn't in our workspace\n", p.Filename)
+		return nil, fmt.Errorf("File %s isn't in our workspace", p.Filename)
 	}
 
 	var x ast.Node
@@ -275,24 +275,39 @@ func (w *Workspace) LocateDeclaration(p *token.Position) (*token.Position, error
 
 // LocateReferences returns the array of positions where the given identifier
 // is referenced or used
-func (w *Workspace) LocateReferences(x *ast.Ident) *[]token.Position {
-	// xObj := w.Info.ObjectOf(x)
-	ps := []token.Position{}
+func (w *Workspace) LocateReferences(p *token.Position) []token.Position {
+	// Get declaration position, ident, and package
+	ident, pkg, err := w.locateDeclaration(p)
+	if err != nil {
+		// Crappy crap.
+		return nil
+	}
 
-	// for k, v := range w.Info.Uses {
-	// 	if xObj == v {
-	// 		ps = append(ps, w.Fset.Position(k.Pos()))
-	// 	}
-	// }
+	// If declaration should be included in results set, add to `ps`
 
-	return &ps
+	// Find uses in the native package
+	refs := w.locateReferences(ident, pkg)
+
+	// If exported, search through ascendents packages for usages
+
+	// If exported by ascendents, search through ascendents tree for indirect usages
+
+	ps := make([]token.Position, len(refs)+1)
+	ps[0] = pkg.Fset.Position(ident.Pos())
+	i := 1
+	for _, v := range refs {
+		ps[i] = v.pkg.Fset.Position(v.pos)
+		i++
+	}
+
+	return ps
 }
 
 // OpenFile shadows the file read from the disk with an in-memory version,
 // which the workspace can accept edits to.
 func (w *Workspace) OpenFile(absFilepath, text string) error {
 	if _, ok := w.Loader.openedFiles[absFilepath]; ok {
-		return fmt.Errorf("File %s is already opened\n", absFilepath)
+		return fmt.Errorf("File %s is already opened", absFilepath)
 	}
 	w.Loader.openedFiles[absFilepath] = rope.CreateRope(text)
 
@@ -319,7 +334,7 @@ func (w *Workspace) OpenFile(absFilepath, text string) error {
 func (w *Workspace) ReplaceFile(absPath, text string) error {
 	_, ok := w.Loader.openedFiles[absPath]
 	if !ok {
-		return fmt.Errorf("File %s is not opened\n", absPath)
+		return fmt.Errorf("File %s is not opened", absPath)
 	}
 
 	// Replace the entire document
@@ -345,4 +360,145 @@ func (w *Workspace) Unlock(write bool) {
 	} else {
 		w.rwm.RUnlock()
 	}
+}
+
+func (w *Workspace) locateDeclaration(p *token.Position) (types.Object, *Package, error) {
+	absPath := filepath.Dir(p.Filename)
+
+	n, ok := w.Loader.caravan.Find(absPath)
+	if !ok {
+		return nil, nil, fmt.Errorf("No package loaded for '%s'", p.Filename)
+	}
+	pkg := n.Element.(*Package)
+	fi := pkg.files[filepath.Base(p.Filename)]
+	f := fi.file
+
+	if f == nil {
+		// Failure response is failure.
+		return nil, nil, fmt.Errorf("File %s isn't in our workspace", p.Filename)
+	}
+
+	var x ast.Node
+
+	fmt.Printf("LocateDeclaration: %s\n", p.String())
+
+	ast.Inspect(f, func(n ast.Node) bool {
+		if n == nil {
+			return false
+		}
+
+		pStart := pkg.Fset.Position(n.Pos())
+		pEnd := pkg.Fset.Position(n.End())
+
+		if !WithinPosition(p, &pStart, &pEnd) {
+			return false
+		}
+
+		switch v := n.(type) {
+		case *ast.Ident:
+			fmt.Printf("... found ident; %#v\n", v)
+			x = v
+			return false
+		case *ast.SelectorExpr:
+			fmt.Printf("... found selector; %#v\n", v)
+			selPos := v.Sel
+			pSelStart := pkg.Fset.Position(selPos.Pos())
+			pSelEnd := pkg.Fset.Position(selPos.End())
+			if WithinPosition(p, &pSelStart, &pSelEnd) {
+				s := pkg.checker.Selections[v]
+				fmt.Printf("Selector: %#v\n", s)
+				x = v
+				return false
+			}
+		}
+
+		return true
+	})
+
+	if x == nil {
+		fmt.Printf("No x found\n")
+		return nil, nil, nil
+	}
+
+	switch v := x.(type) {
+	case *ast.Ident:
+		fmt.Printf("Have ident %#v\n", v)
+		if v.Obj != nil {
+			fmt.Printf("Ident has obj %#v (%d)\n", v.Obj, v.Pos())
+			// identPosition := pkg.Fset.Position(v.Obj.Pos())
+			vObj := pkg.checker.ObjectOf(v)
+			return vObj, pkg, nil
+		}
+		// xObj := pkg.info.ObjectOf(v)
+		// if xObj != nil {
+		// 	identPosition := w.Loader.Fset.Position(xObj.Pos())
+		// 	return &identPosition, nil
+		// }
+		if vDef, ok := pkg.checker.Defs[v]; ok {
+			fmt.Printf("Have vDef from Defs: %#v\n", vDef)
+			// identPosition := pkg.Fset.Position(vDef.Pos())
+			return vDef, pkg, nil
+		}
+		if vUse, ok := pkg.checker.Uses[v]; ok {
+			// Used when var is defined in a package, in another file
+			fmt.Printf("Have vUse from Uses: %#v\n", vUse)
+			vUseScope := vUse.Parent()
+			vScopedObj := vUseScope.Lookup(vUse.Name())
+			fmt.Printf("vUseScopedObj: %#v\n", vScopedObj)
+			// identPosition := pkg.Fset.Position(vUse.Pos())
+
+			return vUse, pkg, nil
+
+			// switch v1 := vUse.(type) {
+			// case *types.Var:
+			// 	scope := v1.Parent()
+			// 	scopedObj := scope.Lookup(v.Name)
+			// 	identPosition := w.Loader.Fset.Position(scopedObj.Pos())
+			// 	return &identPosition, nil
+			// }
+		}
+
+	case *ast.SelectorExpr:
+		fmt.Printf("Have SelectorExpr\n")
+
+		scopedObj := f.Scope.Lookup(v.X.(*ast.Ident).Name)
+		fmt.Printf("Scoped object... %#v\n", scopedObj)
+
+		vXObj := pkg.checker.ObjectOf(v.X.(*ast.Ident))
+		if vXObj == nil {
+			fmt.Printf("v.X not in ObjectOf\n")
+		} else {
+			fmt.Printf("checker.ObjectOf(v.X): %#v\n", vXObj)
+			switch v1 := vXObj.(type) {
+			case *types.PkgName:
+				fmt.Printf("Have PkgName %s, type %s\n", v1.Name(), v1.Type())
+				absPath := v1.Imported().Path()
+				e, _ := w.Loader.caravan.Find(absPath)
+				pkg1 := e.Element.(*Package)
+				fmt.Printf("From pkg %#v\n", pkg1)
+
+				oooo := pkg1.typesPkg.Scope().Lookup(v.Sel.Name)
+				if oooo != nil {
+					// Have thingy from scope!
+					// declPos := pkg1.Fset.Position(oooo.Pos())
+					return oooo, pkg1, nil
+				}
+
+				selIdent := ast.NewIdent(v.Sel.Name)
+				fmt.Printf("Using new ident %#v\n", selIdent)
+				def, ok := pkg1.checker.Defs[selIdent]
+				if !ok {
+					fmt.Printf("Not from Defs\n")
+				} else {
+					fmt.Printf("From defs: %#v\n", def)
+					// declPos := pkg1.Fset.Position(def.Pos())
+					return def, pkg1, nil
+				}
+			}
+		}
+
+	default:
+		fmt.Printf("Is %#v\n", x)
+	}
+	return nil, nil, nil
 }

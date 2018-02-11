@@ -45,7 +45,7 @@ func Test_Workspace_Modify_File(t *testing.T) {
 	if err != nil {
 		t.Errorf(err.Error())
 	}
-	comparePosition(t, pos, declPosition)
+	testPosition(t, pos, declPosition)
 
 	if err := w.ChangeFile("/go/src/foo/foo.go", 2, 6, 2, 10, "foos"); err != nil {
 		t.Errorf(err.Error())
@@ -67,7 +67,7 @@ func Test_Workspace_Modify_File(t *testing.T) {
 	if err != nil {
 		t.Errorf(err.Error())
 	}
-	comparePosition(t, pos, declPosition)
+	testPosition(t, pos, declPosition)
 }
 
 func Test_Workspace_Modify_Cross_File(t *testing.T) {
@@ -132,5 +132,5 @@ func Test_Workspace_Modify_Cross_File(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Error while finding declaration: %s", err.Error())
 	}
-	comparePosition(t, decl, declPosition)
+	testPosition(t, decl, declPosition)
 }

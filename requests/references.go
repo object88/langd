@@ -85,16 +85,16 @@ func (rh *referencesHandler) work() error {
 	if err != nil {
 		fmt.Printf("Failed to find declaration position: %s\n", err.Error())
 	}
-	declIdent, err := rh.h.workspace.LocateIdent(declPosition)
-	if err != nil {
-		fmt.Printf("Failed to find ident: %s\n", err.Error())
-	}
+	// declIdent, err := rh.h.workspace.LocateIdent(declPosition)
+	// if err != nil {
+	// 	fmt.Printf("Failed to find ident: %s\n", err.Error())
+	// }
 
-	usePositions := rh.h.workspace.LocateReferences(declIdent)
+	usePositions := rh.h.workspace.LocateReferences(rh.p)
 
 	size := 0
-	if usePositions != nil && len(*usePositions) > 0 {
-		size = len(*usePositions)
+	if usePositions != nil && len(usePositions) > 0 {
+		size = len(usePositions)
 	}
 
 	if rh.options.IncludeDeclaration {
@@ -117,7 +117,7 @@ func (rh *referencesHandler) work() error {
 		offset = 1
 	}
 	if usePositions != nil {
-		for k, v := range *usePositions {
+		for k, v := range usePositions {
 			fmt.Printf("\t%d: %v\n", k, v)
 			locs[k+offset] = *LocationFromPosition(x.Name, &v)
 		}
