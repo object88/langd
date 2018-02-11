@@ -23,7 +23,10 @@ func workspaceSetup(t *testing.T, startingPath string, packages map[string]map[s
 	w.log.SetLevel(log.Verbose)
 
 	done := loader.Start()
-	loader.LoadDirectory(startingPath)
+	err := loader.LoadDirectory(startingPath)
+	if err != nil {
+		t.Fatalf("Error while loading directory '%s': %s", startingPath, err.Error())
+	}
 	<-done
 
 	if expectFailure {
