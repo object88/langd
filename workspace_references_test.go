@@ -6,7 +6,7 @@ import (
 	"testing"
 )
 
-func Test_Workspace_References_Local_Definition(t *testing.T) {
+func Test_Workspace_References_Local_Var(t *testing.T) {
 	src1 := `package foo
 	var fooVal int = 0
 	func IncFoo() int {
@@ -43,7 +43,7 @@ func Test_Workspace_References_Local_Definition(t *testing.T) {
 	testReferences(t, w, startPosition, referencePositions)
 }
 
-func Test_Workspace_References_Package_Definition(t *testing.T) {
+func Test_Workspace_References_Package_Var(t *testing.T) {
 	src1 := `package foo
 	var fooVal int = 0`
 
@@ -79,6 +79,82 @@ func Test_Workspace_References_Package_Definition(t *testing.T) {
 			Line:     4,
 			Column:   10,
 		},
+	}
+	testReferences(t, w, startPosition, referencePositions)
+}
+
+func Test_Workspace_References_Imported_Var(t *testing.T) {
+	src1 := `package foo
+	var FooVal int = 0`
+
+	src2 := `package bar
+	import "../foo"
+	func IncFoo() int {
+		return foo.FooVal
+	}`
+
+	packages := map[string]map[string]string{
+		"foo": map[string]string{
+			"foo.go": src1,
+		},
+		"bar": map[string]string{
+			"bar.go": src2,
+		},
+	}
+
+	w := workspaceSetup(t, "/go/src/bar", packages, false)
+
+	startPosition := &token.Position{
+		Filename: "/go/src/bar/bar.go",
+		Line:     4,
+		Column:   14,
+	}
+	referencePositions := []*token.Position{
+		&token.Position{
+			Filename: "/go/src/foo/foo.go",
+			Line:     2,
+			Column:   6,
+		},
+		startPosition,
+	}
+	testReferences(t, w, startPosition, referencePositions)
+}
+
+func Test_Workspace_References_Imported_Package_Func(t *testing.T) {
+	src1 := `package foo
+	func GetFoo() int {
+		return 0
+	}`
+
+	src2 := `package bar
+	import "../foo"
+	func Do() int {
+		return foo.GetFoo()
+	}`
+
+	packages := map[string]map[string]string{
+		"foo": map[string]string{
+			"foo.go": src1,
+		},
+		"bar": map[string]string{
+			"bar.go": src2,
+		},
+	}
+
+	w := workspaceSetup(t, "/go/src/bar", packages, false)
+
+	startPosition := &token.Position{
+		Filename: "/go/src/bar/bar.go",
+		Line:     4,
+		Column:   14,
+	}
+	referencePositions := []*token.Position{
+		&token.Position{
+			Filename: "/go/src/foo/foo.go",
+			Line:     2,
+			Column:   7,
+		},
+		startPosition,
 	}
 	testReferences(t, w, startPosition, referencePositions)
 }

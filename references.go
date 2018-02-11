@@ -36,6 +36,26 @@ func (w *Workspace) locateReferences(obj types.Object, pkg *Package) []*ref {
 			})
 		}
 	}
+
+	if obj.Exported() {
+		n, ok := w.Loader.caravan.Find(pkg.absPath)
+		if !ok {
+			// Should never get here.
+			panic("Shit.")
+		}
+		for _, n1 := range n.Ascendants {
+			pkg1 := n1.Element.(*Package)
+			for id, use := range pkg1.checker.Uses {
+				if sameObj(obj, use) {
+					refs = append(refs, &ref{
+						pkg: pkg1,
+						pos: id.Pos(),
+					})
+				}
+			}
+		}
+	}
+
 	return refs
 }
 
