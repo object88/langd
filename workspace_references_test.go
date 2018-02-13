@@ -374,6 +374,83 @@ func Test_Workspace_References_Local_Selector(t *testing.T) {
 	testReferences(t, w, startPosition, referencePositions)
 }
 
+func Test_Workspace_References_Package_Selector(t *testing.T) {
+	src1 := `package foo
+	type fooStruct struct {}
+	func (f *fooStruct) getFoo() int {
+		return 0
+	}`
+	src2 := `package foo
+	func Do() int {
+		f := &fooStruct{}
+		return f.getFoo()
+	}`
+
+	packages := map[string]map[string]string{
+		"foo": map[string]string{
+			"foo1.go": src1,
+			"foo2.go": src2,
+		},
+	}
+
+	w := workspaceSetup(t, "/go/src/foo", packages, false)
+
+	startPosition := &token.Position{
+		Filename: "/go/src/foo/foo2.go",
+		Line:     4,
+		Column:   12,
+	}
+	referencePositions := []*token.Position{
+		&token.Position{
+			Filename: "/go/src/foo/foo1.go",
+			Line:     3,
+			Column:   22,
+		},
+		startPosition,
+	}
+	testReferences(t, w, startPosition, referencePositions)
+}
+
+func Test_Workspace_References_Imported_Selector(t *testing.T) {
+	src1 := `package foo
+	type FooStruct struct {}
+	func (f *FooStruct) GetFoo() int {
+		return 0
+	}`
+	src2 := `package bar
+	import "../foo"
+	func Do() int {
+		f := &foo.FooStruct{}
+		return f.GetFoo()
+	}`
+
+	packages := map[string]map[string]string{
+		"foo": map[string]string{
+			"foo.go": src1,
+		},
+		"bar": map[string]string{
+			"bar.go": src2,
+		},
+	}
+
+	w := workspaceSetup(t, "/go/src/bar", packages, false)
+
+	startPosition := &token.Position{
+		Filename: "/go/src/bar/bar.go",
+		Line:     5,
+		Column:   12,
+	}
+	referencePositions := []*token.Position{
+		&token.Position{
+			Filename: "/go/src/foo/foo.go",
+			Line:     3,
+			Column:   22,
+		},
+		startPosition,
+	}
+	testReferences(t, w, startPosition, referencePositions)
+}
+
 func testReferences(t *testing.T, w *Workspace, startPosition *token.Position, referencePositions []*token.Position) {
 	actual := w.LocateReferences(startPosition)
 	if nil == actual {

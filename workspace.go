@@ -484,23 +484,23 @@ func (w *Workspace) locateDeclaration(p *token.Position) (types.Object, *Package
 					return oooo, pkg1, nil
 				}
 
-				selIdent := ast.NewIdent(v.Sel.Name)
-				fmt.Printf("Using new ident %#v\n", selIdent)
-				def, ok := pkg1.checker.Defs[selIdent]
-				if !ok {
-					fmt.Printf("Not from Defs\n")
-				} else {
-					fmt.Printf("From defs: %#v\n", def)
-					// declPos := pkg1.Fset.Position(def.Pos())
-					return def, pkg1, nil
-				}
+				// selIdent := ast.NewIdent(v.Sel.Name)
+				// fmt.Printf("Using new ident %#v\n", selIdent)
+				// def, ok := pkg1.checker.Defs[selIdent]
+				// if !ok {
+				// 	fmt.Printf("Not from Defs\n")
+				// } else {
+				// 	fmt.Printf("From defs: %#v\n", def)
+				// 	// declPos := pkg1.Fset.Position(def.Pos())
+				// 	return def, pkg1, nil
+				// }
 			case *types.Var:
-				fmt.Printf("Have Var %s, type %s\n\t%#v\n\tSel: %#v\n", v1.Name(), v1.Type(), v1, v.Sel)
-				sel := pkg.checker.Selections[v]
-				fmt.Printf("Sel: %#v\n", sel)
-				if sel != nil {
-					return sel.Obj(), pkg, nil
-				}
+				fmt.Printf("Have Var %s, type %s\n\tv1: %#v\n\tv1.Sel: %#v\n", v1.Name(), v1.Type(), v1, v.Sel)
+				vSelObj := pkg.checker.ObjectOf(v.Sel)
+				path := vSelObj.Pkg().Path()
+				n, _ := w.Loader.caravan.Find(path)
+				pkg1 := n.Element.(*Package)
+				return vSelObj, pkg1, nil
 			}
 		}
 
