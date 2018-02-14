@@ -300,7 +300,7 @@ func Test_Workspace_References_Package_Func(t *testing.T) {
 	testReferences(t, w, startPosition, referencePositions)
 }
 
-func Test_Workspace_References_Imported_Package_Func(t *testing.T) {
+func Test_Workspace_References_Imported_Func(t *testing.T) {
 	src1 := `package foo
 	func GetFoo() int {
 		return 0
@@ -451,12 +451,81 @@ func Test_Workspace_References_Imported_Selector(t *testing.T) {
 	testReferences(t, w, startPosition, referencePositions)
 }
 
+func Test_Workspace_References_Indirect_Selector(t *testing.T) {
+	src1 := `package foo
+	type FooStruct struct {}
+	func (f *FooStruct) GetFoo() int {
+		return 0
+	}`
+	src2 := `package bar
+	import "../foo"
+	type BarStruct struct {
+		F *foo.FooStruct
+	}
+	func NewBarStruct() *BarStruct {
+		return &BarStruct {
+			F: &foo.FooStruct{}
+		}
+	}`
+	src3 := `package baz
+	import "../bar"
+	func Do() int {
+		b := bar.NewBarStruct()
+		return b.F.GetFoo()
+	}`
+
+	packages := map[string]map[string]string{
+		"foo": map[string]string{
+			"foo.go": src1,
+		},
+		"bar": map[string]string{
+			"bar.go": src2,
+		},
+		"baz": map[string]string{
+			"baz.go": src3,
+		},
+	}
+
+	w := workspaceSetup(t, "/go/src/baz", packages, false)
+
+	startPosition := &token.Position{
+		Filename: "/go/src/baz/baz.go",
+		Line:     5,
+		Column:   14,
+	}
+	referencePositions := []*token.Position{
+		&token.Position{
+			Filename: "/go/src/foo/foo.go",
+			Line:     3,
+			Column:   22,
+		},
+		startPosition,
+	}
+	testReferences(t, w, startPosition, referencePositions)
+}
+
 func testReferences(t *testing.T, w *Workspace, startPosition *token.Position, referencePositions []*token.Position) {
 	actual := w.LocateReferences(startPosition)
 	if nil == actual {
 		t.Fatal("Got nil back")
 	}
+
+	report := func() {
+		exs := make([]string, len(referencePositions))
+		for k, v := range referencePositions {
+			exs[k] = v.String()
+		}
+		exss := strings.Join(exs, "\n\t")
+		acs := make([]string, len(actual))
+		for k, v := range actual {
+			acs[k] = v.String()
+		}
+		acss := strings.Join(acs, "\n\t")
+		t.Errorf("actuals:\n\t%s\nexpected:\n\t%s", acss, exss)
+	}
+
 	if len(actual) != len(referencePositions) {
+		report()
 		t.Fatalf("Incorrect number of references: got %d, expected %d", len(actual), len(referencePositions))
 	}
 	for _, v := range referencePositions {
@@ -470,17 +539,8 @@ func testReferences(t *testing.T, w *Workspace, startPosition *token.Position, r
 		}
 
 		if !found {
-			exs := make([]string, len(referencePositions))
-			for k, v := range referencePositions {
-				exs[k] = v.String()
-			}
-			exss := strings.Join(exs, "\n\t")
-			acs := make([]string, len(actual))
-			for k, v := range actual {
-				acs[k] = v.String()
-			}
-			acss := strings.Join(acs, "\n\t")
-			t.Fatalf("Did not find %s among expected positions\nactuals:\n\t%s\nexpected:\n\t%s", v.String(), acss, exss)
+			report()
+			t.Fatalf("Did not find %s among expected positions", v.String())
 		}
 	}
 }

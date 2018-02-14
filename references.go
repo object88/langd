@@ -1,8 +1,11 @@
 package langd
 
 import (
+	"fmt"
 	"go/token"
 	"go/types"
+
+	"github.com/object88/langd/collections"
 )
 
 type ref struct {
@@ -43,19 +46,37 @@ func (w *Workspace) locateReferences(obj types.Object, pkg *Package) []*ref {
 			// Should never get here.
 			panic("Shit.")
 		}
-		for _, n1 := range n.Ascendants {
-			pkg1 := n1.Element.(*Package)
-			for id, use := range pkg1.checker.Uses {
-				if sameObj(obj, use) {
-					refs = append(refs, &ref{
-						pkg: pkg1,
-						pos: id.Pos(),
-					})
-				}
-			}
-		}
+		fmt.Printf("obj: %#v\n", obj)
+		refs = checkAscendants(refs, n, obj)
+		// for _, n1 := range n.Ascendants {
+		// 	pkg1 := n1.Element.(*Package)
+		// 	for id, use := range pkg1.checker.Uses {
+		// 		if sameObj(obj, use) {
+		// 			refs = append(refs, &ref{
+		// 				pkg: pkg1,
+		// 				pos: id.Pos(),
+		// 			})
+		// 		}
+		// 	}
+		// }
 	}
 
+	return refs
+}
+
+func checkAscendants(refs []*ref, n *collections.Node, obj types.Object) []*ref {
+	for _, n1 := range n.Ascendants {
+		pkg1 := n1.Element.(*Package)
+		for id, use := range pkg1.checker.Uses {
+			if sameObj(obj, use) {
+				refs = append(refs, &ref{
+					pkg: pkg1,
+					pos: id.Pos(),
+				})
+			}
+		}
+		refs = checkAscendants(refs, n1, obj)
+	}
 	return refs
 }
 
