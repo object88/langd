@@ -6,6 +6,18 @@ import (
 	"testing"
 )
 
+func Test_Workspace_References_Local_Const(t *testing.T) {
+	t.SkipNow()
+}
+
+func Test_Workspace_References_Package_Const(t *testing.T) {
+	t.SkipNow()
+}
+
+func Test_Workspace_References_Imported_Const(t *testing.T) {
+	t.SkipNow()
+}
+
 func Test_Workspace_References_Local_Var(t *testing.T) {
 	src1 := `package foo
 	var fooVal int = 0
@@ -231,6 +243,18 @@ func Test_Workspace_References_Imported_Struct(t *testing.T) {
 	testReferences(t, w, startPosition, referencePositions)
 }
 
+func Test_Workspace_References_Local_Interface(t *testing.T) {
+	t.SkipNow()
+}
+
+func Test_Workspace_References_Package_Interface(t *testing.T) {
+	t.SkipNow()
+}
+
+func Test_Workspace_References_Imported_Interface(t *testing.T) {
+	t.SkipNow()
+}
+
 func Test_Workspace_References_Local_Func(t *testing.T) {
 	src := `package foo
 	func getFoo() int {
@@ -339,7 +363,53 @@ func Test_Workspace_References_Imported_Func(t *testing.T) {
 	testReferences(t, w, startPosition, referencePositions)
 }
 
-func Test_Workspace_References_Local_Selector(t *testing.T) {
+func Test_Workspace_References_Local_Selector_Field(t *testing.T) {
+	src := `package foo
+	type fooStruct struct {
+		a int
+	}
+	func Do() int {
+		f := &fooStruct{}
+		return f.a
+	}`
+
+	packages := map[string]map[string]string{
+		"foo": map[string]string{
+			"foo.go": src,
+		},
+	}
+
+	w := workspaceSetup(t, "/go/src/foo", packages, false)
+
+	startPosition := &token.Position{
+		Filename: "/go/src/foo/foo.go",
+		Line:     7,
+		Column:   12,
+	}
+	referencePositions := []*token.Position{
+		&token.Position{
+			Filename: "/go/src/foo/foo.go",
+			Line:     3,
+			Column:   3,
+		},
+		startPosition,
+	}
+	testReferences(t, w, startPosition, referencePositions)
+}
+
+func Test_Workspace_References_Package_Selector_Field(t *testing.T) {
+	t.SkipNow()
+}
+
+func Test_Workspace_References_Imported_Selector_Field(t *testing.T) {
+	t.SkipNow()
+}
+
+func Test_Workspace_References_Indirect_Imported_Selector_Field(t *testing.T) {
+	t.SkipNow()
+}
+
+func Test_Workspace_References_Local_Selector_Method(t *testing.T) {
 	src := `package foo
 	type fooStruct struct {}
 	func (f *fooStruct) getFoo() int {
@@ -374,7 +444,7 @@ func Test_Workspace_References_Local_Selector(t *testing.T) {
 	testReferences(t, w, startPosition, referencePositions)
 }
 
-func Test_Workspace_References_Package_Selector(t *testing.T) {
+func Test_Workspace_References_Package_Selector_Method(t *testing.T) {
 	src1 := `package foo
 	type fooStruct struct {}
 	func (f *fooStruct) getFoo() int {
@@ -411,7 +481,7 @@ func Test_Workspace_References_Package_Selector(t *testing.T) {
 	testReferences(t, w, startPosition, referencePositions)
 }
 
-func Test_Workspace_References_Imported_Selector(t *testing.T) {
+func Test_Workspace_References_Imported_Selector_Method(t *testing.T) {
 	src1 := `package foo
 	type FooStruct struct {}
 	func (f *FooStruct) GetFoo() int {
@@ -451,7 +521,7 @@ func Test_Workspace_References_Imported_Selector(t *testing.T) {
 	testReferences(t, w, startPosition, referencePositions)
 }
 
-func Test_Workspace_References_Indirect_Selector(t *testing.T) {
+func Test_Workspace_References_Indirect_Imported_Selector_Method(t *testing.T) {
 	src1 := `package foo
 	type FooStruct struct {}
 	func (f *FooStruct) GetFoo() int {
