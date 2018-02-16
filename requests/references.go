@@ -85,10 +85,6 @@ func (rh *referencesHandler) work() error {
 	if err != nil {
 		fmt.Printf("Failed to find declaration position: %s\n", err.Error())
 	}
-	// declIdent, err := rh.h.workspace.LocateIdent(declPosition)
-	// if err != nil {
-	// 	fmt.Printf("Failed to find ident: %s\n", err.Error())
-	// }
 
 	usePositions := rh.h.workspace.LocateReferences(rh.p)
 
@@ -122,10 +118,6 @@ func (rh *referencesHandler) work() error {
 			locs[k+offset] = *LocationFromPosition(x.Name, &v)
 		}
 	}
-
-	// fmt.Printf("X:\n%#v\n", x.Obj)
-	// foo := rh.h.workspace.Info.Uses[x]
-	// fmt.Printf("Uses:\n%#v\n", foo)
 
 	rh.result = &locs
 
