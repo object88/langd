@@ -48,17 +48,6 @@ func (w *Workspace) locateReferences(obj types.Object, pkg *Package) []*ref {
 		}
 		fmt.Printf("obj: %#v\n", obj)
 		refs = checkAscendants(refs, n, obj)
-		// for _, n1 := range n.Ascendants {
-		// 	pkg1 := n1.Element.(*Package)
-		// 	for id, use := range pkg1.checker.Uses {
-		// 		if sameObj(obj, use) {
-		// 			refs = append(refs, &ref{
-		// 				pkg: pkg1,
-		// 				pos: id.Pos(),
-		// 			})
-		// 		}
-		// 	}
-		// }
 	}
 
 	return refs
