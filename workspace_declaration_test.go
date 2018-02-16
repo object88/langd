@@ -5,6 +5,63 @@ import (
 	"testing"
 )
 
+// func Test_Workspace_References_Local_Package(t *testing.T) {
+// 	src := `package foo
+// 	var fooInt int = 0`
+
+// 	packages := map[string]map[string]string{
+// 		"foo": map[string]string{
+// 			"foo.go": src,
+// 		},
+// 	}
+
+// 	w := workspaceSetup(t, "/go/src/foo", packages, false)
+
+// 	startPosition := &token.Position{
+// 		Filename: "/go/src/foo/foo.go",
+// 		Line:     1,
+// 		Column:   9,
+// 	}
+// 	referencePositions := []*token.Position{
+// 		startPosition,
+// 	}
+// 	testReferences(t, w, startPosition, referencePositions)
+// }
+
+func Test_Workspace_References_Imported_Package(t *testing.T) {
+	src1 := `package foo
+	const MyNumber = 0`
+
+	src2 := `package bar
+	import "../foo"
+	func Do() int {
+		return foo.MyNumber
+	}`
+
+	packages := map[string]map[string]string{
+		"foo": map[string]string{
+			"foo.go": src1,
+		},
+		"bar": map[string]string{
+			"bar.go": src2,
+		},
+	}
+
+	w := workspaceSetup(t, "/go/src/bar", packages, false)
+
+	usagePosition := &token.Position{
+		Filename: "/go/src/bar/bar.go",
+		Line:     4,
+		Column:   10,
+	}
+	declPosition := &token.Position{
+		Filename: "/go/src/bar/bar.go",
+		Line:     2,
+		Column:   9,
+	}
+	testDeclaration(t, w, usagePosition, declPosition)
+}
+
 func Test_Workspace_Declaration_Package_Const(t *testing.T) {
 	src1 := `package foo
 	const (

@@ -138,162 +138,32 @@ func (w *Workspace) LocateIdent(p *token.Position) (*ast.Ident, error) {
 // LocateDeclaration returns the position where the provided identifier is
 // declared & defined
 func (w *Workspace) LocateDeclaration(p *token.Position) (*token.Position, error) {
-	absPath := filepath.Dir(p.Filename)
-
-	n, ok := w.Loader.caravan.Find(absPath)
-	if !ok {
-		return nil, fmt.Errorf("No package loaded for '%s'", p.Filename)
-	}
-	pkg := n.Element.(*Package)
-	fi := pkg.files[filepath.Base(p.Filename)]
-	f := fi.file
-
-	if f == nil {
-		// Failure response is failure.
-		return nil, fmt.Errorf("File %s isn't in our workspace", p.Filename)
+	obj, pkg, err := w.locateDeclaration(p)
+	if err != nil {
+		return nil, err
 	}
 
-	var x ast.Node
+	declPos := pkg.Fset.Position(obj.Pos())
 
-	fmt.Printf("LocateDeclaration: %s\n", p.String())
-
-	ast.Inspect(f, func(n ast.Node) bool {
-		if n == nil {
-			return false
-		}
-
-		pStart := pkg.Fset.Position(n.Pos())
-		pEnd := pkg.Fset.Position(n.End())
-
-		if !WithinPosition(p, &pStart, &pEnd) {
-			return false
-		}
-
-		switch v := n.(type) {
-		case *ast.Ident:
-			fmt.Printf("... found ident; %#v\n", v)
-			x = v
-			return false
-		case *ast.SelectorExpr:
-			fmt.Printf("... found selector; %#v\n", v)
-			selPos := v.Sel
-			pSelStart := pkg.Fset.Position(selPos.Pos())
-			pSelEnd := pkg.Fset.Position(selPos.End())
-			if WithinPosition(p, &pSelStart, &pSelEnd) {
-				s := pkg.checker.Selections[v]
-				fmt.Printf("Selector: %#v\n", s)
-				x = v
-				return false
-			}
-		}
-
-		return true
-	})
-
-	if x == nil {
-		fmt.Printf("No x found\n")
-		return nil, nil
-	}
-
-	switch v := x.(type) {
-	case *ast.Ident:
-		fmt.Printf("Have ident %#v\n", v)
-		if v.Obj != nil {
-			fmt.Printf("Ident has obj %#v (%d)\n", v.Obj, v.Pos())
-			identPosition := pkg.Fset.Position(v.Obj.Pos())
-			return &identPosition, nil
-		}
-		// xObj := pkg.info.ObjectOf(v)
-		// if xObj != nil {
-		// 	identPosition := w.Loader.Fset.Position(xObj.Pos())
-		// 	return &identPosition, nil
-		// }
-		if vDef, ok := pkg.checker.Defs[v]; ok {
-			fmt.Printf("Have vDef from Defs: %#v\n", vDef)
-			identPosition := pkg.Fset.Position(vDef.Pos())
-			return &identPosition, nil
-		}
-		if vUse, ok := pkg.checker.Uses[v]; ok {
-			// Used when var is defined in a package, in another file
-			fmt.Printf("Have vUse from Uses: %#v\n", vUse)
-			identPosition := pkg.Fset.Position(vUse.Pos())
-			return &identPosition, nil
-
-			// switch v1 := vUse.(type) {
-			// case *types.Var:
-			// 	scope := v1.Parent()
-			// 	scopedObj := scope.Lookup(v.Name)
-			// 	identPosition := w.Loader.Fset.Position(scopedObj.Pos())
-			// 	return &identPosition, nil
-			// }
-		}
-
-	case *ast.SelectorExpr:
-		fmt.Printf("Have SelectorExpr\n")
-
-		scopedObj := f.Scope.Lookup(v.X.(*ast.Ident).Name)
-		fmt.Printf("Scoped object... %#v\n", scopedObj)
-
-		vXObj := pkg.checker.ObjectOf(v.X.(*ast.Ident))
-		if vXObj == nil {
-			fmt.Printf("v.X not in ObjectOf\n")
-		} else {
-			fmt.Printf("checker.ObjectOf(v.X): %#v\n", vXObj)
-			switch v1 := vXObj.(type) {
-			case *types.PkgName:
-				fmt.Printf("Have PkgName %s, type %s\n", v1.Name(), v1.Type())
-				absPath := v1.Imported().Path()
-				e, _ := w.Loader.caravan.Find(absPath)
-				pkg1 := e.Element.(*Package)
-				fmt.Printf("From pkg %#v\n", pkg1)
-
-				oooo := pkg1.typesPkg.Scope().Lookup(v.Sel.Name)
-				if oooo != nil {
-					// Have thingy from scope!
-					declPos := pkg1.Fset.Position(oooo.Pos())
-					return &declPos, nil
-				}
-
-				selIdent := ast.NewIdent(v.Sel.Name)
-				fmt.Printf("Using new ident %#v\n", selIdent)
-				def, ok := pkg1.checker.Defs[selIdent]
-				if !ok {
-					fmt.Printf("Not from Defs\n")
-				} else {
-					fmt.Printf("From defs: %#v\n", def)
-					declPos := pkg1.Fset.Position(def.Pos())
-					return &declPos, nil
-				}
-			}
-		}
-
-	default:
-		fmt.Printf("Is %#v\n", x)
-	}
-	return nil, nil
+	return &declPos, nil
 }
 
 // LocateReferences returns the array of positions where the given identifier
 // is referenced or used
 func (w *Workspace) LocateReferences(p *token.Position) []token.Position {
 	// Get declaration position, ident, and package
-	ident, pkg, err := w.locateDeclaration(p)
+	obj, pkg, err := w.locateDeclaration(p)
 	if err != nil {
 		// Crappy crap.
 		return nil
 	}
 
-	// If declaration should be included in results set, add to `ps`
+	// TODO: If declaration should be included in results set, add to `ps`
 
-	// Find uses in the native package
-	refs := w.locateReferences(ident, pkg)
-
-	// If exported, search through ascendents packages for usages
-
-	// If exported by ascendents, search through ascendents tree for indirect usages
+	refs := w.locateReferences(obj, pkg)
 
 	ps := make([]token.Position, len(refs)+1)
-	ps[0] = pkg.Fset.Position(ident.Pos())
+	ps[0] = pkg.Fset.Position(obj.Pos())
 	i := 1
 	for _, v := range refs {
 		ps[i] = v.pkg.Fset.Position(v.pos)
@@ -421,78 +291,6 @@ func (w *Workspace) locateDeclaration(p *token.Position) (types.Object, *Package
 	}
 
 	return w.xyz(x, pkg)
-
-	// switch v := x.(type) {
-	// case *ast.Ident:
-	// 	fmt.Printf("Have ident %#v\n", v)
-	// 	if v.Obj != nil {
-	// 		fmt.Printf("Ident has obj %#v (%d)\n", v.Obj, v.Pos())
-	// 		vObj := pkg.checker.ObjectOf(v)
-	// 		return vObj, pkg, nil
-	// 	}
-	// 	if vDef, ok := pkg.checker.Defs[v]; ok {
-	// 		fmt.Printf("Have vDef from Defs: %#v\n", vDef)
-	// 		return vDef, pkg, nil
-	// 	}
-	// 	if vUse, ok := pkg.checker.Uses[v]; ok {
-	// 		// Used when var is defined in a package, in another file
-	// 		fmt.Printf("Have vUse from Uses: %#v\n", vUse)
-	// 		return vUse, pkg, nil
-	// 	}
-
-	// case *ast.SelectorExpr:
-	// 	fmt.Printf("Have SelectorExpr\n")
-
-	// 	switch vX := v.X.(type) {
-	// 	case *ast.Ident:
-	// 		vXObj := pkg.checker.ObjectOf(vX)
-	// 		if vXObj == nil {
-	// 			return nil, nil, fmt.Errorf("v.X (%s) not in ObjectOf", vX.Name)
-	// 		}
-	// 		fmt.Printf("checker.ObjectOf(v.X): %#v\n", vXObj)
-	// 		switch v1 := vXObj.(type) {
-	// 		case *types.PkgName:
-	// 			fmt.Printf("Have PkgName %s, type %s\n", v1.Name(), v1.Type())
-	// 			absPath := v1.Imported().Path()
-	// 			n, _ := w.Loader.caravan.Find(absPath)
-	// 			pkg1 := n.Element.(*Package)
-	// 			fmt.Printf("From pkg %#v\n", pkg1)
-
-	// 			oooo := pkg1.typesPkg.Scope().Lookup(v.Sel.Name)
-	// 			if oooo != nil {
-	// 				return oooo, pkg1, nil
-	// 			}
-
-	// 		case *types.Var:
-	// 			fmt.Printf("Have Var %s, type %s\n\tv1: %#v\n\tv1.Sel: %#v\n", v1.Name(), v1.Type(), v1, v.Sel)
-	// 			vSelObj := pkg.checker.ObjectOf(v.Sel)
-	// 			path := vSelObj.Pkg().Path()
-	// 			n, _ := w.Loader.caravan.Find(path)
-	// 			pkg1 := n.Element.(*Package)
-	// 			return vSelObj, pkg1, nil
-	// 		}
-	// 	case *ast.SelectorExpr:
-	// 		fmt.Printf("vX.(*ast.SelectorExpr): %#v\n", vX)
-	// 		fmt.Printf("vX.(*ast.SelectorExpr).X.(*ast.Ident): %#v\n", vX.X.(*ast.Ident))
-	// 		fmt.Printf("pkg.checker.ObjectOf(vX.(*ast.SelectorExpr).X.(*ast.Ident)): %#v\n", pkg.checker.ObjectOf(vX.X.(*ast.Ident)))
-	// 		fmt.Printf("vX.(*ast.SelectorExpr).Sel: %#v\n", vX.Sel)
-	// 		fmt.Printf("pkg.checker.ObjectOf(vX.(*ast.SelectorExpr).Sel): %#v\n", pkg.checker.ObjectOf(vX.Sel))
-	// 		fmt.Printf("\n")
-	// 		fmt.Printf(
-	// 			"pkg.checker.ObjectOf(vX.Sel).Type().(*types.Pointer).Elem().(*types.Named).Obj():\n\t%#v\n",
-	// 			pkg.checker.ObjectOf(vX.Sel).Type().(*types.Pointer).Elem().(*types.Named).Obj())
-
-	// 		vSelObj := pkg.checker.ObjectOf(vX.Sel)
-	// 		path := vSelObj.Pkg().Path()
-	// 		n, _ := w.Loader.caravan.Find(path)
-	// 		pkg1 := n.Element.(*Package)
-	// 		return vSelObj, pkg1, nil
-	// 	}
-
-	// default:
-	// 	fmt.Printf("Is %#v\n", x)
-	// }
-	// return nil, nil, nil
 }
 
 func (w *Workspace) xyz(x ast.Node, pkg *Package) (types.Object, *Package, error) {
