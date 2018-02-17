@@ -47,26 +47,45 @@ func (w *Workspace) locateReferences(obj types.Object, pkg *Package) []*ref {
 			panic("Shit.")
 		}
 		fmt.Printf("obj: %#v\n", obj)
-		refs = checkAscendants(refs, n, obj)
+		asc := flattenAscendants(n)
+		refs = checkAscendants(asc, obj)
 	}
 
 	return refs
 }
 
-func checkAscendants(refs []*ref, n *collections.Node, obj types.Object) []*ref {
-	for _, n1 := range n.Ascendants {
-		pkg1 := n1.Element.(*Package)
-		for id, use := range pkg1.checker.Uses {
+func checkAscendants(ascendants map[string]*Package, obj types.Object) []*ref {
+	refs := []*ref{}
+	for _, pkg := range ascendants {
+		for id, use := range pkg.checker.Uses {
 			if sameObj(obj, use) {
 				refs = append(refs, &ref{
-					pkg: pkg1,
+					pkg: pkg,
 					pos: id.Pos(),
 				})
 			}
 		}
-		refs = checkAscendants(refs, n1, obj)
 	}
 	return refs
+}
+
+func flattenAscendants(n *collections.Node) map[string]*Package {
+	asc := map[string]*Package{}
+
+	var f func(n *collections.Node)
+	f = func(n *collections.Node) {
+		for _, n1 := range n.Ascendants {
+			p := n1.Element.(*Package)
+			if _, ok := asc[p.absPath]; !ok {
+				asc[p.absPath] = p
+				f(n1)
+			}
+		}
+	}
+
+	f(n)
+
+	return asc
 }
 
 func sameObj(x, y types.Object) bool {
