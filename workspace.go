@@ -87,8 +87,9 @@ func (w *Workspace) ChangeFile(absFilepath string, startLine, startCharacter, en
 	}
 	fmt.Printf("\n")
 
-	for _, v := range n.Ascendants {
-		p1 := v.Element.(*Package)
+	asc := flattenAscendants(n)
+
+	for _, p1 := range asc {
 		p1.loadState = unloaded
 		p1.ResetChecker()
 		w.Loader.stateChange <- p1.absPath
