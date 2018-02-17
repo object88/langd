@@ -71,7 +71,7 @@ func NewHandler() *Handler {
 		rm: map[int]requestHandler{},
 		sq: sq,
 
-		rq: newRequestMap(),
+		rq: newRequestMap(getIniterFuncs()),
 
 		log:       l,
 		workspace: langd.CreateWorkspace(loader, l),

@@ -23,7 +23,10 @@ func workspaceSetup(t *testing.T, startingPath string, packages map[string]map[s
 	w.log.SetLevel(log.Verbose)
 
 	done := loader.Start()
-	loader.LoadDirectory(startingPath)
+	err := loader.LoadDirectory(startingPath)
+	if err != nil {
+		t.Fatalf("Error while loading directory '%s': %s", startingPath, err.Error())
+	}
 	<-done
 
 	if expectFailure {
@@ -60,10 +63,10 @@ func testDeclaration(t *testing.T, w *Workspace, usagePosition, expectedDeclPosi
 		t.Fatal(err.Error())
 	}
 
-	comparePosition(t, declPosition, expectedDeclPosition)
+	testPosition(t, declPosition, expectedDeclPosition)
 }
 
-func comparePosition(t *testing.T, actual, expected *token.Position) {
+func testPosition(t *testing.T, actual, expected *token.Position) {
 	if actual == nil {
 		t.Fatalf("actual is nil")
 	}
@@ -83,4 +86,28 @@ func comparePosition(t *testing.T, actual, expected *token.Position) {
 	if actual.Column != expected.Column {
 		t.Fatalf("Incorrect column: got %d, expected %d", actual.Column, expected.Column)
 	}
+}
+
+func comparePosition(actual, expected *token.Position) bool {
+	if actual == nil {
+		return false
+	}
+
+	if !actual.IsValid() {
+		return false
+	}
+
+	if actual.Filename != expected.Filename {
+		return false
+	}
+
+	if actual.Line != expected.Line {
+		return false
+	}
+
+	if actual.Column != expected.Column {
+		return false
+	}
+
+	return true
 }

@@ -10,9 +10,7 @@ type requestMap struct {
 	f []IniterFunc
 }
 
-func newRequestMap() *requestMap {
-	m := getIniterFuncs()
-
+func newRequestMap(m initerFuncMap) *requestMap {
 	keys := make([]string, len(m))
 	funcs := make([]IniterFunc, len(m))
 

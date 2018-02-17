@@ -33,7 +33,7 @@ func CreateWorkspace(loader *Loader, log *log.Log) *Workspace {
 func (w *Workspace) ChangeFile(absFilepath string, startLine, startCharacter, endLine, endCharacter int, text string) error {
 	buf, ok := w.Loader.openedFiles[absFilepath]
 	if !ok {
-		return fmt.Errorf("File %s is not opened\n", absFilepath)
+		return fmt.Errorf("File %s is not opened", absFilepath)
 	}
 
 	// Have position (line, character), need to transform into offset into file
@@ -105,7 +105,7 @@ func (w *Workspace) LocateIdent(p *token.Position) (*ast.Ident, error) {
 
 	if f == nil {
 		// Failure response is failure.
-		return nil, fmt.Errorf("File %s isn't in our workspace\n", p.Filename)
+		return nil, fmt.Errorf("File %s isn't in our workspace", p.Filename)
 	}
 
 	var x *ast.Ident
@@ -138,11 +138,106 @@ func (w *Workspace) LocateIdent(p *token.Position) (*ast.Ident, error) {
 // LocateDeclaration returns the position where the provided identifier is
 // declared & defined
 func (w *Workspace) LocateDeclaration(p *token.Position) (*token.Position, error) {
+	obj, pkg, err := w.locateDeclaration(p)
+	if err != nil {
+		return nil, err
+	}
+
+	declPos := pkg.Fset.Position(obj.Pos())
+
+	return &declPos, nil
+}
+
+// LocateReferences returns the array of positions where the given identifier
+// is referenced or used
+func (w *Workspace) LocateReferences(p *token.Position) []token.Position {
+	// Get declaration position, ident, and package
+	obj, pkg, err := w.locateDeclaration(p)
+	if err != nil {
+		// Crappy crap.
+		return nil
+	}
+
+	// TODO: If declaration should be included in results set, add to `ps`
+
+	refs := w.locateReferences(obj, pkg)
+
+	ps := make([]token.Position, len(refs)+1)
+	ps[0] = pkg.Fset.Position(obj.Pos())
+	i := 1
+	for _, v := range refs {
+		ps[i] = v.pkg.Fset.Position(v.pos)
+		i++
+	}
+
+	return ps
+}
+
+// OpenFile shadows the file read from the disk with an in-memory version,
+// which the workspace can accept edits to.
+func (w *Workspace) OpenFile(absFilepath, text string) error {
+	if _, ok := w.Loader.openedFiles[absFilepath]; ok {
+		return fmt.Errorf("File %s is already opened", absFilepath)
+	}
+	w.Loader.openedFiles[absFilepath] = rope.CreateRope(text)
+
+	absPath := filepath.Dir(absFilepath)
+	n, ok := w.Loader.caravan.Find(absPath)
+
+	if !ok {
+		// Crapola.
+		return fmt.Errorf("Failed to find package for file %s", absFilepath)
+	}
+	p := n.Element.(*Package)
+
+	p.loadState = unloaded
+	p.ResetChecker()
+	w.Loader.done = false
+	w.Loader.stateChange <- absPath
+
+	w.log.Debugf("Shadowed file '%s'\n", absFilepath)
+
+	return nil
+}
+
+// ReplaceFile replaces the entire contents of an opened file
+func (w *Workspace) ReplaceFile(absPath, text string) error {
+	_, ok := w.Loader.openedFiles[absPath]
+	if !ok {
+		return fmt.Errorf("File %s is not opened", absPath)
+	}
+
+	// Replace the entire document
+	buf := rope.CreateRope(text)
+	w.Loader.openedFiles[absPath] = buf
+
+	return nil
+}
+
+// Lock will synchronize access to the workspace for read or write access
+func (w *Workspace) Lock(write bool) {
+	if write {
+		w.rwm.Lock()
+	} else {
+		w.rwm.RLock()
+	}
+}
+
+// Unlock will synchronize access to the workspace for read or write access
+func (w *Workspace) Unlock(write bool) {
+	if write {
+		w.rwm.Unlock()
+	} else {
+		w.rwm.RUnlock()
+	}
+}
+
+func (w *Workspace) locateDeclaration(p *token.Position) (types.Object, *Package, error) {
 	absPath := filepath.Dir(p.Filename)
 
 	n, ok := w.Loader.caravan.Find(absPath)
 	if !ok {
-		return nil, fmt.Errorf("No package loaded for '%s'", p.Filename)
+		return nil, nil, fmt.Errorf("No package loaded for '%s'", p.Filename)
 	}
 	pkg := n.Element.(*Package)
 	fi := pkg.files[filepath.Base(p.Filename)]
@@ -150,7 +245,7 @@ func (w *Workspace) LocateDeclaration(p *token.Position) (*token.Position, error
 
 	if f == nil {
 		// Failure response is failure.
-		return nil, fmt.Errorf("File %s isn't in our workspace\n", p.Filename)
+		return nil, nil, fmt.Errorf("File %s isn't in our workspace", p.Filename)
 	}
 
 	var x ast.Node
@@ -192,157 +287,78 @@ func (w *Workspace) LocateDeclaration(p *token.Position) (*token.Position, error
 
 	if x == nil {
 		fmt.Printf("No x found\n")
-		return nil, nil
+		return nil, nil, nil
 	}
 
+	return w.xyz(x, pkg)
+}
+
+func (w *Workspace) xyz(x ast.Node, pkg *Package) (types.Object, *Package, error) {
 	switch v := x.(type) {
 	case *ast.Ident:
 		fmt.Printf("Have ident %#v\n", v)
 		if v.Obj != nil {
 			fmt.Printf("Ident has obj %#v (%d)\n", v.Obj, v.Pos())
-			identPosition := pkg.Fset.Position(v.Obj.Pos())
-			return &identPosition, nil
+			vObj := pkg.checker.ObjectOf(v)
+			return vObj, pkg, nil
 		}
-		// xObj := pkg.info.ObjectOf(v)
-		// if xObj != nil {
-		// 	identPosition := w.Loader.Fset.Position(xObj.Pos())
-		// 	return &identPosition, nil
-		// }
 		if vDef, ok := pkg.checker.Defs[v]; ok {
 			fmt.Printf("Have vDef from Defs: %#v\n", vDef)
-			identPosition := pkg.Fset.Position(vDef.Pos())
-			return &identPosition, nil
+			return vDef, pkg, nil
 		}
 		if vUse, ok := pkg.checker.Uses[v]; ok {
 			// Used when var is defined in a package, in another file
 			fmt.Printf("Have vUse from Uses: %#v\n", vUse)
-			identPosition := pkg.Fset.Position(vUse.Pos())
-			return &identPosition, nil
-
-			// switch v1 := vUse.(type) {
-			// case *types.Var:
-			// 	scope := v1.Parent()
-			// 	scopedObj := scope.Lookup(v.Name)
-			// 	identPosition := w.Loader.Fset.Position(scopedObj.Pos())
-			// 	return &identPosition, nil
-			// }
+			return vUse, pkg, nil
 		}
 
 	case *ast.SelectorExpr:
-		fmt.Printf("Have SelectorExpr\n")
-
-		scopedObj := f.Scope.Lookup(v.X.(*ast.Ident).Name)
-		fmt.Printf("Scoped object... %#v\n", scopedObj)
-
-		vXObj := pkg.checker.ObjectOf(v.X.(*ast.Ident))
-		if vXObj == nil {
-			fmt.Printf("v.X not in ObjectOf\n")
-		} else {
-			fmt.Printf("checker.ObjectOf(v.X): %#v\n", vXObj)
-			switch v1 := vXObj.(type) {
-			case *types.PkgName:
-				fmt.Printf("Have PkgName %s, type %s\n", v1.Name(), v1.Type())
-				absPath := v1.Imported().Path()
-				e, _ := w.Loader.caravan.Find(absPath)
-				pkg1 := e.Element.(*Package)
-				fmt.Printf("From pkg %#v\n", pkg1)
-
-				oooo := pkg1.typesPkg.Scope().Lookup(v.Sel.Name)
-				if oooo != nil {
-					// Have thingy from scope!
-					declPos := pkg1.Fset.Position(oooo.Pos())
-					return &declPos, nil
-				}
-
-				selIdent := ast.NewIdent(v.Sel.Name)
-				fmt.Printf("Using new ident %#v\n", selIdent)
-				def, ok := pkg1.checker.Defs[selIdent]
-				if !ok {
-					fmt.Printf("Not from Defs\n")
-				} else {
-					fmt.Printf("From defs: %#v\n", def)
-					declPos := pkg1.Fset.Position(def.Pos())
-					return &declPos, nil
-				}
-			}
-		}
+		return w.processSelectorExpr(v, pkg)
 
 	default:
 		fmt.Printf("Is %#v\n", x)
 	}
-	return nil, nil
+
+	return nil, nil, nil
 }
 
-// LocateReferences returns the array of positions where the given identifier
-// is referenced or used
-func (w *Workspace) LocateReferences(x *ast.Ident) *[]token.Position {
-	// xObj := w.Info.ObjectOf(x)
-	ps := []token.Position{}
+func (w *Workspace) processSelectorExpr(v *ast.SelectorExpr, pkg *Package) (types.Object, *Package, error) {
+	fmt.Printf("Have SelectorExpr\n")
+	switch vX := v.X.(type) {
+	case *ast.Ident:
+		vXObj := pkg.checker.ObjectOf(vX)
+		if vXObj == nil {
+			return nil, nil, fmt.Errorf("v.X (%s) not in ObjectOf", vX.Name)
+		}
+		fmt.Printf("checker.ObjectOf(v.X): %#v\n", vXObj)
+		switch v1 := vXObj.(type) {
+		case *types.PkgName:
+			fmt.Printf("Have PkgName %s, type %s\n", v1.Name(), v1.Type())
+			absPath := v1.Imported().Path()
+			n, _ := w.Loader.caravan.Find(absPath)
+			pkg1 := n.Element.(*Package)
+			fmt.Printf("From pkg %#v\n", pkg1)
 
-	// for k, v := range w.Info.Uses {
-	// 	if xObj == v {
-	// 		ps = append(ps, w.Fset.Position(k.Pos()))
-	// 	}
-	// }
+			oooo := pkg1.typesPkg.Scope().Lookup(v.Sel.Name)
+			if oooo != nil {
+				return oooo, pkg1, nil
+			}
 
-	return &ps
-}
-
-// OpenFile shadows the file read from the disk with an in-memory version,
-// which the workspace can accept edits to.
-func (w *Workspace) OpenFile(absFilepath, text string) error {
-	if _, ok := w.Loader.openedFiles[absFilepath]; ok {
-		return fmt.Errorf("File %s is already opened\n", absFilepath)
-	}
-	w.Loader.openedFiles[absFilepath] = rope.CreateRope(text)
-
-	absPath := filepath.Dir(absFilepath)
-	n, ok := w.Loader.caravan.Find(absPath)
-
-	if !ok {
-		// Crapola.
-		return fmt.Errorf("Failed to find package for file %s", absFilepath)
-	}
-	p := n.Element.(*Package)
-
-	p.loadState = unloaded
-	p.ResetChecker()
-	w.Loader.done = false
-	w.Loader.stateChange <- absPath
-
-	w.log.Debugf("Shadowed file '%s'\n", absFilepath)
-
-	return nil
-}
-
-// ReplaceFile replaces the entire contents of an opened file
-func (w *Workspace) ReplaceFile(absPath, text string) error {
-	_, ok := w.Loader.openedFiles[absPath]
-	if !ok {
-		return fmt.Errorf("File %s is not opened\n", absPath)
+		case *types.Var:
+			fmt.Printf("Have Var %s, type %s\n\tv1: %#v\n\tv1.Sel: %#v\n", v1.Name(), v1.Type(), v1, v.Sel)
+			vSelObj := pkg.checker.ObjectOf(v.Sel)
+			path := vSelObj.Pkg().Path()
+			n, _ := w.Loader.caravan.Find(path)
+			pkg1 := n.Element.(*Package)
+			return vSelObj, pkg1, nil
+		}
+	case *ast.SelectorExpr:
+		vSelObj := pkg.checker.ObjectOf(v.Sel)
+		path := vSelObj.Pkg().Path()
+		n, _ := w.Loader.caravan.Find(path)
+		pkg1 := n.Element.(*Package)
+		return vSelObj, pkg1, nil
 	}
 
-	// Replace the entire document
-	buf := rope.CreateRope(text)
-	w.Loader.openedFiles[absPath] = buf
-
-	return nil
-}
-
-// Lock will synchronize access to the workspace for read or write access
-func (w *Workspace) Lock(write bool) {
-	if write {
-		w.rwm.Lock()
-	} else {
-		w.rwm.RLock()
-	}
-}
-
-// Unlock will synchronize access to the workspace for read or write access
-func (w *Workspace) Unlock(write bool) {
-	if write {
-		w.rwm.Unlock()
-	} else {
-		w.rwm.RUnlock()
-	}
+	return nil, nil, nil
 }

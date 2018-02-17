@@ -285,7 +285,7 @@ func (l *Loader) Errors(handleErrs func(file string, errs []FileError)) {
 // LoadDirectory adds the contents of a directory to the Loader
 func (l *Loader) LoadDirectory(absPath string) error {
 	if !l.context.IsDir(absPath) {
-		return fmt.Errorf("Argument '%s' is not a directory\n", absPath)
+		return fmt.Errorf("Argument '%s' is not a directory", absPath)
 	}
 
 	l.startDir = absPath
