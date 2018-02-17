@@ -67,25 +67,10 @@ func (w *Workspace) ChangeFile(absFilepath string, startLine, startCharacter, en
 	}
 	p := n.Element.(*Package)
 
-	m := p.checker.Uses
-
 	p.loadState = unloaded
 	p.ResetChecker()
 	w.Loader.done = false
 	w.Loader.stateChange <- absPath
-
-	i := 0
-	fmt.Printf("Uses:\n")
-	for k, v := range m {
-		fmt.Printf("%003d: %#v -> %#v\n", i, k, v)
-		fmt.Printf("\tIdent: %#v\n", k)
-		fmt.Printf("\tTypeName: %#v\n", v.(*types.TypeName))
-
-		if k.Obj != nil {
-			fmt.Printf("\tk.Obj: %#v\n", k.Obj)
-		}
-	}
-	fmt.Printf("\n")
 
 	asc := flattenAscendants(n)
 
