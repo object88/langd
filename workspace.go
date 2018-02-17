@@ -72,6 +72,14 @@ func (w *Workspace) ChangeFile(absFilepath string, startLine, startCharacter, en
 	w.Loader.done = false
 	w.Loader.stateChange <- absPath
 
+	asc := flattenAscendants(n)
+
+	for _, p1 := range asc {
+		p1.loadState = unloaded
+		p1.ResetChecker()
+		w.Loader.stateChange <- p1.absPath
+	}
+
 	return nil
 }
 
