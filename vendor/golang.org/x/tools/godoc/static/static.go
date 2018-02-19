@@ -766,7 +766,7 @@ function setupInlinePlayground() {
 			code.on('keyup', resize);
 			code.keyup(); // resize now.
 		};
-		
+
 		// If example already visible, set up playground now.
 		if ($(el).is(':visible')) {
 			setup();
@@ -870,7 +870,7 @@ function personalizeInstallInstructions() {
     $('.testWindows').show();
   }
 
-  var download = "https://storage.googleapis.com/golang/" + filename;
+  var download = "https://dl.google.com/go/" + filename;
 
   var message = $('<p class="downloading">'+
     'Your download should begin shortly. '+
@@ -2915,11 +2915,7 @@ pre .ln {
 	-ms-user-select: none;
 	user-select: none;
 }
-.ln::before {
-	/* Inserting the line numbers as a ::before pseudo-element avoids making
-	 * them selectable; it's the trick Github uses as well. */
-	content: attr(data-content);
-}
+
 body {
 	color: #222;
 }
