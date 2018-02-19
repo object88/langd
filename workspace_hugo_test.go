@@ -4,13 +4,29 @@ import (
 	"bytes"
 	"fmt"
 	"go/token"
+	"os"
 	"testing"
 
 	"github.com/object88/langd/log"
 )
 
+var hugoIsAccessible = false
+
+func init() {
+	fi, err := os.Stat("../../gohugoio/hugo")
+	if err != nil {
+		return
+	}
+
+	if !fi.IsDir() {
+		return
+	}
+
+	hugoIsAccessible = true
+}
+
 func Test_Workspace_Hugo(t *testing.T) {
-	if testing.Short() {
+	if testing.Short() || !hugoIsAccessible {
 		t.Skip("skipping in short mode")
 	}
 
@@ -24,7 +40,7 @@ func Test_Workspace_Hugo(t *testing.T) {
 		t.Fatal("Did not check channel back.\n")
 	}
 
-	path := "/Users/bropa18/work/src/github.com/gohugoio/hugo"
+	path := "../../gohugoio/hugo"
 	err := l.LoadDirectory(path)
 	if err != nil {
 		t.Fatalf("Failed to load directory '%s':\n\t%s\n", path, err.Error())
