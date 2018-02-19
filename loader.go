@@ -784,6 +784,10 @@ func (l *Loader) processPackages(p *Package, importPaths []string, testing bool)
 			l.Log.Debugf(" PP: %s: %d: Failed to find import %s\n\t%s\n", p, loadState, importPath, err.Error())
 			continue
 		}
+		if targetPath == p.absPath {
+			l.Log.Debugf(" PP: %s: %d: Failed due to self-import\n", p, loadState)
+			continue
+		}
 		l.ensurePackage(targetPath)
 
 		importedPackages[targetPath] = true

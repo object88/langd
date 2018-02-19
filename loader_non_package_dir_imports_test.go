@@ -6,31 +6,23 @@ import (
 	"golang.org/x/tools/go/buildutil"
 )
 
-const differentDirImportsTestProgram1 = `package foo
-
-import (
-	"../gobar"
-)
-
-func add1(param1 int) int {
-	bar.TotalCalls++
-
-	return param1+1
-}
-`
-
-const differentDirImportsTestProgram2 = `package bar
-
-var TotalCalls = 0
-`
-
 func Test_Load_PackageWithDifferentDir(t *testing.T) {
+	src1 := `package foo
+	import "../gobar"
+	func add1(param1 int) int {
+		bar.TotalCalls++
+		return param1+1
+	}`
+
+	src2 := `package bar
+	var TotalCalls = 0`
+
 	packages := map[string]map[string]string{
 		"foo": map[string]string{
-			"foo.go": differentDirImportsTestProgram1,
+			"foo.go": src1,
 		},
 		"gobar": map[string]string{
-			"stats.go": differentDirImportsTestProgram2,
+			"bar.go": src2,
 		},
 	}
 
