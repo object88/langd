@@ -42,19 +42,15 @@ func (w *Workspace) locateReferences(obj types.Object, pkg *Package) []*ref {
 			})
 		}
 	}
-	fmt.Printf("Starting with %d local refs\n", len(refs))
 
 	if obj.Exported() {
-		fmt.Printf("Exported obj\n")
 		n, ok := w.Loader.caravan.Find(pkg.absPath)
 		if !ok {
 			// Should never get here.
 			panic("Shit.")
 		}
-		fmt.Printf("obj: %#v\n", obj)
 		asc := flattenAscendants(n)
-		fmt.Printf("Have %d ascendants\n", len(asc))
-		ascRefs := w.checkAscendants(asc, obj)
+		ascRefs := checkAscendants(asc, obj)
 		for _, r := range ascRefs {
 			refs = append(refs, r)
 		}
@@ -64,34 +60,12 @@ func (w *Workspace) locateReferences(obj types.Object, pkg *Package) []*ref {
 	return refs
 }
 
-func (w *Workspace) checkAscendants(ascendants map[string]*Package, obj types.Object) []*ref {
+func checkAscendants(ascendants map[string]*Package, obj types.Object) []*ref {
 	refs := []*ref{}
 
-	objNode, _ := w.Loader.caravan.Find(obj.Pkg().Path())
-	objPkg := objNode.Element.(*Package)
-	objPos := objPkg.Fset.Position(obj.Pos())
-	fmt.Printf("Looking for '%s':\n\t%#v\n\tin '%s'\n", obj.Name(), obj, objPos.String())
-
 	for _, pkg := range ascendants {
-		// fmt.Printf("Checking %s...\n", pkg.absPath)
-		if pkg.absPath == "/Users/bropa18/work/src/github.com/gohugoio/hugo/helpers" {
-			// fmt.Printf("Imports:\n")
-			// for path := range pkg.importPaths {
-			// 	fmt.Printf("\t%s\n", path)
-			// }
-			fmt.Printf("Uses (%d):\n", len(pkg.checker.Uses))
-			for k, v := range pkg.checker.Uses {
-				if k.Name == "NewWriter" {
-					useNode, _ := w.Loader.caravan.Find(v.Pkg().Path())
-					usePkg := useNode.Element.(*Package)
-					usePos := usePkg.Fset.Position(v.Pos())
-					fmt.Printf("\t%#v ->\n\t\t%#v\n\t\tin '%s'\n", k, v, usePos.String())
-				}
-			}
-		}
 		for id, use := range pkg.checker.Uses {
 			if sameObj(obj, use) {
-				fmt.Printf("\tmatch!  %s\n", id.String())
 				refs = append(refs, &ref{
 					pkg: pkg,
 					pos: id.Pos(),

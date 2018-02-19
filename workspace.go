@@ -227,6 +227,28 @@ func (w *Workspace) ReplaceFile(absPath, text string) error {
 	buf := rope.CreateRope(text)
 	w.Loader.openedFiles[absPath] = buf
 
+	absPath := filepath.Dir(absFilepath)
+	n, ok := w.Loader.caravan.Find(absPath)
+
+	if !ok {
+		// Crapola.
+		return fmt.Errorf("Failed to find package for file %s", absFilepath)
+	}
+	p := n.Element.(*Package)
+
+	p.loadState = unloaded
+	p.ResetChecker()
+	w.Loader.done = false
+	w.Loader.stateChange <- absPath
+
+	asc := flattenAscendants(n)
+
+	for _, p1 := range asc {
+		p1.loadState = unloaded
+		p1.ResetChecker()
+		w.Loader.stateChange <- p1.absPath
+	}
+
 	return nil
 }
 
