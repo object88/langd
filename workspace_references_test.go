@@ -2,6 +2,7 @@ package langd
 
 import (
 	"go/token"
+	"io/ioutil"
 	"strings"
 	"testing"
 )
@@ -1000,7 +1001,96 @@ func Test_Workspace_References_Imported_Selector_Interface_Method(t *testing.T) 
 	testReferences(t, w, startPosition, referencePositions)
 }
 
+func Test_Workspace_References_Complex_Lookup(t *testing.T) {
+	src1 := `package foo
+	type FooStruct struct {
+		a int
+	}
+	func (f *FooStruct) GetFoo() int {
+		f.a++
+		return f.a
+	}`
+	src2 := `package bar
+	import "../foo"
+	type BarStruct struct {
+		F *foo.FooStruct
+	}
+	func NewBarStruct() *BarStruct {
+		return &BarStruct {
+			F: &foo.FooStruct{}
+		}
+	}
+	func (b *BarStruct) DoBar() int {
+		return b.F.GetFoo() + b.F.GetFoo()
+	}`
+	src3 := `package baz
+	import "../bar"
+	func Do() int {
+		b := bar.NewBarStruct()
+		return b.F.GetFoo()
+	}
+	func ExtraDo(b *bar.BarStruct) int {
+		return b.DoBar() * b.F.GetFoo()
+	}`
+
+	packages := map[string]map[string]string{
+		"foo": map[string]string{
+			"foo.go": src1,
+		},
+		"bar": map[string]string{
+			"bar.go": src2,
+		},
+		"baz": map[string]string{
+			"baz.go": src3,
+		},
+	}
+
+	w := workspaceSetup(t, "/go/src/baz", packages, false)
+
+	startPosition := &token.Position{
+		Filename: "/go/src/baz/baz.go",
+		Line:     5,
+		Column:   14,
+	}
+	referencePositions := []*token.Position{
+		&token.Position{
+			Filename: "/go/src/foo/foo.go",
+			Line:     5,
+			Column:   22,
+		},
+		startPosition,
+		&token.Position{
+			Filename: "/go/src/baz/baz.go",
+			Line:     8,
+			Column:   26,
+		},
+		&token.Position{
+			Filename: "/go/src/bar/bar.go",
+			Line:     12,
+			Column:   14,
+		},
+		&token.Position{
+			Filename: "/go/src/bar/bar.go",
+			Line:     12,
+			Column:   29,
+		},
+	}
+	testReferences(t, w, startPosition, referencePositions)
+}
+
 func testReferences(t *testing.T, w *Workspace, startPosition *token.Position, referencePositions []*token.Position) {
+	// Ensure that the file at for startPosition is open.  We will use our
+	// override of the build.Context to get the file contents
+	load := w.Loader.Start()
+	rc, _ := w.Loader.context.OpenFile(startPosition.Filename)
+	b, err := ioutil.ReadAll(rc)
+	if err != nil {
+		t.Fatalf("Failed while attempting to read pseudo-file %s\n\t%s", startPosition.Filename, err.Error())
+	}
+	w.OpenFile(startPosition.Filename, string(b))
+
+	<-load
+
 	actual := w.LocateReferences(startPosition)
 	if nil == actual {
 		t.Fatal("Got nil back")

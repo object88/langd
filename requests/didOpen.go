@@ -34,8 +34,6 @@ func (rh *didOpenHandler) preprocess(params *json.RawMessage) error {
 		return fmt.Errorf("Failed to unmarshal params")
 	}
 
-	fmt.Printf("Got parameters: %#v\n", typedParams)
-
 	uri := string(typedParams.TextDocument.URI)
 	fpath := strings.TrimPrefix(uri, "file://")
 

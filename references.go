@@ -17,16 +17,19 @@ type ref struct {
 func (w *Workspace) locateReferences(obj types.Object, pkg *Package) []*ref {
 	// obj := pkg.checker.ObjectOf(ident)
 	if obj == nil {
+		fmt.Printf("No obj provided\n")
 		// Special case
 	}
 
 	// If this is a package name, do something special also.
 	if _, ok := obj.(*types.PkgName); ok {
 		// *shrug*
+		fmt.Printf("Package name\n")
 	}
 
 	if obj.Pkg() == nil {
 		// Uhhh, not sure what this is?  A keyword or something?
+		fmt.Printf("obj.Pkg is nil\n")
 	}
 
 	// Start off with in-package references, shall we?
@@ -46,16 +49,20 @@ func (w *Workspace) locateReferences(obj types.Object, pkg *Package) []*ref {
 			// Should never get here.
 			panic("Shit.")
 		}
-		fmt.Printf("obj: %#v\n", obj)
 		asc := flattenAscendants(n)
-		refs = checkAscendants(asc, obj)
+		ascRefs := checkAscendants(asc, obj)
+		for _, r := range ascRefs {
+			refs = append(refs, r)
+		}
 	}
 
+	fmt.Printf("Returning %d refs\n", len(refs))
 	return refs
 }
 
 func checkAscendants(ascendants map[string]*Package, obj types.Object) []*ref {
 	refs := []*ref{}
+
 	for _, pkg := range ascendants {
 		for id, use := range pkg.checker.Uses {
 			if sameObj(obj, use) {

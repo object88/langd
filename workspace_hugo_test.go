@@ -23,12 +23,8 @@ func Test_Workspace_Hugo(t *testing.T) {
 	if done == nil {
 		t.Fatal("Did not check channel back.\n")
 	}
-	fmt.Printf("Have done channel.\n")
 
 	path := "/Users/bropa18/work/src/github.com/gohugoio/hugo"
-
-	fmt.Printf("Going to load %s\n", path)
-
 	err := l.LoadDirectory(path)
 	if err != nil {
 		t.Fatalf("Failed to load directory '%s':\n\t%s\n", path, err.Error())
@@ -58,24 +54,32 @@ func Test_Workspace_Hugo(t *testing.T) {
 		t.Fatal(buf.String())
 	}
 
-	p := &token.Position{
-		Filename: "/Users/bropa18/work/src/github.com/gohugoio/hugo/helpers/processing_stats.go",
-		Line:     109,
-		Column:   24,
-	}
-	declPosition, err := w.LocateDeclaration(p)
-	if err != nil {
-		t.Error(err.Error())
-	}
-	if !declPosition.IsValid() {
-		t.Error("Returned declaration position is not valid.")
-	}
-	if declPosition.Filename != "/Users/bropa18/work/src/github.com/gohugoio/hugo/vendor/github.com/olekukonko/tablewriter/table.go" {
-		t.Errorf("Wrong file:\n\t%s\n", declPosition.Filename)
-	}
-	if declPosition.Line != 85 {
-		t.Errorf("Wrong line:\n\t%d\n", declPosition.Line)
+	declPosition := &token.Position{
+		Filename: "/Users/bropa18/work/src/github.com/gohugoio/hugo/vendor/github.com/olekukonko/tablewriter/table.go",
+		Line:     85,
+		Column:   6,
 	}
 
-	// t.Errorf("Dump logging...\n\t%s\n", declPosition.String())
+	p := &token.Position{
+		Filename: "/Users/bropa18/work/src/github.com/gohugoio/hugo/vendor/github.com/olekukonko/tablewriter/csv.go",
+		Line:     33,
+		Column:   7,
+	}
+
+	testDeclaration(t, w, p, declPosition)
+
+	testReferences(t, w, p, []*token.Position{
+		declPosition,
+		p,
+		{
+			Filename: "/Users/bropa18/work/src/github.com/gohugoio/hugo/helpers/processing_stats.go",
+			Line:     74,
+			Column:   23,
+		},
+		{
+			Filename: "/Users/bropa18/work/src/github.com/gohugoio/hugo/helpers/processing_stats.go",
+			Line:     109,
+			Column:   23,
+		},
+	})
 }
