@@ -283,9 +283,14 @@ func (l *Loader) Errors(handleErrs func(file string, errs []FileError)) {
 }
 
 // LoadDirectory adds the contents of a directory to the Loader
-func (l *Loader) LoadDirectory(absPath string) error {
-	if !l.context.IsDir(absPath) {
-		return fmt.Errorf("Argument '%s' is not a directory", absPath)
+func (l *Loader) LoadDirectory(path string) error {
+	if !l.context.IsDir(path) {
+		return fmt.Errorf("Argument '%s' is not a directory", path)
+	}
+
+	absPath, err := filepath.Abs(path)
+	if err != nil {
+		return fmt.Errorf("Could not get absolute path for '%s'", absPath)
 	}
 
 	l.startDir = absPath

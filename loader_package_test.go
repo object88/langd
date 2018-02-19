@@ -8,6 +8,21 @@ import (
 	"golang.org/x/tools/go/buildutil"
 )
 
+var hugoIsAccessible = false
+
+func init() {
+	fi, err := os.Stat("../../gohugoio/hugo")
+	if err != nil {
+		return
+	}
+
+	if !fi.IsDir() {
+		return
+	}
+
+	hugoIsAccessible = true
+}
+
 func Test_Load_Own_Package(t *testing.T) {
 	src := `package bar
 	import "../bar"
@@ -31,5 +46,21 @@ func Test_Load_Own_Package(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Error while loading: %s", err.Error())
 	}
+	<-done
+}
+
+func Test_Load_Relative_Path(t *testing.T) {
+	if !hugoIsAccessible {
+		t.Skip("Test requires the Hugo repository; skipping.")
+	}
+
+	loader := NewLoader()
+
+	done := loader.Start()
+	err := loader.LoadDirectory("../../gohugoio/hugo")
+	if err != nil {
+		t.Fatalf("Error while loading: %s", err.Error())
+	}
+
 	<-done
 }
