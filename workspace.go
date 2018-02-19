@@ -59,25 +59,9 @@ func (w *Workspace) ChangeFile(absFilepath string, startLine, startCharacter, en
 	}
 
 	absPath := filepath.Dir(absFilepath)
-	n, ok := w.Loader.caravan.Find(absPath)
-
-	if !ok {
-		// Crapola.
-		return fmt.Errorf("Failed to find package for file %s", absFilepath)
-	}
-	p := n.Element.(*Package)
-
-	p.loadState = unloaded
-	p.ResetChecker()
-	w.Loader.done = false
-	w.Loader.stateChange <- absPath
-
-	asc := flattenAscendants(n)
-
-	for _, p1 := range asc {
-		p1.loadState = unloaded
-		p1.ResetChecker()
-		w.Loader.stateChange <- p1.absPath
+	err = w.reloadPackageAndAscendants(absPath)
+	if err != nil {
+		return err
 	}
 
 	return nil
@@ -190,25 +174,9 @@ func (w *Workspace) OpenFile(absFilepath, text string) error {
 	w.Loader.openedFiles[absFilepath] = rope.CreateRope(text)
 
 	absPath := filepath.Dir(absFilepath)
-	n, ok := w.Loader.caravan.Find(absPath)
-
-	if !ok {
-		// Crapola.
-		return fmt.Errorf("Failed to find package for file %s", absFilepath)
-	}
-	p := n.Element.(*Package)
-
-	p.loadState = unloaded
-	p.ResetChecker()
-	w.Loader.done = false
-	w.Loader.stateChange <- absPath
-
-	asc := flattenAscendants(n)
-
-	for _, p1 := range asc {
-		p1.loadState = unloaded
-		p1.ResetChecker()
-		w.Loader.stateChange <- p1.absPath
+	err := w.reloadPackageAndAscendants(absPath)
+	if err != nil {
+		return err
 	}
 
 	w.log.Debugf("Shadowed file '%s'\n", absFilepath)
@@ -228,25 +196,9 @@ func (w *Workspace) ReplaceFile(absFilepath, text string) error {
 	w.Loader.openedFiles[absFilepath] = buf
 
 	absPath := filepath.Dir(absFilepath)
-	n, ok := w.Loader.caravan.Find(absPath)
-
-	if !ok {
-		// Crapola.
-		return fmt.Errorf("Failed to find package for file %s", absFilepath)
-	}
-	p := n.Element.(*Package)
-
-	p.loadState = unloaded
-	p.ResetChecker()
-	w.Loader.done = false
-	w.Loader.stateChange <- absPath
-
-	asc := flattenAscendants(n)
-
-	for _, p1 := range asc {
-		p1.loadState = unloaded
-		p1.ResetChecker()
-		w.Loader.stateChange <- p1.absPath
+	err := w.reloadPackageAndAscendants(absPath)
+	if err != nil {
+		return err
 	}
 
 	return nil
@@ -399,4 +351,28 @@ func (w *Workspace) processSelectorExpr(v *ast.SelectorExpr, pkg *Package) (type
 	}
 
 	return nil, nil, nil
+}
+
+func (w *Workspace) reloadPackageAndAscendants(absPath string) error {
+	n, ok := w.Loader.caravan.Find(absPath)
+	if !ok {
+		// Crapola.
+		return fmt.Errorf("Failed to find package for path %s", absPath)
+	}
+	p := n.Element.(*Package)
+
+	p.loadState = unloaded
+	p.ResetChecker()
+	w.Loader.done = false
+	w.Loader.stateChange <- absPath
+
+	asc := flattenAscendants(n)
+
+	for _, p1 := range asc {
+		p1.loadState = unloaded
+		p1.ResetChecker()
+		w.Loader.stateChange <- p1.absPath
+	}
+
+	return nil
 }
