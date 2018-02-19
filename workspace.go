@@ -203,6 +203,14 @@ func (w *Workspace) OpenFile(absFilepath, text string) error {
 	w.Loader.done = false
 	w.Loader.stateChange <- absPath
 
+	asc := flattenAscendants(n)
+
+	for _, p1 := range asc {
+		p1.loadState = unloaded
+		p1.ResetChecker()
+		w.Loader.stateChange <- p1.absPath
+	}
+
 	w.log.Debugf("Shadowed file '%s'\n", absFilepath)
 
 	return nil
