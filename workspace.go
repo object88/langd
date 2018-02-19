@@ -217,15 +217,15 @@ func (w *Workspace) OpenFile(absFilepath, text string) error {
 }
 
 // ReplaceFile replaces the entire contents of an opened file
-func (w *Workspace) ReplaceFile(absPath, text string) error {
-	_, ok := w.Loader.openedFiles[absPath]
+func (w *Workspace) ReplaceFile(absFilepath, text string) error {
+	_, ok := w.Loader.openedFiles[absFilepath]
 	if !ok {
-		return fmt.Errorf("File %s is not opened", absPath)
+		return fmt.Errorf("File %s is not opened", absFilepath)
 	}
 
 	// Replace the entire document
 	buf := rope.CreateRope(text)
-	w.Loader.openedFiles[absPath] = buf
+	w.Loader.openedFiles[absFilepath] = buf
 
 	absPath := filepath.Dir(absFilepath)
 	n, ok := w.Loader.caravan.Find(absPath)
