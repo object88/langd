@@ -10,6 +10,7 @@ It is generated from these files:
 It has these top-level messages:
 	EmptyRequest
 	EmptyReply
+	LoadReply
 */
 package proto
 
@@ -49,9 +50,34 @@ func (m *EmptyReply) String() string            { return proto1.CompactTextStrin
 func (*EmptyReply) ProtoMessage()               {}
 func (*EmptyReply) Descriptor() ([]byte, []int) { return fileDescriptor0, []int{1} }
 
+type LoadReply struct {
+	CpuLoad    float32 `protobuf:"fixed32,1,opt,name=cpuLoad" json:"cpuLoad,omitempty"`
+	MemoryLoad int32   `protobuf:"varint,2,opt,name=memoryLoad" json:"memoryLoad,omitempty"`
+}
+
+func (m *LoadReply) Reset()                    { *m = LoadReply{} }
+func (m *LoadReply) String() string            { return proto1.CompactTextString(m) }
+func (*LoadReply) ProtoMessage()               {}
+func (*LoadReply) Descriptor() ([]byte, []int) { return fileDescriptor0, []int{2} }
+
+func (m *LoadReply) GetCpuLoad() float32 {
+	if m != nil {
+		return m.CpuLoad
+	}
+	return 0
+}
+
+func (m *LoadReply) GetMemoryLoad() int32 {
+	if m != nil {
+		return m.MemoryLoad
+	}
+	return 0
+}
+
 func init() {
 	proto1.RegisterType((*EmptyRequest)(nil), "proto.EmptyRequest")
 	proto1.RegisterType((*EmptyReply)(nil), "proto.EmptyReply")
+	proto1.RegisterType((*LoadReply)(nil), "proto.LoadReply")
 }
 
 // Reference imports to suppress errors if they are not otherwise used.
@@ -65,6 +91,7 @@ const _ = grpc.SupportPackageIsVersion4
 // Client API for Langd service
 
 type LangdClient interface {
+	Load(ctx context.Context, in *EmptyRequest, opts ...grpc.CallOption) (*LoadReply, error)
 	Shutdown(ctx context.Context, in *EmptyRequest, opts ...grpc.CallOption) (*EmptyReply, error)
 	Startup(ctx context.Context, in *EmptyRequest, opts ...grpc.CallOption) (*EmptyReply, error)
 }
@@ -75,6 +102,15 @@ type langdClient struct {
 
 func NewLangdClient(cc *grpc.ClientConn) LangdClient {
 	return &langdClient{cc}
+}
+
+func (c *langdClient) Load(ctx context.Context, in *EmptyRequest, opts ...grpc.CallOption) (*LoadReply, error) {
+	out := new(LoadReply)
+	err := grpc.Invoke(ctx, "/proto.Langd/Load", in, out, c.cc, opts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
 }
 
 func (c *langdClient) Shutdown(ctx context.Context, in *EmptyRequest, opts ...grpc.CallOption) (*EmptyReply, error) {
@@ -98,12 +134,31 @@ func (c *langdClient) Startup(ctx context.Context, in *EmptyRequest, opts ...grp
 // Server API for Langd service
 
 type LangdServer interface {
+	Load(context.Context, *EmptyRequest) (*LoadReply, error)
 	Shutdown(context.Context, *EmptyRequest) (*EmptyReply, error)
 	Startup(context.Context, *EmptyRequest) (*EmptyReply, error)
 }
 
 func RegisterLangdServer(s *grpc.Server, srv LangdServer) {
 	s.RegisterService(&_Langd_serviceDesc, srv)
+}
+
+func _Langd_Load_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(EmptyRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(LangdServer).Load(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: "/proto.Langd/Load",
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(LangdServer).Load(ctx, req.(*EmptyRequest))
+	}
+	return interceptor(ctx, in, info, handler)
 }
 
 func _Langd_Shutdown_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
@@ -147,6 +202,10 @@ var _Langd_serviceDesc = grpc.ServiceDesc{
 	HandlerType: (*LangdServer)(nil),
 	Methods: []grpc.MethodDesc{
 		{
+			MethodName: "Load",
+			Handler:    _Langd_Load_Handler,
+		},
+		{
 			MethodName: "Shutdown",
 			Handler:    _Langd_Shutdown_Handler,
 		},
@@ -162,13 +221,17 @@ var _Langd_serviceDesc = grpc.ServiceDesc{
 func init() { proto1.RegisterFile("langd.proto", fileDescriptor0) }
 
 var fileDescriptor0 = []byte{
-	// 119 bytes of a gzipped FileDescriptorProto
+	// 178 bytes of a gzipped FileDescriptorProto
 	0x1f, 0x8b, 0x08, 0x00, 0x00, 0x00, 0x00, 0x00, 0x02, 0xff, 0xe2, 0xe2, 0xce, 0x49, 0xcc, 0x4b,
 	0x4f, 0xd1, 0x2b, 0x28, 0xca, 0x2f, 0xc9, 0x17, 0x62, 0x05, 0x53, 0x4a, 0x7c, 0x5c, 0x3c, 0xae,
 	0xb9, 0x05, 0x25, 0x95, 0x41, 0xa9, 0x85, 0xa5, 0xa9, 0xc5, 0x25, 0x4a, 0x3c, 0x5c, 0x5c, 0x50,
-	0x7e, 0x41, 0x4e, 0xa5, 0x51, 0x11, 0x17, 0xab, 0x0f, 0x48, 0x8f, 0x90, 0x09, 0x17, 0x47, 0x70,
-	0x46, 0x69, 0x49, 0x4a, 0x7e, 0x79, 0x9e, 0x90, 0x30, 0xc4, 0x04, 0x3d, 0x64, 0x7d, 0x52, 0x82,
-	0xa8, 0x82, 0x05, 0x39, 0x95, 0x4a, 0x0c, 0x42, 0xc6, 0x5c, 0xec, 0xc1, 0x25, 0x89, 0x45, 0x25,
-	0xa5, 0x05, 0xc4, 0x6b, 0x4a, 0x62, 0x03, 0x8b, 0x19, 0x03, 0x02, 0x00, 0x00, 0xff, 0xff, 0xda,
-	0x6d, 0x0f, 0xc9, 0xae, 0x00, 0x00, 0x00,
+	0x7e, 0x41, 0x4e, 0xa5, 0x92, 0x2b, 0x17, 0xa7, 0x4f, 0x7e, 0x62, 0x0a, 0x98, 0x23, 0x24, 0xc1,
+	0xc5, 0x9e, 0x5c, 0x50, 0x0a, 0xe2, 0x4b, 0x30, 0x2a, 0x30, 0x6a, 0x30, 0x05, 0xc1, 0xb8, 0x42,
+	0x72, 0x5c, 0x5c, 0xb9, 0xa9, 0xb9, 0xf9, 0x45, 0x95, 0x60, 0x49, 0x26, 0x05, 0x46, 0x0d, 0xd6,
+	0x20, 0x24, 0x11, 0xa3, 0xc5, 0x8c, 0x5c, 0xac, 0x3e, 0x20, 0xbb, 0x85, 0xf4, 0xb9, 0x58, 0xc0,
+	0x3a, 0x84, 0x21, 0xae, 0xd0, 0x43, 0xb6, 0x5b, 0x4a, 0x00, 0x2a, 0x08, 0xb7, 0x52, 0x89, 0x41,
+	0xc8, 0x84, 0x8b, 0x23, 0x38, 0xa3, 0xb4, 0x24, 0x25, 0xbf, 0x3c, 0x0f, 0xbb, 0x26, 0x41, 0x54,
+	0x41, 0x88, 0x2e, 0x63, 0x2e, 0xf6, 0xe0, 0x92, 0xc4, 0xa2, 0x92, 0xd2, 0x02, 0xe2, 0x35, 0x25,
+	0xb1, 0x81, 0xc5, 0x8c, 0x01, 0x01, 0x00, 0x00, 0xff, 0xff, 0x21, 0xbe, 0x4c, 0xee, 0x27, 0x01,
+	0x00, 0x00,
 }

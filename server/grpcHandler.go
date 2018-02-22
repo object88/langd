@@ -15,6 +15,15 @@ type GrpcHandler struct {
 	SM *http.Server
 }
 
+// Load returns the CPU and memory load
+func (g *GrpcHandler) Load(ctx context.Context, _ *proto.EmptyRequest) (*proto.LoadReply, error) {
+	load := &proto.LoadReply{
+		CpuLoad:    0.75,
+		MemoryLoad: 500,
+	}
+	return load, nil
+}
+
 // Shutdown stops the service process
 func (g *GrpcHandler) Shutdown(ctx context.Context, _ *proto.EmptyRequest) (*proto.EmptyReply, error) {
 	fmt.Printf("Requesting stop on JSON server\n")
