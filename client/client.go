@@ -62,7 +62,7 @@ func (c *Client) RequestLoad() error {
 		return nil
 	}
 
-	fmt.Printf("CPU%%:\t%.02f\nMemory:\t%d\n", load.CpuLoad, load.MemoryLoad)
+	fmt.Printf("CPU%%:\t%.02f\nMemory:\t%d MB\n", load.CpuLoad, load.MemoryLoad)
 
 	return nil
 }

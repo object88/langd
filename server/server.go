@@ -1,96 +1,78 @@
 package server
 
 import (
-	"context"
 	"fmt"
 	"log"
 	"net"
-	"sync"
 
-	"github.com/object88/langd/proto"
-	"github.com/object88/langd/requests"
-	"github.com/sourcegraph/jsonrpc2"
 	"google.golang.org/grpc"
-	"google.golang.org/grpc/reflection"
 )
 
 const (
-	port     = ":9876"
+	grpcPort = ":9876"
 	jsonPort = ":9877"
 )
 
+// GrpcHandler keeps the gRPC Server reference
+type GrpcHandler struct {
+	S   *grpc.Server
+	lis net.Listener
+	srv *server
+}
+
+// SocketHandler has the http Server
+type SocketHandler struct {
+	lis net.Listener
+	srv *server
+}
+
+type server struct {
+	done chan bool
+	load *Load
+}
+
 // InitializeService runs for the lifespan of the server instance
 func InitializeService() error {
-	wg := &sync.WaitGroup{}
-	wg.Add(2)
+	s := &server{
+		done: make(chan bool),
+		load: StartLoadMonitoring(),
+	}
 
-	go func() {
-		socketService()
-		wg.Done()
-	}()
+	grpcLis, err := net.Listen("tcp", grpcPort)
+	if err != nil {
+		log.Fatalf("failed to listen: %v", err)
+		return err
+	}
 
-	go func() {
-		grpcService()
-		wg.Done()
-	}()
+	grpcHandler := &GrpcHandler{
+		S:   grpc.NewServer(),
+		lis: grpcLis,
+		srv: s,
+	}
 
-	wg.Wait()
+	socketLis, err := net.Listen("tcp", jsonPort)
+	if err != nil {
+		fmt.Printf("Error listening on port %s: %s\n", jsonPort, err.Error())
+		return err
+	}
+
+	sockHandler := &SocketHandler{
+		lis: socketLis,
+		srv: s,
+	}
+
+	go sockHandler.socketService()
+	go grpcHandler.grpcService()
+
+	<-s.done
+
+	grpcHandler.S.GracefulStop()
+	grpcLis.Close()
+	socketLis.Close()
+
+	s.load.Close()
 
 	fmt.Printf("Done.\n")
 
 	return nil
-}
-
-func socketService() {
-	fmt.Printf("JSON server starting\n")
-
-	lis, err := net.Listen("tcp", jsonPort)
-	if err != nil {
-		fmt.Printf("Error listening on port %s: %s\n", jsonPort, err.Error())
-		return
-	}
-
-	defer lis.Close()
-
-	for {
-		conn, err := lis.Accept()
-		if err != nil {
-			fmt.Printf("Got error on accept: %s\n", err.Error())
-			break
-		}
-
-		go func(c net.Conn) {
-			h := requests.NewHandler()
-			os := jsonrpc2.NewBufferedStream(c, jsonrpc2.VSCodeObjectCodec{})
-			conn := jsonrpc2.NewConn(context.Background(), os, h)
-			h.SetConnection(conn)
-
-			// // Shut down the connection.
-			// fmt.Printf("Closing down...\n")
-			// c.Close()
-		}(conn)
-	}
-}
-
-func grpcService() {
-	fmt.Printf("gRPC server starting\n")
-
-	lis, err := net.Listen("tcp", port)
-	if err != nil {
-		log.Fatalf("failed to listen: %v", err)
-		return
-	}
-
-	s := grpc.NewServer()
-
-	proto.RegisterLangdServer(s, &GrpcHandler{S: s, SM: nil})
-
-	// Register reflection service on gRPC server.
-	reflection.Register(s)
-	err = s.Serve(lis)
-	if err != nil {
-		fmt.Printf("Got error when stopping grpc service:\n%s\n", err.Error())
-	}
-
-	fmt.Printf("gRPC server stopped\n")
 }

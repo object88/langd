@@ -16,5 +16,5 @@ message EmptyReply {
 
 message LoadReply {
   float cpuLoad = 1;
-  int32 memoryLoad = 2;
+  uint32 memoryLoad = 2;
 }
