@@ -20,7 +20,7 @@ func (s *SocketHandler) socketService() {
 		}
 
 		go func(c net.Conn) {
-			h := requests.NewHandler()
+			h := requests.NewHandler(s.srv.load)
 			os := jsonrpc2.NewBufferedStream(c, jsonrpc2.VSCodeObjectCodec{})
 			conn := jsonrpc2.NewConn(context.Background(), os, h)
 			h.SetConnection(conn)

@@ -59,8 +59,32 @@ Because replies may be generated out of order with asynchronous processing, they
 
 When the IDE opens a file for the user, a `textDocument/didOpen` request is sent to the server.  The server creates a `rope` representation of the file contents, which is altered with `textDocument/didChange` requests.
 
-#### TBD
+## Extensions to the Language Server Protocol
 
-* Mark the package as altered
-* Debounce edits coming in -- rapid typing should prevent the engine from recompiling too quickly.
-* Go through caravan and re-check packages that are altered, and the packages that consume those altered packages.
+### Server Health request
+
+The client may request some basic health metrics from the server; including instanteous CPU and memory usage.
+
+_Request_
+
+* method: 'health/instant'
+* params: none
+
+_Response_
+
+* result: Instant defined as follows:
+
+``` typescript
+interface HealthInformation {
+	/**
+	 *
+	 */
+	cpu: number;
+
+	/**
+	 *
+	 */
+	memory: number;
+}
+
+```

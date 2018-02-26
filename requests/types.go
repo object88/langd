@@ -6,6 +6,18 @@ import (
 	"unicode/utf8"
 )
 
+// Custom / extension types
+
+type Health struct {
+	// CPU is the CPU load
+	CPU float32 `json:"cpu"`
+
+	// Memory is the megabytes of memory in use by the server
+	Memory uint32 `json:"memory"`
+}
+
+// Standard types
+
 // ClientCapabilities contains specific groups of capabilities of the client
 // https://github.com/Microsoft/language-server-protocol/blob/master/protocol.md#initialize-request
 type ClientCapabilities struct {

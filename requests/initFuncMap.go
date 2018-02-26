@@ -29,6 +29,7 @@ func getIniterFuncs() initerFuncMap {
 			didOpenNotification:               createDidOpenHandler,
 			didSaveNotification:               createDidSaveHandler,
 			exitNotification:                  createExitHandler,
+			healthMethod:                      createHealthHandler,
 			initializedNotification:           createNoopNotificationHandler,
 			referencesMethod:                  createReferencesHandler,
 			shutdownMethod:                    createShutdownHandler,

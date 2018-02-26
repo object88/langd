@@ -28,7 +28,7 @@ type SocketHandler struct {
 
 type server struct {
 	done chan bool
-	load *Load
+	load *health.Load
 }
 
 // InitializeService runs for the lifespan of the server instance
