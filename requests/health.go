@@ -26,7 +26,6 @@ func createHealthHandler(ctx context.Context, h *Handler, req *jsonrpc2.Request)
 }
 
 func (rh *healthHandler) preprocess(params *json.RawMessage) error {
-	rh.h.log.Verbosef("Got health method\n")
 	return nil
 }
 

@@ -5,6 +5,7 @@ import (
 	"log"
 	"net"
 
+	"github.com/object88/langd/health"
 	"google.golang.org/grpc"
 )
 
@@ -35,7 +36,7 @@ type server struct {
 func InitializeService() error {
 	s := &server{
 		done: make(chan bool),
-		load: StartLoadMonitoring(),
+		load: health.StartLoadMonitoring(),
 	}
 
 	grpcLis, err := net.Listen("tcp", grpcPort)
