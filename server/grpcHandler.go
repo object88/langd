@@ -3,26 +3,39 @@ package server
 import (
 	"context"
 	"fmt"
-	"net/http"
 
 	"github.com/object88/langd/proto"
-	"google.golang.org/grpc"
+	"google.golang.org/grpc/reflection"
 )
 
-// GrpcHandler keeps the gRPC Server reference
-type GrpcHandler struct {
-	S  *grpc.Server
-	SM *http.Server
+func (g *GrpcHandler) grpcService() {
+	fmt.Printf("gRPC server starting\n")
+
+	proto.RegisterLangdServer(g.S, g)
+
+	// Register reflection service on gRPC server.
+	reflection.Register(g.S)
+
+	err := g.S.Serve(g.lis)
+	if err != nil {
+		fmt.Printf("Got error when stopping grpc service:\n%s\n", err.Error())
+	}
+
+	fmt.Printf("gRPC server stopped\n")
+}
+
+// Load returns the CPU and memory load
+func (g *GrpcHandler) Load(_ context.Context, _ *proto.EmptyRequest) (*proto.LoadReply, error) {
+	load := &proto.LoadReply{
+		CpuLoad:    g.srv.load.CPU(),
+		MemoryLoad: g.srv.load.Memory(),
+	}
+	return load, nil
 }
 
 // Shutdown stops the service process
 func (g *GrpcHandler) Shutdown(ctx context.Context, _ *proto.EmptyRequest) (*proto.EmptyReply, error) {
-	fmt.Printf("Requesting stop on JSON server\n")
-	g.SM.Shutdown(ctx)
-
-	fmt.Printf("Requesting stop on gRPC\n")
-	g.S.GracefulStop()
-
+	g.srv.done <- true
 	return &proto.EmptyReply{}, nil
 }
 

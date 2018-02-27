@@ -40,6 +40,33 @@ func (c *Client) DestroyClient() {
 	c.conn.Close()
 }
 
+// RequestLoad returns the load
+func (c *Client) RequestLoad() error {
+	load, err := c.c.Load(context.Background(), &proto.EmptyRequest{})
+	if err != nil {
+		s, ok := status.FromError(err)
+		if !ok {
+			return err
+		}
+
+		code := s.Code()
+		if code == codes.Unavailable {
+			return nil
+		}
+
+		return err
+	}
+
+	if load == nil {
+		fmt.Printf("Nil load reported\n")
+		return nil
+	}
+
+	fmt.Printf("CPU%%:\t%.02f\nMemory:\t%d MB\n", load.CpuLoad, load.MemoryLoad)
+
+	return nil
+}
+
 // RequestNewService will spin up a new server-oriented process and
 // return a new client with a connection to it
 func (c *Client) RequestNewService() error {

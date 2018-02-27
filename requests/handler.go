@@ -7,6 +7,7 @@ import (
 	"os"
 
 	"github.com/object88/langd"
+	"github.com/object88/langd/health"
 	"github.com/object88/langd/log"
 	"github.com/object88/langd/sigqueue"
 	"github.com/sourcegraph/jsonrpc2"
@@ -33,6 +34,8 @@ type Handler struct {
 	// hFunc will be either uninitedHandler or initedHandler, depending on
 	// whether the connection's `initialize` request has been made.
 	hFunc handleReqFunc
+
+	load *health.Load
 }
 
 type requestHandler interface {
@@ -54,7 +57,7 @@ type replyHandler interface {
 }
 
 // NewHandler creates a new Handler
-func NewHandler() *Handler {
+func NewHandler(load *health.Load) *Handler {
 	// Hopefully this queue is sufficiently deep.  Otherwise, the handler
 	// will start blocking.
 	incomingQueue := make(chan int, 1024)
@@ -75,6 +78,8 @@ func NewHandler() *Handler {
 
 		log:       l,
 		workspace: langd.CreateWorkspace(loader, l),
+
+		load: load,
 	}
 
 	h.hFunc = h.uninitedHandler

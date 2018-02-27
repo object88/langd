@@ -7,6 +7,7 @@ func InitializeCommands() *cobra.Command {
 	rootCmd := createRootCommand()
 
 	rootCmd.AddCommand(
+		createLoadCommand(),
 		createServeCommand(),
 		createStartCommand(),
 		createStopCommand(),

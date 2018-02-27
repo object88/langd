@@ -3,6 +3,7 @@ syntax = "proto3";
 package proto;
 
 service Langd {
+  rpc Load (EmptyRequest) returns (LoadReply) {}
   rpc Shutdown (EmptyRequest) returns (EmptyReply) {}
   rpc Startup (EmptyRequest) returns (EmptyReply) {}
 }
@@ -11,4 +12,9 @@ message EmptyRequest {
 }
 
 message EmptyReply {
+}
+
+message LoadReply {
+  float cpuLoad = 1;
+  uint32 memoryLoad = 2;
 }
