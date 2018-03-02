@@ -23,7 +23,10 @@ func (h *Handler) processInit(p *json.RawMessage) (interface{}, error) {
 		return nil, err
 	}
 
+	h.InitLoader("")
+
 	rootURI := string(params.RootURI)
+	fmt.Printf("Got raw parameters: %#v\n", string([]byte(*p)))
 	fmt.Printf("Got parameters: %#v\n", params)
 
 	h.hFunc = h.initedHandler

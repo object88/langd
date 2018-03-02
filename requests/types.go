@@ -40,6 +40,21 @@ type CompletionOptions struct {
 	TriggerCharacters []string `json:"triggerCharacters,omitempty"`
 }
 
+// ConfigurationParams is a collection of ConfigurationItem, used by the
+// workspace/configuration request from the server
+type ConfigurationParams struct {
+	Items []ConfigurationItem `json:"items"`
+}
+
+// ConfigurationItem is used by the server to request a configuration section
+type ConfigurationItem struct {
+	// ScopeURI is the scope to get the configuration section for.
+	ScopeURI *string `json:"scopeUri,omitempty"`
+
+	// Section is the configuration section asked for.
+	Section *string `json:"section,omitempty"`
+}
+
 // DidChangeConfigurationParams contains all settings that have changed
 type DidChangeConfigurationParams struct {
 	// Settings are the changed settings
@@ -116,6 +131,8 @@ type Hover struct {
 	Range *Range `json:"range,omitempty"`
 }
 
+// InitializeParams contains the parameters provided by the client for the
+// initialize method
 type InitializeParams struct {
 	ProcessID int `json:"processId,omitempty"`
 
@@ -124,6 +141,8 @@ type InitializeParams struct {
 	InitializationOptions interface{} `json:"initializationOptions,omitempty"`
 
 	Capabilities ClientCapabilities `json:"capabilities"`
+
+	Trace string `json:"trace"`
 }
 
 // Example initialization options:

@@ -59,35 +59,39 @@ type replyHandler interface {
 
 // NewHandler creates a new Handler
 func NewHandler(load *health.Load) *Handler {
-	// Hopefully this queue is sufficiently deep.  Otherwise, the handler
+	// Hopefully these queues are sufficiently deep.  Otherwise, the handler
 	// will start blocking.
-	incomingQueue := make(chan int, 1024)
 	l := log.CreateLog(os.Stdout)
 	loader := langd.NewLoader()
 	lc := langd.NewLoaderContext(loader, runtime.GOOS, runtime.GOARCH, func(lc *langd.LoaderContext) {
 		lc.Log = l
 	})
 	outgoingQueue := make(chan int, 256)
-	sq := sigqueue.CreateSigqueue(outgoingQueue)
 	h := &Handler{
-		incomingQueue: incomingQueue,
+		incomingQueue: make(chan int, 1024),
+		load:          load,
+		log:           l,
 		outgoingQueue: outgoingQueue,
+		rm:            map[int]requestHandler{},
+		rq:            newRequestMap(getIniterFuncs()),
+		sq:            sigqueue.CreateSigqueue(outgoingQueue),
 
-		rm: map[int]requestHandler{},
-		sq: sq,
-
-		rq: newRequestMap(getIniterFuncs()),
-
-		log:       l,
 		workspace: langd.CreateWorkspace(loader, lc, l),
-
-		load: load,
 	}
 
 	h.hFunc = h.uninitedHandler
 	h.log.SetLevel(log.Verbose)
 
 	return h
+}
+
+func (h *Handler) InitLoader(root string) {
+	loader := langd.NewLoader()
+	loaderContext := langd.NewLoaderContext(loader, runtime.GOOS, runtime.GOARCH, func(lc *langd.LoaderContext) {
+		lc.Log = h.log
+	})
+
+	h.workspace = langd.CreateWorkspace(loader, loaderContext, h.log)
 }
 
 // NextCid returns the next call id
@@ -131,7 +135,11 @@ func (h *Handler) uninitedHandler(ctx context.Context, req *jsonrpc2.Request) {
 		result, err := h.processInit(req.Params)
 		if err != nil {
 			// TODO: set up jsonrpc2.Error{}
-			h.conn.ReplyWithError(ctx, req.ID, nil)
+			e := &jsonrpc2.Error{
+				Code:    jsonrpc2.CodeInternalError,
+				Message: err.Error(),
+			}
+			h.conn.ReplyWithError(ctx, req.ID, e)
 			return
 		}
 		h.conn.Reply(ctx, req.ID, result)
