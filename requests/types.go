@@ -106,6 +106,16 @@ type DynamicRegistration struct {
 	DynamicRegistration *bool `json:"dynamicRegistration,omitempty"`
 }
 
+// Hover is the result of a hover request.
+type Hover struct {
+	// Contents is the hover's content
+	Contents MarkupContent `json:"content"`
+
+	// Range is an optional range inside a text document, used to visualize a
+	// hover, e.g. by changing the background color.
+	Range *Range `json:"range,omitempty"`
+}
+
 type InitializeParams struct {
 	ProcessID int `json:"processId,omitempty"`
 
@@ -156,6 +166,54 @@ type InitializeParams struct {
 type InitializeResult struct {
 	// Capabilities describe what the server is capable of handling
 	Capabilities ServerCapabilities `json:"capabilities,omitempty"`
+}
+
+// MarkupKind describes the content type that a client supports in various
+// result literals like `Hover`, `ParameterInfo` or `CompletionItem`.
+//
+// Please note that `MarkupKinds` must not start with a `$`. This kinds
+// are reserved for internal usage.
+type MarkupKind string
+
+const (
+	// PlainText is supported as a content format
+	PlainText MarkupKind = "plaintext"
+
+	// Markdown is supported as a content format
+	Markdown = "markdown"
+)
+
+// MarkupContent represents a string value which content is interpreted base on
+// its kind flag. Currently the protocol supports `plaintext` and `markdown` as
+// markup kinds.
+//
+// If the kind is `markdown` then the value can contain fenced code blocks like
+// in GitHub issues.
+// See https://help.github.com/articles/creating-and-highlighting-code-blocks/#syntax-highlighting
+//
+// Here is an example how such a string can be constructed using JavaScript /
+// TypeScript:
+// ```ts
+// let markdown: MarkdownContent = {
+//   kind: MarkupKind.Markdown,
+//	 value: [
+//		 '# Header',
+//		 'Some text',
+//		 '```typescript',
+//		 'someCode();',
+//		 '```'
+//	 ].join('\n')
+// };
+// ```
+//
+// *Please Note* that clients might sanitize the return markdown. A client
+// could decide to remove HTML from the markdown to avoid script execution.
+type MarkupContent struct {
+	// Kind is the type of the Markup
+	Kind MarkupKind `json:"kind"`
+
+	// Value is the content itself
+	Value string `json:"value"`
 }
 
 // ReferenceContext is included in ReferenceParams for the `Find References`
