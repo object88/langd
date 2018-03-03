@@ -3,6 +3,7 @@ package langd
 import (
 	"fmt"
 	"go/ast"
+	"go/constant"
 	"go/token"
 	"go/types"
 	"path/filepath"
@@ -80,6 +81,71 @@ func (w *Workspace) CloseFile(absPath string) error {
 	w.log.Debugf("File %s is closed\n", absPath)
 
 	return nil
+}
+
+// Hover supplies the hover text for a given position
+func (w *Workspace) Hover(p *token.Position) (string, error) {
+	obj, pkg, err := w.locateDeclaration(p)
+	if err != nil {
+		return "", err
+	}
+
+	fmt.Printf("Obj: %#v\n", obj)
+	fmt.Printf("Type: %#v\n", obj.Type())
+
+	var s string
+	switch t := obj.(type) {
+	case *types.Var:
+		switch t1 := t.Type().(type) {
+		case *types.Basic:
+			s = fmt.Sprintf("%s.%s %s", pkg.typesPkg.Name(), obj.Name(), getBasicType(t1))
+		}
+	case *types.Const:
+		s = fmt.Sprintf("const %s.%s %s = %s", pkg.typesPkg.Name(), obj.Name(), getConstType(t), t.Val().String())
+	}
+
+	return s, nil
+}
+
+func getBasicType(o *types.Basic) string {
+	var tName string
+	if o.Info()&types.IsUntyped == types.IsUntyped {
+		switch o.Kind() {
+		case types.UntypedBool:
+			tName = "bool"
+		case types.UntypedComplex:
+			tName = "complex"
+		case types.UntypedFloat:
+			tName = "float"
+		case types.UntypedInt:
+			tName = "int"
+		case types.UntypedNil:
+			tName = "nil"
+		case types.UntypedRune:
+			tName = "rune"
+		case types.UntypedString:
+			tName = "string"
+		}
+	} else {
+		tName = o.Name()
+	}
+	return tName
+}
+
+func getConstType(o *types.Const) string {
+	switch o.Val().Kind() {
+	case constant.Bool:
+		return "bool"
+	case constant.String:
+		return "string"
+	case constant.Int:
+		return "int"
+	case constant.Float:
+		return "float"
+	case constant.Complex:
+		return "complex"
+	}
+	return "(unknown)"
 }
 
 // LocateIdent scans the loaded fset for the identifier at the requested

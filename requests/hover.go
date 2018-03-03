@@ -13,7 +13,7 @@ const (
 	hoverMethod = "textDocument/hover"
 )
 
-// hoverHandler implements the `Hoever` request
+// hoverHandler implements the `Hover` request
 // https://microsoft.github.io/language-server-protocol/specification#textDocument_hover
 type hoverHandler struct {
 	requestBase
@@ -53,6 +53,19 @@ func (rh *hoverHandler) preprocess(params *json.RawMessage) error {
 }
 
 func (rh *hoverHandler) work() error {
+	t, err := rh.h.workspace.Hover(rh.p)
+	if err != nil {
+		return err
+	}
+
+	// TODO: assign Range for interesting highlighting, etc.
+	rh.result = &Hover{
+		Contents: MarkupContent{
+			Kind:  Markdown,
+			Value: t,
+		},
+		Range: nil,
+	}
 	return nil
 }
 
