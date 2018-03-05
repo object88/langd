@@ -7,6 +7,7 @@ import (
 	"go/token"
 	"go/types"
 	"path/filepath"
+	"strings"
 	"sync"
 
 	"github.com/object88/langd/log"
@@ -90,21 +91,52 @@ func (w *Workspace) Hover(p *token.Position) (string, error) {
 		return "", err
 	}
 
-	fmt.Printf("Obj: %#v\n", obj)
-	fmt.Printf("Type: %#v\n", obj.Type())
-
 	var s string
 	switch t := obj.(type) {
+	case *types.Const:
+		s = fmt.Sprintf("const %s.%s %s = %s", pkg.typesPkg.Name(), obj.Name(), getConstType(t), t.Val().String())
 	case *types.Var:
 		switch t1 := t.Type().(type) {
 		case *types.Basic:
 			s = fmt.Sprintf("%s.%s %s", pkg.typesPkg.Name(), obj.Name(), getBasicType(t1))
+		case *types.Named:
+			var sb strings.Builder
+			fmt.Fprintf(&sb, "type %s.%s struct {", pkg.typesPkg.Name(), t1.Obj().Name())
+			t1u := t1.Underlying()
+			t1us := t1u.(*types.Struct)
+			if t1us.NumFields() == 0 {
+				fmt.Fprintf(&sb, "}")
+			} else {
+				for k := 0; k < t1us.NumFields(); k++ {
+					f := t1us.Field(k)
+					fmt.Fprintf(&sb, "\n\t")
+					if !f.Anonymous() {
+						fmt.Fprintf(&sb, "%s ", f.Name())
+					}
+					fmt.Fprintf(&sb, w.getVarType(f))
+				}
+				fmt.Fprintf(&sb, "\n}")
+			}
+			s = sb.String()
 		}
-	case *types.Const:
-		s = fmt.Sprintf("const %s.%s %s = %s", pkg.typesPkg.Name(), obj.Name(), getConstType(t), t.Val().String())
 	}
 
 	return s, nil
+}
+
+func (w *Workspace) getVarType(v *types.Var) string {
+	switch t := v.Type().(type) {
+	case *types.Basic:
+		return getBasicType(t)
+	case *types.Named:
+		n, ok := w.Loader.caravan.Find(t.Obj().Pkg().Path())
+		if !ok {
+			return "error"
+		}
+		pkg := n.Element.(*Package)
+		return fmt.Sprintf("%s.%s", pkg.typesPkg.Name(), t.Obj().Name())
+	}
+	return "unknown"
 }
 
 func getBasicType(o *types.Basic) string {
