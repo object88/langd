@@ -56,116 +56,115 @@ func Test_Workspace_Hover_Package_Func(t *testing.T) {
 			name:      "empty",
 			declFunc:  "() {}",
 			usageArgs: "",
-			expected:  "foo.DoFoo func()",
+			expected:  "func foo.DoFoo()",
 		},
 		{
 			name:      "with basic args",
 			declFunc:  "(a int, b string) {}",
 			usageArgs: "1, \"foo\"",
-			expected:  "foo.DoFoo func(a int, b string)",
+			expected:  "func foo.DoFoo(a int, b string)",
 		},
 		{
 			name:      "with anonymized arg",
 			declFunc:  "(a int, _ string) {}",
 			usageArgs: "1, \"foo\"",
-			expected:  "foo.DoFoo func(a int, _ string)",
+			expected:  "func foo.DoFoo(a int, _ string)",
 		},
 		{
 			name:      "with repeated type args",
 			declFunc:  "(a, b int) {}",
 			usageArgs: "1, 2",
-			expected:  "foo.DoFoo func(a, b int)",
+			expected:  "func foo.DoFoo(a, b int)",
 		},
 		{
 			name:      "with struct arg",
 			declFunc:  "(a int, b Foo) {}\n\ttype Foo struct {}",
 			usageArgs: "1, foo.Foo{}",
-			expected:  "foo.DoFoo func(a int, b foo.Foo)",
+			expected:  "func foo.DoFoo(a int, b foo.Foo)",
 		},
 		{
 			name:      "with struct pointer arg",
 			declFunc:  "(a int, b *Foo) {}\n\ttype Foo struct {}",
 			usageArgs: "1, nil",
-			expected:  "foo.DoFoo func(a int, b *foo.Foo)",
+			expected:  "func foo.DoFoo(a int, b *foo.Foo)",
 		},
 		{
 			name:      "with repeated type pointer args",
 			declFunc:  "(a, b *Foo) {}\n\ttype Foo struct {}",
 			usageArgs: "nil, nil",
-			expected:  "foo.DoFoo func(a, b *foo.Foo)",
+			expected:  "func foo.DoFoo(a, b *foo.Foo)",
 		},
 		{
 			name:      "with different struct pointer args",
 			declFunc:  "(a *Foo1, b *Foo2) {}\n\ttype Foo1 struct {}\n\ttype Foo2 struct {}",
 			usageArgs: "nil, nil",
-			expected:  "foo.DoFoo func(a *foo.Foo1, b *foo.Foo2)",
+			expected:  "func foo.DoFoo(a *foo.Foo1, b *foo.Foo2)",
 		},
 		{
 			name:      "with a pointer pointer arg",
 			declFunc:  "(a **int) {}",
 			usageArgs: "nil",
-			expected:  "foo.DoFoo func(a **int)",
+			expected:  "func foo.DoFoo(a **int)",
 		},
 		{
 			name:      "with a blank function arg",
 			declFunc:  "(a int, f func()) {}",
 			usageArgs: "1, func() {}",
-			expected:  "foo.DoFoo func(a int, f func())",
+			expected:  "func foo.DoFoo(a int, f func())",
 		},
 		{
 			name:      "with a slice parameter",
 			declFunc:  "(a int, b []string) {}",
 			usageArgs: "1, nil",
-			expected:  "foo.DoFoo func(a int, b []string)",
+			expected:  "func foo.DoFoo(a int, b []string)",
 		},
 		{
 			name:      "with a slice parameter",
 			declFunc:  "(a int, b []string, c []string) {}",
 			usageArgs: "1, nil, nil",
-			expected:  "foo.DoFoo func(a int, b, c []string)",
+			expected:  "func foo.DoFoo(a int, b, c []string)",
 		},
 		{
 			name:      "with a variadic parameter",
 			declFunc:  "(a int, b ...string) {}",
 			usageArgs: "1",
-			expected:  "foo.DoFoo func(a int, b ...string)",
+			expected:  "func foo.DoFoo(a int, b ...string)",
 		},
 		{
 			name:      "with a slice and variadic parameter",
 			declFunc:  "(a int, b []string, c ...string) {}",
 			usageArgs: "1, nil",
-			expected:  "foo.DoFoo func(a int, b []string, c ...string)",
+			expected:  "func foo.DoFoo(a int, b []string, c ...string)",
 		},
 		{
 			name:      "with slices and a variadic parameter",
 			declFunc:  "(a int, b []string, c []string, d ...string) {}",
 			usageArgs: "1, nil, nil",
-			expected:  "foo.DoFoo func(a int, b, c []string, d ...string)",
+			expected:  "func foo.DoFoo(a int, b, c []string, d ...string)",
 		},
 		{
 			name:      "with a basic type return",
 			declFunc:  "() int { return 0 }",
 			usageArgs: "",
-			expected:  "foo.DoFoo func() int",
+			expected:  "func foo.DoFoo() int",
 		},
 		{
 			name:      "with a pointer struct return",
 			declFunc:  "() *Foo { return nil }\n\ttype Foo struct {}",
 			usageArgs: "",
-			expected:  "foo.DoFoo func() *foo.Foo",
+			expected:  "func foo.DoFoo() *foo.Foo",
 		},
 		{
 			name:      "with a basic type and an error return",
 			declFunc:  "() (int, error) { return 0, nil }",
 			usageArgs: "",
-			expected:  "foo.DoFoo func() (int, error)",
+			expected:  "func foo.DoFoo() (int, error)",
 		},
 		// More return value tests...
 	}
 
 	for _, tc := range tests {
 		t.Run(tc.name, func(t *testing.T) {
-
 			packages := map[string]map[string]string{
 				"foo": map[string]string{
 					"foo.go": fmt.Sprintf(src1, tc.declFunc),
@@ -193,7 +192,60 @@ func Test_Workspace_Hover_Package_Func(t *testing.T) {
 	}
 }
 
-func Test_Workspace_Hover_Struct_Func(t *testing.T) {
+func Test_Workspace_Hover_Struct_Pointer_Receiver_Func(t *testing.T) {
+	src1 := `package foo
+	type Foo struct {}
+	func (%s *Foo) Do()`
+
+	src2 := `package bar
+	import "../foo"
+	func Do() {
+		f := foo.Foo{}
+		f.Do()
+	}`
+
+	tests := []struct {
+		name         string
+		receiverName string
+		expected     string
+	}{
+		{
+			name:         "with named receiver",
+			receiverName: "f",
+			expected:     "func (f *foo.Foo) Do()",
+		},
+	}
+
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			packages := map[string]map[string]string{
+				"foo": map[string]string{
+					"foo.go": fmt.Sprintf(src1, tc.receiverName),
+				},
+				"bar": map[string]string{
+					"bar.go": src2,
+				},
+			}
+
+			w := workspaceSetup(t, "/go/src/bar", packages, false)
+
+			p := &token.Position{
+				Filename: "/go/src/bar/bar.go",
+				Line:     5,
+				Column:   5,
+			}
+			text, err := w.Hover(p)
+			if err != nil {
+				t.Fatal(err)
+			}
+			if text != tc.expected {
+				t.Errorf("Expected '%s', got '%s'", tc.expected, text)
+			}
+		})
+	}
+}
+
+func Test_Workspace_Hover_Struct_Value_Receiver_Func(t *testing.T) {
 }
 
 func Test_Workspace_Hover_Local_Var_Basic(t *testing.T) {

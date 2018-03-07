@@ -96,9 +96,10 @@ func (w *Workspace) Hover(p *token.Position) (string, error) {
 	case *types.Const:
 		s = fmt.Sprintf("const %s.%s %s = %s", pkg.typesPkg.Name(), obj.Name(), getConstType(t), t.Val().String())
 	case *types.Func:
-		var sb strings.Builder
-		fmt.Fprintf(&sb, "%s.%s func", pkg.typesPkg.Name(), obj.Name())
 		sig := t.Type().(*types.Signature)
+		var sb strings.Builder
+		sb.WriteString("func ")
+		w.makeReceiver(&sb, obj, pkg, sig)
 		w.makeParamList(&sb, sig)
 		w.makeReturnList(&sb, sig.Results())
 		s = sb.String()
@@ -120,7 +121,7 @@ func (w *Workspace) Hover(p *token.Position) (string, error) {
 					if !f.Anonymous() {
 						fmt.Fprintf(&sb, "%s ", f.Name())
 					}
-					fmt.Fprintf(&sb, w.getVarType(f))
+					w.getVarType(&sb, f)
 				}
 				fmt.Fprintf(&sb, "\n}")
 			}
@@ -131,6 +132,21 @@ func (w *Workspace) Hover(p *token.Position) (string, error) {
 	}
 
 	return s, nil
+}
+
+func (w *Workspace) makeReceiver(sb *strings.Builder, obj types.Object, pkg *Package, sig *types.Signature) {
+	rec := sig.Recv()
+	if rec == nil {
+		sb.WriteString(pkg.typesPkg.Name())
+		sb.WriteRune('.')
+	} else {
+		sb.WriteRune('(')
+		sb.WriteString(rec.Name())
+		sb.WriteRune(' ')
+		w.getVarType(sb, rec)
+		sb.WriteString(") ")
+	}
+	sb.WriteString(obj.Name())
 }
 
 func (w *Workspace) makeParamList(sb *strings.Builder, sig *types.Signature) {
@@ -219,21 +235,30 @@ func (w *Workspace) makeTupleList(sb *strings.Builder, params *types.Tuple, vari
 	}
 }
 
-func (w *Workspace) getVarType(v *types.Var) string {
+func (w *Workspace) getVarType(sb *strings.Builder, v *types.Var) {
 	fmt.Printf("getVarType: %#v\n", v)
-	switch t := v.Type().(type) {
-	case *types.Basic:
-		return getBasicType(t)
-	case *types.Named:
-		n, ok := w.Loader.caravan.Find(t.Obj().Pkg().Path())
-		if !ok {
-			return "error"
+	var f func(typ types.Type)
+	f = func(typ types.Type) {
+		switch t := typ.(type) {
+		case *types.Basic:
+			sb.WriteString(getBasicType(t))
+		case *types.Named:
+			n, ok := w.Loader.caravan.Find(t.Obj().Pkg().Path())
+			if !ok {
+				sb.WriteString("error")
+			}
+			pkg := n.Element.(*Package)
+			sb.WriteString(pkg.typesPkg.Name())
+			sb.WriteRune('.')
+			sb.WriteString(t.Obj().Name())
+		case *types.Pointer:
+			sb.WriteRune('*')
+			f(t.Elem())
+		default:
+			sb.WriteString("unknown")
 		}
-		pkg := n.Element.(*Package)
-		return fmt.Sprintf("%s.%s", pkg.typesPkg.Name(), t.Obj().Name())
-	default:
-		return "unknown"
 	}
+	f(v.Type())
 }
 
 func getBasicType(o *types.Basic) string {
