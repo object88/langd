@@ -214,6 +214,16 @@ func Test_Workspace_Hover_Struct_Pointer_Receiver_Func(t *testing.T) {
 			receiverName: "f",
 			expected:     "func (f *foo.Foo) Do()",
 		},
+		{
+			name:         "with named receiver",
+			receiverName: "_",
+			expected:     "func (_ *foo.Foo) Do()",
+		},
+		{
+			name:         "with named receiver",
+			receiverName: "",
+			expected:     "func (*foo.Foo) Do()",
+		},
 	}
 
 	for _, tc := range tests {
@@ -266,6 +276,16 @@ func Test_Workspace_Hover_Struct_Value_Receiver_Func(t *testing.T) {
 			name:         "with named receiver",
 			receiverName: "f",
 			expected:     "func (f foo.Foo) Do()",
+		},
+		{
+			name:         "with named receiver",
+			receiverName: "_",
+			expected:     "func (_ foo.Foo) Do()",
+		},
+		{
+			name:         "with named receiver",
+			receiverName: "",
+			expected:     "func (foo.Foo) Do()",
 		},
 	}
 

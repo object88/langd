@@ -141,8 +141,11 @@ func (w *Workspace) makeReceiver(sb *strings.Builder, obj types.Object, pkg *Pac
 		sb.WriteRune('.')
 	} else {
 		sb.WriteRune('(')
-		sb.WriteString(rec.Name())
-		sb.WriteRune(' ')
+		name := rec.Name()
+		if len(name) != 0 {
+			sb.WriteString(name)
+			sb.WriteRune(' ')
+		}
 		w.getVarType(sb, rec)
 		sb.WriteString(") ")
 	}
