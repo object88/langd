@@ -95,6 +95,13 @@ func (w *Workspace) Hover(p *token.Position) (string, error) {
 	switch t := obj.(type) {
 	case *types.Const:
 		s = fmt.Sprintf("const %s.%s %s = %s", pkg.typesPkg.Name(), obj.Name(), getConstType(t), t.Val().String())
+	case *types.Func:
+		var sb strings.Builder
+		fmt.Fprintf(&sb, "%s.%s func", pkg.typesPkg.Name(), obj.Name())
+		sig := t.Type().(*types.Signature)
+		w.makeParamList(&sb, sig)
+		w.makeReturnList(&sb, sig.Results())
+		s = sb.String()
 	case *types.Var:
 		switch t1 := t.Type().(type) {
 		case *types.Basic:
@@ -119,12 +126,101 @@ func (w *Workspace) Hover(p *token.Position) (string, error) {
 			}
 			s = sb.String()
 		}
+	default:
+		fmt.Printf("t: %#v\nt.Type(): %#v\n", t, t.Type())
 	}
 
 	return s, nil
 }
 
+func (w *Workspace) makeParamList(sb *strings.Builder, sig *types.Signature) {
+	sb.WriteRune('(')
+	w.makeTupleList(sb, sig.Params(), sig.Variadic())
+	sb.WriteRune(')')
+}
+
+func (w *Workspace) makeReturnList(sb *strings.Builder, params *types.Tuple) {
+	switch params.Len() {
+	case 0:
+		return
+	case 1:
+		sb.WriteRune(' ')
+		w.makeTupleList(sb, params, false)
+	default:
+		sb.WriteString(" (")
+		w.makeTupleList(sb, params, false)
+		sb.WriteRune(')')
+	}
+}
+
+func (w *Workspace) makeTupleList(sb *strings.Builder, params *types.Tuple, variadic bool) {
+	l := params.Len()
+	if l == 0 {
+		return
+	}
+
+	m := l - 1
+	if variadic {
+		m--
+	}
+
+	for k := 0; k < l; k++ {
+		if k != 0 {
+			sb.WriteString(", ")
+		}
+
+		p := params.At(k)
+		name := p.Name()
+		if len(name) != 0 {
+			sb.WriteString(name)
+		}
+
+		fmt.Printf("%d -> %#v\n\ttype: %#v\n", k, p, p.Type())
+
+		if k < m && types.Identical(p.Type(), params.At(k+1).Type()) {
+			continue
+		}
+
+		if len(name) != 0 {
+			sb.WriteRune(' ')
+		}
+
+		var f func(typ types.Type)
+		f = func(typ types.Type) {
+			switch t0 := typ.(type) {
+			case *types.Pointer:
+				sb.WriteRune('*')
+				f(t0.Elem())
+			case *types.Basic:
+				sb.WriteString(t0.Name())
+			case *types.Named:
+				t0pkg := t0.Obj().Pkg()
+				if t0pkg != nil {
+					sb.WriteString(t0pkg.Name())
+					sb.WriteRune('.')
+				}
+				sb.WriteString(t0.Obj().Name())
+			case *types.Slice:
+				if k == l-1 && variadic {
+					sb.WriteString("...")
+				} else {
+					sb.WriteString("[]")
+				}
+				f(t0.Elem())
+			case *types.Signature:
+				sb.WriteString("func")
+				w.makeParamList(sb, t0)
+			default:
+				sb.WriteString("unknown")
+			}
+		}
+
+		f(p.Type())
+	}
+}
+
 func (w *Workspace) getVarType(v *types.Var) string {
+	fmt.Printf("getVarType: %#v\n", v)
 	switch t := v.Type().(type) {
 	case *types.Basic:
 		return getBasicType(t)
@@ -135,8 +231,9 @@ func (w *Workspace) getVarType(v *types.Var) string {
 		}
 		pkg := n.Element.(*Package)
 		return fmt.Sprintf("%s.%s", pkg.typesPkg.Name(), t.Obj().Name())
+	default:
+		return "unknown"
 	}
-	return "unknown"
 }
 
 func getBasicType(o *types.Basic) string {
