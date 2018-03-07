@@ -194,8 +194,6 @@ func (w *Workspace) makeTupleList(sb *strings.Builder, params *types.Tuple, vari
 			sb.WriteString(name)
 		}
 
-		fmt.Printf("%d -> %#v\n\ttype: %#v\n", k, p, p.Type())
-
 		if k < m && types.Identical(p.Type(), params.At(k+1).Type()) {
 			continue
 		}
@@ -239,7 +237,6 @@ func (w *Workspace) makeTupleList(sb *strings.Builder, params *types.Tuple, vari
 }
 
 func (w *Workspace) getVarType(sb *strings.Builder, v *types.Var) {
-	fmt.Printf("getVarType: %#v\n", v)
 	var f func(typ types.Type)
 	f = func(typ types.Type) {
 		switch t := typ.(type) {
