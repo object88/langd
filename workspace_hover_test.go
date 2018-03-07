@@ -246,6 +246,56 @@ func Test_Workspace_Hover_Struct_Pointer_Receiver_Func(t *testing.T) {
 }
 
 func Test_Workspace_Hover_Struct_Value_Receiver_Func(t *testing.T) {
+	src1 := `package foo
+	type Foo struct {}
+	func (%s Foo) Do()`
+
+	src2 := `package bar
+	import "../foo"
+	func Do() {
+		f := foo.Foo{}
+		f.Do()
+	}`
+
+	tests := []struct {
+		name         string
+		receiverName string
+		expected     string
+	}{
+		{
+			name:         "with named receiver",
+			receiverName: "f",
+			expected:     "func (f foo.Foo) Do()",
+		},
+	}
+
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			packages := map[string]map[string]string{
+				"foo": map[string]string{
+					"foo.go": fmt.Sprintf(src1, tc.receiverName),
+				},
+				"bar": map[string]string{
+					"bar.go": src2,
+				},
+			}
+
+			w := workspaceSetup(t, "/go/src/bar", packages, false)
+
+			p := &token.Position{
+				Filename: "/go/src/bar/bar.go",
+				Line:     5,
+				Column:   5,
+			}
+			text, err := w.Hover(p)
+			if err != nil {
+				t.Fatal(err)
+			}
+			if text != tc.expected {
+				t.Errorf("Expected '%s', got '%s'", tc.expected, text)
+			}
+		})
+	}
 }
 
 func Test_Workspace_Hover_Local_Var_Basic(t *testing.T) {
