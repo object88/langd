@@ -40,7 +40,7 @@ func (h *Handler) processInit(p *json.RawMessage) (interface{}, error) {
 				},
 				WillSave: true,
 			},
-			HoverProvider:                    false,
+			HoverProvider:                    true,
 			CompletionProvider:               nil,
 			SignatureHelpProvider:            nil,
 			DefinitionProvider:               true,

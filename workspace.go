@@ -3,9 +3,11 @@ package langd
 import (
 	"fmt"
 	"go/ast"
+	"go/constant"
 	"go/token"
 	"go/types"
 	"path/filepath"
+	"strings"
 	"sync"
 
 	"github.com/object88/langd/log"
@@ -80,6 +82,224 @@ func (w *Workspace) CloseFile(absPath string) error {
 	w.log.Debugf("File %s is closed\n", absPath)
 
 	return nil
+}
+
+// Hover supplies the hover text for a given position
+func (w *Workspace) Hover(p *token.Position) (string, error) {
+	obj, pkg, err := w.locateDeclaration(p)
+	if err != nil {
+		return "", err
+	}
+
+	var s string
+	switch t := obj.(type) {
+	case *types.Const:
+		s = fmt.Sprintf("const %s.%s %s = %s", pkg.typesPkg.Name(), obj.Name(), getConstType(t), t.Val().String())
+	case *types.Func:
+		sig := t.Type().(*types.Signature)
+		var sb strings.Builder
+		sb.WriteString("func ")
+		w.makeReceiver(&sb, obj, pkg, sig)
+		w.makeParamList(&sb, sig)
+		w.makeReturnList(&sb, sig.Results())
+		s = sb.String()
+	case *types.Var:
+		switch t1 := t.Type().(type) {
+		case *types.Basic:
+			s = fmt.Sprintf("%s.%s %s", pkg.typesPkg.Name(), obj.Name(), getBasicType(t1))
+		case *types.Named:
+			var sb strings.Builder
+			fmt.Fprintf(&sb, "type %s.%s struct {", pkg.typesPkg.Name(), t1.Obj().Name())
+			t1u := t1.Underlying()
+			t1us := t1u.(*types.Struct)
+			if t1us.NumFields() == 0 {
+				fmt.Fprintf(&sb, "}")
+			} else {
+				for k := 0; k < t1us.NumFields(); k++ {
+					f := t1us.Field(k)
+					fmt.Fprintf(&sb, "\n\t")
+					if !f.Anonymous() {
+						fmt.Fprintf(&sb, "%s ", f.Name())
+					}
+					w.getVarType(&sb, f)
+				}
+				fmt.Fprintf(&sb, "\n}")
+			}
+			s = sb.String()
+		}
+	default:
+		fmt.Printf("t: %#v\nt.Type(): %#v\n", t, t.Type())
+	}
+
+	return s, nil
+}
+
+func (w *Workspace) makeReceiver(sb *strings.Builder, obj types.Object, pkg *Package, sig *types.Signature) {
+	rec := sig.Recv()
+	if rec == nil {
+		sb.WriteString(pkg.typesPkg.Name())
+		sb.WriteRune('.')
+	} else {
+		sb.WriteRune('(')
+		name := rec.Name()
+		if len(name) != 0 {
+			sb.WriteString(name)
+			sb.WriteRune(' ')
+		}
+		w.getVarType(sb, rec)
+		sb.WriteString(") ")
+	}
+	sb.WriteString(obj.Name())
+}
+
+func (w *Workspace) makeParamList(sb *strings.Builder, sig *types.Signature) {
+	sb.WriteRune('(')
+	w.makeTupleList(sb, sig.Params(), sig.Variadic())
+	sb.WriteRune(')')
+}
+
+func (w *Workspace) makeReturnList(sb *strings.Builder, params *types.Tuple) {
+	switch params.Len() {
+	case 0:
+		return
+	case 1:
+		sb.WriteRune(' ')
+		w.makeTupleList(sb, params, false)
+	default:
+		sb.WriteString(" (")
+		w.makeTupleList(sb, params, false)
+		sb.WriteRune(')')
+	}
+}
+
+func (w *Workspace) makeTupleList(sb *strings.Builder, params *types.Tuple, variadic bool) {
+	l := params.Len()
+	if l == 0 {
+		return
+	}
+
+	m := l - 1
+	if variadic {
+		m--
+	}
+
+	for k := 0; k < l; k++ {
+		if k != 0 {
+			sb.WriteString(", ")
+		}
+
+		p := params.At(k)
+		name := p.Name()
+		if len(name) != 0 {
+			sb.WriteString(name)
+		}
+
+		if k < m && types.Identical(p.Type(), params.At(k+1).Type()) {
+			continue
+		}
+
+		if len(name) != 0 {
+			sb.WriteRune(' ')
+		}
+
+		var f func(typ types.Type)
+		f = func(typ types.Type) {
+			switch t0 := typ.(type) {
+			case *types.Pointer:
+				sb.WriteRune('*')
+				f(t0.Elem())
+			case *types.Basic:
+				sb.WriteString(t0.Name())
+			case *types.Named:
+				t0pkg := t0.Obj().Pkg()
+				if t0pkg != nil {
+					sb.WriteString(t0pkg.Name())
+					sb.WriteRune('.')
+				}
+				sb.WriteString(t0.Obj().Name())
+			case *types.Slice:
+				if k == l-1 && variadic {
+					sb.WriteString("...")
+				} else {
+					sb.WriteString("[]")
+				}
+				f(t0.Elem())
+			case *types.Signature:
+				sb.WriteString("func")
+				w.makeParamList(sb, t0)
+			default:
+				sb.WriteString("unknown")
+			}
+		}
+
+		f(p.Type())
+	}
+}
+
+func (w *Workspace) getVarType(sb *strings.Builder, v *types.Var) {
+	var f func(typ types.Type)
+	f = func(typ types.Type) {
+		switch t := typ.(type) {
+		case *types.Basic:
+			sb.WriteString(getBasicType(t))
+		case *types.Named:
+			n, ok := w.Loader.caravan.Find(t.Obj().Pkg().Path())
+			if !ok {
+				sb.WriteString("error")
+			}
+			pkg := n.Element.(*Package)
+			sb.WriteString(pkg.typesPkg.Name())
+			sb.WriteRune('.')
+			sb.WriteString(t.Obj().Name())
+		case *types.Pointer:
+			sb.WriteRune('*')
+			f(t.Elem())
+		default:
+			sb.WriteString("unknown")
+		}
+	}
+	f(v.Type())
+}
+
+func getBasicType(o *types.Basic) string {
+	var tName string
+	if o.Info()&types.IsUntyped == types.IsUntyped {
+		switch o.Kind() {
+		case types.UntypedBool:
+			tName = "bool"
+		case types.UntypedComplex:
+			tName = "complex"
+		case types.UntypedFloat:
+			tName = "float"
+		case types.UntypedInt:
+			tName = "int"
+		case types.UntypedNil:
+			tName = "nil"
+		case types.UntypedRune:
+			tName = "rune"
+		case types.UntypedString:
+			tName = "string"
+		}
+	} else {
+		tName = o.Name()
+	}
+	return tName
+}
+
+func getConstType(o *types.Const) string {
+	switch o.Val().Kind() {
+	case constant.Bool:
+		return "bool"
+	case constant.String:
+		return "string"
+	case constant.Int:
+		return "int"
+	case constant.Float:
+		return "float"
+	case constant.Complex:
+		return "complex"
+	}
+	return "(unknown)"
 }
 
 // LocateIdent scans the loaded fset for the identifier at the requested
