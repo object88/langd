@@ -48,3 +48,15 @@
 [[constraint]]
   branch = "master"
   name = "github.com/dgryski/go-mph"
+
+[[constraint]]
+  name = "github.com/spf13/viper"
+  version = "1.0.0"
+
+[[constraint]]
+  name = "github.com/cloudfoundry/gosigar"
+  version = "1.1.0"
+
+[[constraint]]
+  name = "github.com/pkg/errors"
+  version = "0.8.0"
