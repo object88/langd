@@ -61,6 +61,11 @@ type DidChangeConfigurationParams struct {
 	Settings map[string]interface{} `json:"settings"`
 }
 
+type Config struct {
+	Subs   map[string]*Config
+	Values map[string]interface{}
+}
+
 // DidChangeTextDocumentParams is supplied by the client to describe the
 // change or changes made to a text document
 // https://github.com/Microsoft/language-server-protocol/blob/master/protocol.md#didchangetextdocument-notification
@@ -143,6 +148,12 @@ type InitializeParams struct {
 	Capabilities ClientCapabilities `json:"capabilities"`
 
 	Trace string `json:"trace"`
+
+	// WorkspaceFolders are the workspace folders configured in the client when
+	// the server starts.  This property is only available if the client
+	// supports workspace folders.  It can be `null` if the client supports
+	// workspace folders but none are configured.
+	WorkspaceFolders *[]WorkspaceFolder `json:"workspaceFolders,omitempty"`
 }
 
 // Example initialization options:
@@ -688,4 +699,13 @@ type VersionedTextDocumentIdentifier struct {
 
 	// Version is the version number of this document.
 	Version int `json:"version"`
+}
+
+// WorkspaceFolder is provided when opening a workspace
+type WorkspaceFolder struct {
+	// URI is the associated URI for this workspace folder.
+	URI string `json:"uri"`
+
+	// Name is the name of the workspace folder. Defaults to the uri's basename.
+	Name string `json:"name"`
 }

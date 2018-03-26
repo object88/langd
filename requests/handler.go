@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"os"
+	"reflect"
 	"runtime"
 
 	"github.com/object88/langd"
@@ -12,6 +13,7 @@ import (
 	"github.com/object88/langd/log"
 	"github.com/object88/langd/sigqueue"
 	"github.com/sourcegraph/jsonrpc2"
+	"github.com/spf13/viper"
 )
 
 type handleReqFunc func(ctx context.Context, req *jsonrpc2.Request)
@@ -24,6 +26,9 @@ type Handler struct {
 	log           *log.Log
 	incomingQueue chan int
 	outgoingQueue <-chan int
+
+	// The base of the workspace
+	rootURI string
 
 	rm map[int]requestHandler
 	sq *sigqueue.Sigqueue
@@ -66,6 +71,8 @@ func NewHandler(load *health.Load) *Handler {
 	lc := langd.NewLoaderContext(loader, runtime.GOOS, runtime.GOARCH, func(lc *langd.LoaderContext) {
 		lc.Log = l
 	})
+	l.SetLevel(log.Verbose)
+
 	outgoingQueue := make(chan int, 256)
 	h := &Handler{
 		incomingQueue: make(chan int, 1024),
@@ -80,12 +87,24 @@ func NewHandler(load *health.Load) *Handler {
 	}
 
 	h.hFunc = h.uninitedHandler
-	h.log.SetLevel(log.Verbose)
+
+	// Start a routine to process requests
+	h.startProcessingQueue()
 
 	return h
 }
 
-func (h *Handler) InitLoader(root string) {
+// ConfigureLoader will instantiate the loader if its not present, and provide
+// the GOROOT specified by the settings
+func (h *Handler) ConfigureLoader(settings *viper.Viper) {
+	if h.workspace.Loader != nil {
+		return
+	}
+
+	root := settings.GetString("go.goroot")
+	if root == "" {
+		root = runtime.GOROOT()
+	}
 	loader := langd.NewLoader()
 	loaderContext := langd.NewLoaderContext(loader, runtime.GOOS, runtime.GOARCH, func(lc *langd.LoaderContext) {
 		lc.Log = h.log
@@ -144,6 +163,8 @@ func (h *Handler) uninitedHandler(ctx context.Context, req *jsonrpc2.Request) {
 		}
 		h.conn.Reply(ctx, req.ID, result)
 
+	// case initializedHandler:
+	// 	result, err :=
 	case meth == exitNotification:
 		// Should close down this connection.
 		// TODO: handle exit
@@ -191,15 +212,19 @@ func (h *Handler) initedHandler(ctx context.Context, req *jsonrpc2.Request) {
 func (h *Handler) startProcessing(rhid int) {
 	rh := h.rm[rhid]
 
+	h.log.Verbosef("%d: Starting request type %s\n", rhid, reflect.TypeOf(rh))
+
 	err := rh.preprocess(rh.Params())
 	if err != nil {
 		// Bad news...
 		// TODO: determine what to do here.
-		h.log.Errorf(err.Error())
+		h.log.Errorf("%d: Error preprocessing request type %s: %+v\n", rhid, err)
 		return
 	}
 
 	if rh.Replies() {
+		h.log.Verbosef("%d: Waiting...\n", rhid)
+
 		h.sq.WaitOn(rh.ID())
 	}
 
@@ -209,6 +234,8 @@ func (h *Handler) startProcessing(rhid int) {
 }
 
 func (h *Handler) finishProcessing(rh requestHandler) {
+	h.log.Verbosef("%d: processing...\n", rh.ID())
+
 	err := rh.work()
 
 	h.workspace.Unlock(rh.RequireWriteLock())
@@ -217,7 +244,7 @@ func (h *Handler) finishProcessing(rh requestHandler) {
 		// Should we respond right away?  Set up with an auto-responder?
 		// TODO: Cannot do nothing here; if the request is a method,
 		// it wants a response.
-		h.log.Errorf(err.Error())
+		h.log.Errorf("Error handling request type %s: %+v\n", reflect.TypeOf(rh), err)
 		return
 	}
 	if rh.Replies() {
