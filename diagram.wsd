@@ -1,0 +1,28 @@
+@startuml langd
+
+class Package {
+	- absPath
+	- os
+	- arch
+	- tags
+}
+
+class Workspace {
+	- startDir
+	- goroot
+	- os
+	- arch
+	- tags
+}
+
+Workspace "1" o-- "1" Handler
+Loader "1" o-- "many" Workspace
+Importer o-- types.Config
+types.Config o-- Loader
+build.Context o-- Loader
+types.Package "1" o-- "1" Package
+build.Package "1" o-- "1" Package
+Package "many" o-- "1" Caravan
+Caravan "1" o-- "1" Loader
+
+@enduml
