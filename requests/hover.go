@@ -3,6 +3,7 @@ package requests
 import (
 	"context"
 	"encoding/json"
+	"fmt"
 	"go/token"
 	"strings"
 
@@ -45,7 +46,7 @@ func (rh *hoverHandler) preprocess(params *json.RawMessage) error {
 	p := &token.Position{
 		Filename: path,
 		Line:     typedParams.Position.Line + 1,
-		Column:   typedParams.Position.Character,
+		Column:   typedParams.Position.Character + 1,
 	}
 
 	rh.p = p
@@ -70,5 +71,6 @@ func (rh *hoverHandler) work() error {
 }
 
 func (rh *hoverHandler) reply() (interface{}, error) {
+	fmt.Printf("Hover: replying w/ '%s'\n", rh.result.Contents.Value)
 	return rh.result, nil
 }

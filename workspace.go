@@ -90,6 +90,7 @@ func (w *Workspace) CloseFile(absPath string) error {
 func (w *Workspace) Hover(p *token.Position) (string, error) {
 	obj, pkg, err := w.locateDeclaration(p)
 	if err != nil {
+		fmt.Printf("Have err: %s\n", err.Error())
 		return "", err
 	}
 
@@ -105,6 +106,30 @@ func (w *Workspace) Hover(p *token.Position) (string, error) {
 		w.makeParamList(&sb, sig)
 		w.makeReturnList(&sb, sig.Results())
 		s = sb.String()
+	case *types.TypeName:
+		// &types.TypeName{object:types.object{parent:(*types.Scope)(0xc4297d8460), pos:251653, pkg:(*types.Package)(0xc4297d84b0), name:"ProcessingStats", typ:(*types.Named)(0xc4357a9aa0), order_:0x1, scopePos_:0}}
+		// t.Type(): &types.Named{obj:(*types.TypeName)(0xc4297d85a0), underlying:(*types.Struct)(0xc4357a9ad0), methods:[]*types.Func{(*types.Func)(0xc4297d8640), (*types.Func)(0xc4297d86e0), (*types.Func)(0xc4297d8730), (*types.Func)(0xc4297d8780)}}
+		switch t1 := t.Type().(type) {
+		case *types.Named:
+			var sb strings.Builder
+			fmt.Fprintf(&sb, "type %s.%s struct {", pkg.typesPkg.Name(), t1.Obj().Name())
+			t1u := t1.Underlying()
+			t1us := t1u.(*types.Struct)
+			if t1us.NumFields() == 0 {
+				fmt.Fprintf(&sb, "}")
+			} else {
+				for k := 0; k < t1us.NumFields(); k++ {
+					f := t1us.Field(k)
+					fmt.Fprintf(&sb, "\n\t")
+					if !f.Anonymous() {
+						fmt.Fprintf(&sb, "%s ", f.Name())
+					}
+					w.getVarType(&sb, f)
+				}
+				fmt.Fprintf(&sb, "\n}")
+			}
+			s = sb.String()
+		}
 	case *types.Var:
 		switch t1 := t.Type().(type) {
 		case *types.Basic:
@@ -130,7 +155,11 @@ func (w *Workspace) Hover(p *token.Position) (string, error) {
 			s = sb.String()
 		}
 	default:
-		fmt.Printf("t: %#v\nt.Type(): %#v\n", t, t.Type())
+		if t == nil {
+			fmt.Printf("nil obj\n")
+		} else {
+			fmt.Printf("t: %#v\nt.Type(): %#v\n", t, t.Type())
+		}
 	}
 
 	return s, nil
@@ -358,6 +387,10 @@ func (w *Workspace) LocateDeclaration(p *token.Position) (*token.Position, error
 		return nil, err
 	}
 
+	if obj == nil {
+		return nil, nil
+	}
+
 	declPos := pkg.Fset.Position(obj.Pos())
 
 	return &declPos, nil
@@ -501,6 +534,11 @@ func (w *Workspace) locateDeclaration(p *token.Position) (types.Object, *Package
 
 	if x == nil {
 		fmt.Printf("No x found\n")
+		return nil, nil, nil
+	}
+
+	if pkg == nil {
+		fmt.Printf("No package found for x\n")
 		return nil, nil, nil
 	}
 
