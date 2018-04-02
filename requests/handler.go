@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"os"
+	"runtime"
 
 	"github.com/object88/langd"
 	"github.com/object88/langd/health"
@@ -62,8 +63,9 @@ func NewHandler(load *health.Load) *Handler {
 	// will start blocking.
 	incomingQueue := make(chan int, 1024)
 	l := log.CreateLog(os.Stdout)
-	loader := langd.NewLoader(func(loader *langd.Loader) {
-		loader.Log = l
+	loader := langd.NewLoader()
+	lc := langd.NewLoaderContext(loader, runtime.GOOS, runtime.GOARCH, func(lc *langd.LoaderContext) {
+		lc.Log = l
 	})
 	outgoingQueue := make(chan int, 256)
 	sq := sigqueue.CreateSigqueue(outgoingQueue)
@@ -77,7 +79,7 @@ func NewHandler(load *health.Load) *Handler {
 		rq: newRequestMap(getIniterFuncs()),
 
 		log:       l,
-		workspace: langd.CreateWorkspace(loader, l),
+		workspace: langd.CreateWorkspace(loader, lc, l),
 
 		load: load,
 	}

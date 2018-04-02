@@ -18,16 +18,18 @@ import (
 type Workspace struct {
 	rwm sync.RWMutex
 
-	Loader *Loader
+	Loader        *Loader
+	LoaderContext *LoaderContext
 
 	log *log.Log
 }
 
 // CreateWorkspace returns a new instance of the Workspace struct
-func CreateWorkspace(loader *Loader, log *log.Log) *Workspace {
+func CreateWorkspace(loader *Loader, loaderContext *LoaderContext, log *log.Log) *Workspace {
 	return &Workspace{
-		Loader: loader,
-		log:    log,
+		LoaderContext: loaderContext,
+		Loader:        loader,
+		log:           log,
 	}
 }
 
@@ -243,7 +245,7 @@ func (w *Workspace) getVarType(sb *strings.Builder, v *types.Var) {
 		case *types.Basic:
 			sb.WriteString(getBasicType(t))
 		case *types.Named:
-			n, ok := w.Loader.caravan.Find(t.Obj().Pkg().Path())
+			n, ok := w.Loader.caravan.Find(w.LoaderContext.BuildKey(t.Obj().Pkg().Path()))
 			if !ok {
 				sb.WriteString("error")
 			}
@@ -307,7 +309,8 @@ func getConstType(o *types.Const) string {
 func (w *Workspace) LocateIdent(p *token.Position) (*ast.Ident, error) {
 	absPath := filepath.Dir(p.Filename)
 
-	n, ok := w.Loader.caravan.Find(absPath)
+	key := w.LoaderContext.BuildKey(absPath)
+	n, ok := w.Loader.caravan.Find(key)
 	if !ok {
 		return nil, fmt.Errorf("No package loaded for '%s'", p.Filename)
 	}
@@ -445,7 +448,8 @@ func (w *Workspace) Unlock(write bool) {
 func (w *Workspace) locateDeclaration(p *token.Position) (types.Object, *Package, error) {
 	absPath := filepath.Dir(p.Filename)
 
-	n, ok := w.Loader.caravan.Find(absPath)
+	key := w.LoaderContext.BuildKey(absPath)
+	n, ok := w.Loader.caravan.Find(key)
 	if !ok {
 		return nil, nil, fmt.Errorf("No package loaded for '%s'", p.Filename)
 	}
@@ -545,7 +549,7 @@ func (w *Workspace) processSelectorExpr(v *ast.SelectorExpr, pkg *Package) (type
 		case *types.PkgName:
 			fmt.Printf("Have PkgName %s, type %s\n", v1.Name(), v1.Type())
 			absPath := v1.Imported().Path()
-			n, _ := w.Loader.caravan.Find(absPath)
+			n, _ := w.Loader.caravan.Find(w.LoaderContext.BuildKey(absPath))
 			pkg1 := n.Element.(*Package)
 			fmt.Printf("From pkg %#v\n", pkg1)
 
@@ -558,14 +562,14 @@ func (w *Workspace) processSelectorExpr(v *ast.SelectorExpr, pkg *Package) (type
 			fmt.Printf("Have Var %s, type %s\n\tv1: %#v\n\tv1.Sel: %#v\n", v1.Name(), v1.Type(), v1, v.Sel)
 			vSelObj := pkg.checker.ObjectOf(v.Sel)
 			path := vSelObj.Pkg().Path()
-			n, _ := w.Loader.caravan.Find(path)
+			n, _ := w.Loader.caravan.Find(w.LoaderContext.BuildKey(path))
 			pkg1 := n.Element.(*Package)
 			return vSelObj, pkg1, nil
 		}
 	case *ast.SelectorExpr:
 		vSelObj := pkg.checker.ObjectOf(v.Sel)
 		path := vSelObj.Pkg().Path()
-		n, _ := w.Loader.caravan.Find(path)
+		n, _ := w.Loader.caravan.Find(w.LoaderContext.BuildKey(path))
 		pkg1 := n.Element.(*Package)
 		return vSelObj, pkg1, nil
 	}
@@ -574,7 +578,7 @@ func (w *Workspace) processSelectorExpr(v *ast.SelectorExpr, pkg *Package) (type
 }
 
 func (w *Workspace) reloadPackageAndAscendants(absPath string) error {
-	n, ok := w.Loader.caravan.Find(absPath)
+	n, ok := w.Loader.caravan.Find(w.LoaderContext.BuildKey(absPath))
 	if !ok {
 		// Crapola.
 		return fmt.Errorf("Failed to find package for path %s", absPath)
@@ -584,14 +588,20 @@ func (w *Workspace) reloadPackageAndAscendants(absPath string) error {
 	p.loadState = unloaded
 	p.ResetChecker()
 	w.Loader.done = false
-	w.Loader.stateChange <- absPath
+	w.Loader.stateChange <- &stateChangeEvent{
+		key: w.LoaderContext.BuildKey(absPath),
+		lc:  w.LoaderContext,
+	}
 
 	asc := flattenAscendants(n)
 
 	for _, p1 := range asc {
 		p1.loadState = unloaded
 		p1.ResetChecker()
-		w.Loader.stateChange <- p1.absPath
+		w.Loader.stateChange <- &stateChangeEvent{
+			key: w.LoaderContext.BuildKey(p1.AbsPath),
+			lc:  w.LoaderContext,
+		}
 	}
 
 	return nil

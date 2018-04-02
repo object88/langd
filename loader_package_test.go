@@ -1,7 +1,7 @@
 package langd
 
 import (
-	"os"
+	"runtime"
 	"testing"
 
 	"github.com/object88/langd/log"
@@ -20,16 +20,31 @@ func Test_Load_Own_Package(t *testing.T) {
 	}
 
 	fc := buildutil.FakeContext(packages)
-	loader := NewLoader(func(l *Loader) {
-		l.context = fc
+	loader := NewLoader()
+	loader.Log.SetLevel(log.Debug)
+	lc := NewLoaderContext(loader, runtime.GOOS, runtime.GOARCH, func(lc *LoaderContext) {
+		lc.context = fc
 	})
-	w := CreateWorkspace(loader, log.CreateLog(os.Stdout))
-	w.log.SetLevel(log.Verbose)
 
 	done := loader.Start()
-	err := loader.LoadDirectory("/go/src/bar")
+	err := loader.LoadDirectory(lc, "/go/src/bar")
 	if err != nil {
 		t.Fatalf("Error while loading: %s", err.Error())
 	}
 	<-done
+
+	errCount := 0
+	loader.Errors(func(file string, errs []FileError) {
+		if errCount == 0 {
+			t.Errorf("Loading error in %s:\n", file)
+		}
+		for k, err := range errs {
+			t.Errorf("\t%d: %s\n", k, err.Message)
+		}
+		errCount++
+	})
+
+	if errCount != 0 {
+		t.Fatalf("Found %d errors", errCount)
+	}
 }

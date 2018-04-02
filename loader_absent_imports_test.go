@@ -1,8 +1,10 @@
 package langd
 
 import (
+	"runtime"
 	"testing"
 
+	"github.com/object88/langd/log"
 	"golang.org/x/tools/go/buildutil"
 )
 
@@ -22,11 +24,13 @@ func Test_Load_Missing_Imports(t *testing.T) {
 	}
 
 	fc := buildutil.FakeContext(packages)
-	loader := NewLoader(func(l *Loader) {
-		l.context = fc
+	loader := NewLoader()
+	loader.Log.SetLevel(log.Verbose)
+	lc := NewLoaderContext(loader, runtime.GOOS, runtime.GOARCH, func(lc *LoaderContext) {
+		lc.context = fc
 	})
 	done := loader.Start()
-	loader.LoadDirectory("/go/src/foo")
+	loader.LoadDirectory(lc, "/go/src/foo")
 	<-done
 
 	errCount := 0

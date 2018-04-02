@@ -8,6 +8,7 @@ import (
 	"fmt"
 	"go/token"
 	"os"
+	"runtime"
 	"testing"
 
 	"github.com/object88/langd/log"
@@ -16,14 +17,15 @@ import (
 
 func workspaceSetup(t *testing.T, startingPath string, packages map[string]map[string]string, expectFailure bool) *Workspace {
 	fc := buildutil.FakeContext(packages)
-	loader := NewLoader(func(l *Loader) {
-		l.context = fc
+	loader := NewLoader()
+	lc := NewLoaderContext(loader, runtime.GOOS, runtime.GOARCH, func(lc *LoaderContext) {
+		lc.context = fc
 	})
-	w := CreateWorkspace(loader, log.CreateLog(os.Stdout))
+	w := CreateWorkspace(loader, lc, log.CreateLog(os.Stdout))
 	w.log.SetLevel(log.Verbose)
 
 	done := loader.Start()
-	err := loader.LoadDirectory(startingPath)
+	err := loader.LoadDirectory(lc, startingPath)
 	if err != nil {
 		t.Fatalf("Error while loading directory '%s': %s", startingPath, err.Error())
 	}

@@ -1,6 +1,7 @@
 package langd
 
 import (
+	"runtime"
 	"testing"
 
 	"golang.org/x/tools/go/buildutil"
@@ -27,11 +28,12 @@ func Test_Load_PackageWithDifferentDir(t *testing.T) {
 	}
 
 	fc := buildutil.FakeContext(packages)
-	loader := NewLoader(func(l *Loader) {
-		l.context = fc
+	loader := NewLoader()
+	lc := NewLoaderContext(loader, runtime.GOOS, runtime.GOARCH, func(lc *LoaderContext) {
+		lc.context = fc
 	})
 	done := loader.Start()
-	loader.LoadDirectory("/go/src/foo")
+	loader.LoadDirectory(lc, "/go/src/foo")
 	<-done
 
 	errCount := 0

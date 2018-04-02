@@ -1082,7 +1082,7 @@ func testReferences(t *testing.T, w *Workspace, startPosition *token.Position, r
 	// Ensure that the file at for startPosition is open.  We will use our
 	// override of the build.Context to get the file contents
 	load := w.Loader.Start()
-	rc, _ := w.Loader.context.OpenFile(startPosition.Filename)
+	rc, _ := w.LoaderContext.context.OpenFile(startPosition.Filename)
 	b, err := ioutil.ReadAll(rc)
 	if err != nil {
 		t.Fatalf("Failed while attempting to read pseudo-file %s\n\t%s", startPosition.Filename, err.Error())

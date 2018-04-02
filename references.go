@@ -44,7 +44,8 @@ func (w *Workspace) locateReferences(obj types.Object, pkg *Package) []*ref {
 	}
 
 	if obj.Exported() {
-		n, ok := w.Loader.caravan.Find(pkg.absPath)
+		key := w.LoaderContext.BuildKey(pkg.AbsPath)
+		n, ok := w.Loader.caravan.Find(key)
 		if !ok {
 			// Should never get here.
 			panic("Shit.")
@@ -83,8 +84,8 @@ func flattenAscendants(n *collections.Node) map[string]*Package {
 	f = func(n *collections.Node) {
 		for _, n1 := range n.Ascendants {
 			p := n1.Element.(*Package)
-			if _, ok := asc[p.absPath]; !ok {
-				asc[p.absPath] = p
+			if _, ok := asc[p.AbsPath]; !ok {
+				asc[p.AbsPath] = p
 				f(n1)
 			}
 		}

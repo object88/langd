@@ -1,0 +1,23 @@
+@startuml langd
+
+interface types.Importer
+interface types.ImporterFrom
+
+class Handler
+note right: Per user connection
+
+class Importer << types.Importer, types.ImporterFrom >> {
+}
+
+Workspace "1" o-- "1" Handler
+Loader "1" o-- "1" Workspace
+Importer o-- types.Config
+Loader "1" o-- "1" Importer
+types.Config o-- Loader
+build.Context o-- Loader
+types.Package "1" o-- "1" Package
+build.Package "1" o-- "1" Package
+Package "many" o-- "1" Caravan
+Caravan "1" o-- "1" Loader
+
+@enduml
