@@ -730,7 +730,7 @@ func (l *Loader) processPackages(lc *LoaderContext, p *Package, importPaths []st
 			if !ok {
 				continue
 			}
-			targetP := n.Element.(*Package) // l.ensurePackage(lc, targetPath)
+			targetP := n.Element.(*Package)
 			imprts = append(imprts, targetP.String())
 		}
 		allImprts := strings.Join(imprts, ", ")

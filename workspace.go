@@ -107,53 +107,9 @@ func (w *Workspace) Hover(p *token.Position) (string, error) {
 		w.makeReturnList(&sb, sig.Results())
 		s = sb.String()
 	case *types.TypeName:
-		// &types.TypeName{object:types.object{parent:(*types.Scope)(0xc4297d8460), pos:251653, pkg:(*types.Package)(0xc4297d84b0), name:"ProcessingStats", typ:(*types.Named)(0xc4357a9aa0), order_:0x1, scopePos_:0}}
-		// t.Type(): &types.Named{obj:(*types.TypeName)(0xc4297d85a0), underlying:(*types.Struct)(0xc4357a9ad0), methods:[]*types.Func{(*types.Func)(0xc4297d8640), (*types.Func)(0xc4297d86e0), (*types.Func)(0xc4297d8730), (*types.Func)(0xc4297d8780)}}
-		switch t1 := t.Type().(type) {
-		case *types.Named:
-			var sb strings.Builder
-			fmt.Fprintf(&sb, "type %s.%s struct {", pkg.typesPkg.Name(), t1.Obj().Name())
-			t1u := t1.Underlying()
-			t1us := t1u.(*types.Struct)
-			if t1us.NumFields() == 0 {
-				fmt.Fprintf(&sb, "}")
-			} else {
-				for k := 0; k < t1us.NumFields(); k++ {
-					f := t1us.Field(k)
-					fmt.Fprintf(&sb, "\n\t")
-					if !f.Anonymous() {
-						fmt.Fprintf(&sb, "%s ", f.Name())
-					}
-					w.getVarType(&sb, f)
-				}
-				fmt.Fprintf(&sb, "\n}")
-			}
-			s = sb.String()
-		}
+		s = w.makeNamed(obj, pkg)
 	case *types.Var:
-		switch t1 := t.Type().(type) {
-		case *types.Basic:
-			s = fmt.Sprintf("%s.%s %s", pkg.typesPkg.Name(), obj.Name(), getBasicType(t1))
-		case *types.Named:
-			var sb strings.Builder
-			fmt.Fprintf(&sb, "type %s.%s struct {", pkg.typesPkg.Name(), t1.Obj().Name())
-			t1u := t1.Underlying()
-			t1us := t1u.(*types.Struct)
-			if t1us.NumFields() == 0 {
-				fmt.Fprintf(&sb, "}")
-			} else {
-				for k := 0; k < t1us.NumFields(); k++ {
-					f := t1us.Field(k)
-					fmt.Fprintf(&sb, "\n\t")
-					if !f.Anonymous() {
-						fmt.Fprintf(&sb, "%s ", f.Name())
-					}
-					w.getVarType(&sb, f)
-				}
-				fmt.Fprintf(&sb, "\n}")
-			}
-			s = sb.String()
-		}
+		s = w.makeNamed(obj, pkg)
 	default:
 		if t == nil {
 			fmt.Printf("nil obj\n")
@@ -162,7 +118,37 @@ func (w *Workspace) Hover(p *token.Position) (string, error) {
 		}
 	}
 
-	return s, nil
+	hover := "``` go\n" + s + "\n```"
+	return hover, nil
+}
+
+func (w *Workspace) makeNamed(obj types.Object, pkg *Package) string {
+	var s string
+	switch t1 := obj.Type().(type) {
+	case *types.Basic:
+		s = fmt.Sprintf("%s.%s %s", pkg.typesPkg.Name(), obj.Name(), getBasicType(t1))
+	case *types.Named:
+		var sb strings.Builder
+		fmt.Fprintf(&sb, "type %s.%s struct {", pkg.typesPkg.Name(), t1.Obj().Name())
+		t1u := t1.Underlying()
+		t1us := t1u.(*types.Struct)
+		if t1us.NumFields() == 0 {
+			fmt.Fprintf(&sb, "}")
+		} else {
+			for k := 0; k < t1us.NumFields(); k++ {
+				f := t1us.Field(k)
+				fmt.Fprintf(&sb, "\n\t")
+				if !f.Anonymous() {
+					fmt.Fprintf(&sb, "%s ", f.Name())
+				}
+				w.getVarType(&sb, f)
+			}
+			fmt.Fprintf(&sb, "\n}")
+		}
+		s = sb.String()
+	}
+
+	return s
 }
 
 func (w *Workspace) makeReceiver(sb *strings.Builder, obj types.Object, pkg *Package, sig *types.Signature) {

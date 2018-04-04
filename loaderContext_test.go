@@ -8,7 +8,7 @@ import (
 	"golang.org/x/tools/go/buildutil"
 )
 
-func Test_LoadContext_Blah(t *testing.T) {
+func Test_LoadContext_Same_Package_Same_Env(t *testing.T) {
 	src := `package bar
 	var BarVal int = 0`
 
@@ -70,7 +70,7 @@ func Test_LoadContext_Blah(t *testing.T) {
 	t.Error("OUTPUT")
 }
 
-func Test_LoadContext_Blah2(t *testing.T) {
+func Test_LoadContext_Same_Package_Different_Env(t *testing.T) {
 	src := `package bar
 	var BarVal BarType = 0`
 

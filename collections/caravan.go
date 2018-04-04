@@ -221,9 +221,11 @@ func checkLoop(fromKey Key, n *Node, checkedNodes map[Key]bool) error {
 // Example:
 // c := NewCaravan()
 // // ...
-// for i := range c.Iter() {
-//	// ...
-// }
+// caravan.Iter(func(key Key, node *Node) bool {
+// 	 p := node.Element.(*Package)
+// 	 // Do something with `p`
+// 	 return true
+// })
 func (c *Caravan) Iter(iter func(Key, *Node) bool) {
 	c.m.Lock()
 
