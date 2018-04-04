@@ -34,29 +34,32 @@ type CaravanWalker func(node *Node)
 // "Oh, dogs.  Sure, I like dags.  I like caravans more."
 // -- http://www.imdb.com/character/ch0003626/quotes
 type Caravan struct {
-	nodes map[string]*Node
-	roots map[string]*Node
+	nodes map[Key]*Node
+	roots map[Key]*Node
 	m     sync.Mutex
 }
 
 // Node is an element in a caravan graph
 type Node struct {
-	Ascendants      map[string]*Node
-	Descendants     map[string]*Node
+	Ascendants      map[Key]*Node
+	Descendants     map[Key]*Node
 	Element         Keyer
-	WeakDescendants map[string]*Node
+	WeakDescendants map[Key]*Node
 }
+
+type Key int
 
 // Keyer is the interface by which an element in a graph exposes its key
 type Keyer interface {
-	Key() string
+	Key() Key
+	String() string
 }
 
 // CreateCaravan returns an initialized caravan struct
 func CreateCaravan() *Caravan {
 	return &Caravan{
-		nodes: map[string]*Node{},
-		roots: map[string]*Node{},
+		nodes: map[Key]*Node{},
+		roots: map[Key]*Node{},
 	}
 }
 
@@ -65,12 +68,12 @@ func CreateCaravan() *Caravan {
 // that are put into the caravan, and the resulting node is returned.  The
 // returned bool is true if the node already existed, and false if the create
 // method was invoked.
-func (c *Caravan) Ensure(key string, create func() Keyer) (*Node, bool) {
+func (c *Caravan) Ensure(key Key, create func() Keyer) (*Node, bool) {
 	c.m.Lock()
 	n, ok := c.nodes[key]
 	if !ok {
-		newK := create()
-		n = c.insert(key, newK)
+		newP := create()
+		n = c.insert(newP)
 	}
 	c.m.Unlock()
 
@@ -78,7 +81,7 @@ func (c *Caravan) Ensure(key string, create func() Keyer) (*Node, bool) {
 }
 
 // Find returns the element with the given key
-func (c *Caravan) Find(key string) (*Node, bool) {
+func (c *Caravan) Find(key Key) (*Node, bool) {
 	c.m.Lock()
 	n, ok := c.nodes[key]
 	c.m.Unlock()
@@ -89,8 +92,8 @@ func (c *Caravan) Find(key string) (*Node, bool) {
 }
 
 // Insert adds an element to the caravan at the root level
-func (c *Caravan) Insert(k Keyer) {
-	key := k.Key()
+func (c *Caravan) Insert(p Keyer) {
+	key := p.Key()
 	c.m.Lock()
 	if _, ok := c.nodes[key]; ok {
 		// Node already exists.
@@ -98,17 +101,18 @@ func (c *Caravan) Insert(k Keyer) {
 		return
 	}
 
-	c.insert(key, k)
+	c.insert(p)
 
 	c.m.Unlock()
 }
 
-func (c *Caravan) insert(key string, k Keyer) *Node {
+func (c *Caravan) insert(p Keyer) *Node {
+	key := p.Key()
 	n := &Node{
-		Ascendants:      map[string]*Node{},
-		Descendants:     map[string]*Node{},
-		Element:         k,
-		WeakDescendants: map[string]*Node{},
+		Ascendants:      map[Key]*Node{},
+		Descendants:     map[Key]*Node{},
+		Element:         p,
+		WeakDescendants: map[Key]*Node{},
 	}
 	c.nodes[key] = n
 	c.roots[key] = n
@@ -143,7 +147,7 @@ func (c *Caravan) Connect(from, to Keyer) error {
 		return nil
 	}
 
-	checkedNodes := map[string]bool{}
+	checkedNodes := map[Key]bool{}
 	err := checkLoop(fromKey, toNode, checkedNodes)
 	if err != nil {
 		c.m.Unlock()
@@ -193,10 +197,10 @@ func (c *Caravan) WeakConnect(from, to Keyer) error {
 	return nil
 }
 
-func checkLoop(fromKey string, n *Node, checkedNodes map[string]bool) error {
+func checkLoop(fromKey Key, n *Node, checkedNodes map[Key]bool) error {
 	key := n.Element.Key()
 	if fromKey == key {
-		return fmt.Errorf("Found loop:\n\t%s", key)
+		return fmt.Errorf("Found loop:\n\t%s", n.Element)
 	}
 
 	for k, v := range n.Descendants {
@@ -204,7 +208,7 @@ func checkLoop(fromKey string, n *Node, checkedNodes map[string]bool) error {
 			continue
 		}
 		if err := checkLoop(fromKey, v, checkedNodes); err != nil {
-			return fmt.Errorf("%s\n\t%s", err.Error(), key)
+			return fmt.Errorf("%s\n\t%s", err.Error(), n.Element)
 		}
 	}
 
@@ -217,10 +221,12 @@ func checkLoop(fromKey string, n *Node, checkedNodes map[string]bool) error {
 // Example:
 // c := NewCaravan()
 // // ...
-// for i := range c.Iter() {
-//	// ...
-// }
-func (c *Caravan) Iter(iter func(string, *Node) bool) {
+// caravan.Iter(func(key Key, node *Node) bool {
+// 	 p := node.Element.(*Package)
+// 	 // Do something with `p`
+// 	 return true
+// })
+func (c *Caravan) Iter(iter func(Key, *Node) bool) {
 	c.m.Lock()
 
 	for k, n := range c.nodes {
@@ -243,7 +249,7 @@ func (c *Caravan) Iter(iter func(string, *Node) bool) {
 // start at a leaf or root, pass through some interior nodes, then return
 // to a different root or leaf.
 func (c *Caravan) Walk(direction WalkDirection, walker CaravanWalker) {
-	visits := map[string]bool{}
+	visits := map[Key]bool{}
 
 	c.m.Lock()
 
@@ -260,7 +266,7 @@ func (c *Caravan) Walk(direction WalkDirection, walker CaravanWalker) {
 	c.m.Unlock()
 }
 
-func (c *Caravan) walkNodeDown(visits map[string]bool, node *Node, walker CaravanWalker) {
+func (c *Caravan) walkNodeDown(visits map[Key]bool, node *Node, walker CaravanWalker) {
 	for k := range node.Ascendants {
 		if _, ok := visits[k]; !ok {
 			// An ascendent hasn't been visited; can't process this node yet.
@@ -281,7 +287,7 @@ func (c *Caravan) walkNodeDown(visits map[string]bool, node *Node, walker Carava
 	}
 }
 
-func (c *Caravan) walkNodeUp(visits map[string]bool, node *Node, walker CaravanWalker) {
+func (c *Caravan) walkNodeUp(visits map[Key]bool, node *Node, walker CaravanWalker) {
 	visits[node.Element.Key()] = true
 
 	for k, v := range node.Descendants {

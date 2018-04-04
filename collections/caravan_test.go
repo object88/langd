@@ -1,16 +1,21 @@
 package collections
 
 import (
+	"fmt"
 	"testing"
 )
 
 type Foo struct {
-	key     string
+	key     Key
 	checked bool
 }
 
-func (f *Foo) Key() string {
+func (f *Foo) Key() Key {
 	return f.key
+}
+
+func (f *Foo) String() string {
+	return fmt.Sprintf("0x%x", f.key)
 }
 
 func Test_Caravan_Create(t *testing.T) {
@@ -30,11 +35,11 @@ func Test_Caravan_Create(t *testing.T) {
 
 func Test_Caravan_Ensure_Existing(t *testing.T) {
 	c := CreateCaravan()
-	f0 := &Foo{key: "123"}
+	f0 := &Foo{key: 123}
 	c.Insert(f0)
 
-	n, created := c.Ensure("123", func() Keyer {
-		return &Foo{key: "123"}
+	n, created := c.Ensure(123, func() Keyer {
+		return &Foo{key: 123}
 	})
 	if created {
 		t.Error("Got 'true' created")
@@ -45,10 +50,7 @@ func Test_Caravan_Ensure_Existing(t *testing.T) {
 	if n.Element == nil {
 		t.Error("Got nil element back from Ensure")
 	}
-	f, ok := n.Element.(*Foo)
-	if !ok {
-		t.Error("Element is not a Foo")
-	}
+	f := n.Element
 	if f != f0 {
 		t.Error("Returned Foo pointer does not match the original inserted Foo")
 	}
@@ -56,11 +58,11 @@ func Test_Caravan_Ensure_Existing(t *testing.T) {
 
 func Test_Caravan_Ensure_New(t *testing.T) {
 	c := CreateCaravan()
-	f0 := &Foo{key: "123"}
+	f0 := &Foo{key: 123}
 	c.Insert(f0)
 
-	f1 := &Foo{key: "234"}
-	n, created := c.Ensure("234", func() Keyer {
+	f1 := &Foo{key: 234}
+	n, created := c.Ensure(234, func() Keyer {
 		return f1
 	})
 	if !created {
@@ -72,19 +74,16 @@ func Test_Caravan_Ensure_New(t *testing.T) {
 	if n.Element == nil {
 		t.Error("Got nil element back from Ensure")
 	}
-	f, ok := n.Element.(*Foo)
-	if !ok {
-		t.Error("Element is not a Foo")
-	}
+	f := n.Element
 	if f != f1 {
 		t.Error("Returned Foo pointer does not match the newly inserted Foo")
 	}
 }
 
 func Test_Caravan_Insert(t *testing.T) {
-	f0 := &Foo{key: "123"}
-	f0a := &Foo{key: "123"}
-	f1 := &Foo{key: "456"}
+	f0 := &Foo{key: 123}
+	f0a := &Foo{key: 123}
+	f1 := &Foo{key: 456}
 
 	tests := []struct {
 		name    string
@@ -135,21 +134,21 @@ func Test_Caravan_Insert(t *testing.T) {
 			}
 
 			for _, v := range tc.nodes {
-				if n, ok := c.nodes[v.key]; !ok {
-					t.Errorf("Internal nodes does not include key '%s'", v.key)
+				if n, ok := c.nodes[v.Key()]; !ok {
+					t.Errorf("Internal nodes does not include key '%x'", v.Key())
 				} else {
 					if n.Element != v {
-						t.Errorf("Incorrect reference for key '%s'", v.key)
+						t.Errorf("Incorrect reference for key '%x'", v.Key())
 					}
 				}
 			}
 
 			for _, v := range tc.roots {
-				if n, ok := c.roots[v.key]; !ok {
-					t.Errorf("Internal roots does not include key '%s'", v.key)
+				if n, ok := c.roots[v.Key()]; !ok {
+					t.Errorf("Internal roots does not include key '%x'", v.Key())
 				} else {
 					if n.Element != v {
-						t.Errorf("Incorrect reference for key '%s'", v.key)
+						t.Errorf("Incorrect reference for key '%x'", v.Key())
 					}
 				}
 			}
@@ -164,8 +163,8 @@ type connect struct {
 
 // Lots more to test here.
 func Test_Caravan_Connect(t *testing.T) {
-	f0 := &Foo{key: "123"}
-	f1 := &Foo{key: "456"}
+	f0 := &Foo{key: 123}
+	f1 := &Foo{key: 456}
 
 	tests := []struct {
 		name     string
@@ -194,7 +193,7 @@ func Test_Caravan_Connect(t *testing.T) {
 			for _, conn := range tc.connects {
 				err := c.Connect(conn.from, conn.to)
 				if err != nil {
-					t.Errorf("Connecting from %s to %s, error: %s", conn.from.key, conn.to.key, err.Error())
+					t.Errorf("Connecting from %s to %s, error: %s", conn.from, conn.to, err.Error())
 				}
 			}
 
@@ -207,21 +206,21 @@ func Test_Caravan_Connect(t *testing.T) {
 			}
 
 			for _, v := range tc.nodes {
-				if n, ok := c.nodes[v.key]; !ok {
-					t.Errorf("Internal nodes does not include key '%s'", v.key)
+				if n, ok := c.nodes[v.Key()]; !ok {
+					t.Errorf("Internal nodes does not include key '%s'", v)
 				} else {
 					if n.Element != v {
-						t.Errorf("Incorrect reference for key '%s'", v.key)
+						t.Errorf("Incorrect reference for key '%s'", v)
 					}
 				}
 			}
 
 			for _, v := range tc.roots {
-				if n, ok := c.roots[v.key]; !ok {
-					t.Errorf("Internal roots does not include key '%s'", v.key)
+				if n, ok := c.roots[v.Key()]; !ok {
+					t.Errorf("Internal roots does not include key '%s'", v)
 				} else {
 					if n.Element != v {
-						t.Errorf("Incorrect reference for key '%s'", v.key)
+						t.Errorf("Incorrect reference for key '%s'", v)
 					}
 				}
 			}
@@ -230,11 +229,11 @@ func Test_Caravan_Connect(t *testing.T) {
 }
 
 func Test_Caravan_Walk_Linear(t *testing.T) {
-	foos := []*Foo{
-		&Foo{key: "12"},
-		&Foo{key: "34"},
-		&Foo{key: "56"},
-		&Foo{key: "78"},
+	foos := []Keyer{
+		&Foo{key: 12},
+		&Foo{key: 34},
+		&Foo{key: 56},
+		&Foo{key: 78},
 	}
 
 	tests := []struct {
@@ -282,7 +281,7 @@ func Test_Caravan_Walk_Linear(t *testing.T) {
 					t.Error("Got isLeaf for non-leaf")
 				}
 				if n.Element != foos[tc.offset(i)] {
-					t.Errorf("Got wrong foo: expected %s, got %s", foos[tc.offset(i)].key, n.Element.Key())
+					t.Errorf("Got wrong foo: expected %s, got %s", foos[tc.offset(i)], n.Element)
 				}
 				i++
 			})
@@ -291,11 +290,11 @@ func Test_Caravan_Walk_Linear(t *testing.T) {
 }
 
 func Test_Caravan_Walk_Flatten(t *testing.T) {
-	foos := []*Foo{
-		&Foo{key: "12"},
-		&Foo{key: "34"},
-		&Foo{key: "56"},
-		&Foo{key: "78"},
+	foos := []Keyer{
+		&Foo{key: 12},
+		&Foo{key: 34},
+		&Foo{key: 56},
+		&Foo{key: 78},
 	}
 
 	tests := []struct {
@@ -345,12 +344,12 @@ func Test_Caravan_Walk_Flatten(t *testing.T) {
 					}
 
 					i := 0
-					visited := map[string]bool{}
+					visited := map[Key]bool{}
 					c.Walk(tc.dir, func(n *Node) {
 						// Use this to test the fan-in, fan out, etc.
 						key := n.Element.Key()
 						if _, ok := visited[key]; ok {
-							t.Errorf("Revisiting node %s", key)
+							t.Errorf("Revisiting node %s", n.Element)
 						}
 						visited[key] = true
 
@@ -366,8 +365,8 @@ func Test_Caravan_Walk_Flatten(t *testing.T) {
 }
 
 type order struct {
-	first  string
-	second string
+	first  Key
+	second Key
 }
 
 func Test_Caravan_Walk_Cross(t *testing.T) {
@@ -382,20 +381,20 @@ func Test_Caravan_Walk_Cross(t *testing.T) {
 			name: "Down",
 			dir:  WalkDown,
 			orders: []order{
-				{first: "f0a", second: "f1a"},
-				{first: "f0a", second: "f1b"},
-				{first: "f0b", second: "f1a"},
-				{first: "f0b", second: "f1b"},
+				{first: 0xf0a, second: 0xf1a},
+				{first: 0xf0a, second: 0xf1b},
+				{first: 0xf0b, second: 0xf1a},
+				{first: 0xf0b, second: 0xf1b},
 			},
 		},
 		{
 			name: "Up",
 			dir:  WalkUp,
 			orders: []order{
-				{first: "f1a", second: "f0a"},
-				{first: "f1a", second: "f0b"},
-				{first: "f1b", second: "f0a"},
-				{first: "f1b", second: "f0b"},
+				{first: 0xf1a, second: 0xf0a},
+				{first: 0xf1a, second: 0xf0b},
+				{first: 0xf1b, second: 0xf0a},
+				{first: 0xf1b, second: 0xf0b},
 			},
 		},
 	}
@@ -413,14 +412,14 @@ func Test_Caravan_Walk_Cross(t *testing.T) {
 			for _, o := range tc.orders {
 				i0 := indexOf(walkedNodes, o.first)
 				if i0 == -1 {
-					t.Errorf("Failed to locate %s", o.first)
+					t.Errorf("Failed to locate 0x%x", o.first)
 				}
 				i1 := indexOf(walkedNodes, o.second)
 				if i1 == -1 {
-					t.Errorf("Failed to locate %s", o.second)
+					t.Errorf("Failed to locate 0x%x", o.second)
 				}
 				if i0 > i1 {
-					t.Errorf("Incorrect walking order; [%s:%d] > [%s:%d]", o.first, i0, o.second, i1)
+					t.Errorf("Incorrect walking order; [0x%x:%d] > [0x%x:%d]", o.first, i0, o.second, i1)
 				}
 			}
 		})
@@ -433,31 +432,31 @@ func Test_Caravan_Walk_Diamond(t *testing.T) {
 	tests := []struct {
 		name   string
 		dir    WalkDirection
-		first  string
+		first  Key
 		orders []order
 	}{
 		{
 			name:  "Down",
 			dir:   WalkDown,
-			first: "f0",
+			first: 0xf00,
 			orders: []order{
-				{first: "f0", second: "f4"},
-				{first: "f0", second: "f1a"},
-				{first: "f0", second: "f1b"},
-				{first: "f3a", second: "f4"},
-				{first: "f3b", second: "f4"},
+				{first: 0xf00, second: 0xf40},
+				{first: 0xf00, second: 0xf1a},
+				{first: 0xf00, second: 0xf1b},
+				{first: 0xf3a, second: 0xf40},
+				{first: 0xf3b, second: 0xf40},
 			},
 		},
 		{
 			name:  "Up",
 			dir:   WalkUp,
-			first: "f4",
+			first: 0xf40,
 			orders: []order{
-				{first: "f4", second: "f0"},
-				{first: "f1a", second: "f0"},
-				{first: "f1b", second: "f0"},
-				{first: "f4", second: "f3a"},
-				{first: "f4", second: "f3b"},
+				{first: 0xf40, second: 0xf00},
+				{first: 0xf1a, second: 0xf00},
+				{first: 0xf1b, second: 0xf00},
+				{first: 0xf40, second: 0xf3a},
+				{first: 0xf40, second: 0xf3b},
 			},
 		},
 	}
@@ -469,7 +468,7 @@ func Test_Caravan_Walk_Diamond(t *testing.T) {
 
 			c.Walk(tc.dir, func(n *Node) {
 				if i == 0 && n.Element.Key() != tc.first {
-					t.Errorf("Wrong first element; expected %s, got %s", tc.first, n.Element.Key())
+					t.Errorf("Wrong first element; expected 0x%x, got %s", tc.first, n.Element)
 				}
 				walkedNodes = append(walkedNodes, n.Element)
 				i++
@@ -478,14 +477,14 @@ func Test_Caravan_Walk_Diamond(t *testing.T) {
 			for _, o := range tc.orders {
 				i0 := indexOf(walkedNodes, o.first)
 				if i0 == -1 {
-					t.Errorf("Failed to locate %s", o.first)
+					t.Errorf("Failed to locate 0x%x", o.first)
 				}
 				i1 := indexOf(walkedNodes, o.second)
 				if i1 == -1 {
-					t.Errorf("Failed to locate %s", o.second)
+					t.Errorf("Failed to locate 0x%x", o.second)
 				}
 				if i0 > i1 {
-					t.Errorf("Incorrect walking order; [%s:%d] > [%s:%d]", o.first, i0, o.second, i1)
+					t.Errorf("Incorrect walking order; [0x%x:%d] > [0x%x:%d]", o.first, i0, o.second, i1)
 				}
 			}
 		})
@@ -498,43 +497,43 @@ func Test_Caravan_Walk_Offsided(t *testing.T) {
 	tests := []struct {
 		name   string
 		dir    WalkDirection
-		first  string
+		first  Key
 		orders []order
 	}{
 		{
 			name:  "Down",
 			dir:   WalkDown,
-			first: "f0",
+			first: 0xf00,
 			orders: []order{
-				{first: "f0", second: "f6"},
-				{first: "f0", second: "f3a"},
-				{first: "f3a", second: "f6"},
-				{first: "f0", second: "f1"},
-				{first: "f1", second: "f3b"},
-				{first: "f3b", second: "f5"},
-				{first: "f5", second: "f6"},
-				{first: "f0", second: "f1"},
-				{first: "f1", second: "f2"},
-				{first: "f2", second: "f4"},
-				{first: "f4", second: "f5"},
-				{first: "f5", second: "f6"},
+				{first: 0xf00, second: 0xf60},
+				{first: 0xf00, second: 0xf3a},
+				{first: 0xf3a, second: 0xf60},
+				{first: 0xf00, second: 0xf10},
+				{first: 0xf10, second: 0xf3b},
+				{first: 0xf3b, second: 0xf50},
+				{first: 0xf50, second: 0xf60},
+				{first: 0xf00, second: 0xf10},
+				{first: 0xf10, second: 0xf20},
+				{first: 0xf20, second: 0xf40},
+				{first: 0xf40, second: 0xf50},
+				{first: 0xf50, second: 0xf60},
 			},
 		},
 		{
 			name:  "Up",
 			dir:   WalkUp,
-			first: "f6",
+			first: 0xf60,
 			orders: []order{
-				{first: "f6", second: "f0"},
-				{first: "f6", second: "f3a"},
-				{first: "f3a", second: "f0"},
-				{first: "f6", second: "f5"},
-				{first: "f5", second: "f3b"},
-				{first: "f3b", second: "f1"},
-				{first: "f1", second: "f0"},
-				{first: "f5", second: "f4"},
-				{first: "f4", second: "f2"},
-				{first: "f2", second: "f1"},
+				{first: 0xf60, second: 0xf00},
+				{first: 0xf60, second: 0xf3a},
+				{first: 0xf3a, second: 0xf00},
+				{first: 0xf60, second: 0xf50},
+				{first: 0xf50, second: 0xf3b},
+				{first: 0xf3b, second: 0xf10},
+				{first: 0xf10, second: 0xf00},
+				{first: 0xf50, second: 0xf40},
+				{first: 0xf40, second: 0xf20},
+				{first: 0xf20, second: 0xf10},
 			},
 		},
 	}
@@ -546,7 +545,7 @@ func Test_Caravan_Walk_Offsided(t *testing.T) {
 
 			c.Walk(tc.dir, func(n *Node) {
 				if i == 0 && n.Element.Key() != tc.first {
-					t.Errorf("Wrong first element; expected %s, got %s", tc.first, n.Element.Key())
+					t.Errorf("Wrong first element; expected 0x%x, got %s", tc.first, n.Element)
 				}
 				walkedNodes = append(walkedNodes, n.Element)
 				i++
@@ -555,14 +554,14 @@ func Test_Caravan_Walk_Offsided(t *testing.T) {
 			for _, o := range tc.orders {
 				i0 := indexOf(walkedNodes, o.first)
 				if i0 == -1 {
-					t.Errorf("Failed to locate %s", o.first)
+					t.Errorf("Failed to locate 0x%x", o.first)
 				}
 				i1 := indexOf(walkedNodes, o.second)
 				if i1 == -1 {
-					t.Errorf("Failed to locate %s", o.second)
+					t.Errorf("Failed to locate 0x%x", o.second)
 				}
 				if i0 > i1 {
-					t.Errorf("Incorrect walking order; [%s:%d] > [%s:%d]", o.first, i0, o.second, i1)
+					t.Errorf("Incorrect walking order; [0x%x:%d] > [0x%x:%d]", o.first, i0, o.second, i1)
 				}
 			}
 		})
@@ -580,14 +579,14 @@ func Test_Caravan_Walk_Foo(t *testing.T) {
 	//  |/
 	// f7
 
-	f0 := &Foo{key: "f0"}
-	f1 := &Foo{key: "f1"}
-	f2 := &Foo{key: "f2"}
-	f3 := &Foo{key: "f3"}
-	f4 := &Foo{key: "f4"}
-	f5 := &Foo{key: "f5"}
-	f6 := &Foo{key: "f6"}
-	f7 := &Foo{key: "f7"}
+	f0 := &Foo{key: 0xf0}
+	f1 := &Foo{key: 0xf1}
+	f2 := &Foo{key: 0xf2}
+	f3 := &Foo{key: 0xf3}
+	f4 := &Foo{key: 0xf4}
+	f5 := &Foo{key: 0xf5}
+	f6 := &Foo{key: 0xf6}
+	f7 := &Foo{key: 0xf7}
 
 	c := CreateCaravan()
 
@@ -601,69 +600,69 @@ func Test_Caravan_Walk_Foo(t *testing.T) {
 	c.Insert(f7)
 
 	if err := c.Connect(f0, f1); err != nil {
-		t.Errorf("Connect from %s to %s has err: %s", f0.Key(), f1.Key(), err.Error())
+		t.Errorf("Connect from %s to %s has err: %s", f0, f1, err.Error())
 	}
 	if err := c.Connect(f0, f2); err != nil {
-		t.Errorf("Connect from %s to %s has err: %s", f0.Key(), f2.Key(), err.Error())
+		t.Errorf("Connect from %s to %s has err: %s", f0, f2, err.Error())
 	}
 	if err := c.Connect(f1, f3); err != nil {
-		t.Errorf("Connect from %s to %s has err: %s", f1.Key(), f3.Key(), err.Error())
+		t.Errorf("Connect from %s to %s has err: %s", f1, f3, err.Error())
 	}
 	if err := c.Connect(f2, f3); err != nil {
-		t.Errorf("Connect from %s to %s has err: %s", f2.Key(), f3.Key(), err.Error())
+		t.Errorf("Connect from %s to %s has err: %s", f2, f3, err.Error())
 	}
 	if err := c.Connect(f2, f4); err != nil {
-		t.Errorf("Connect from %s to %s has err: %s", f2.Key(), f4.Key(), err.Error())
+		t.Errorf("Connect from %s to %s has err: %s", f2, f4, err.Error())
 	}
 	if err := c.Connect(f3, f5); err != nil {
-		t.Errorf("Connect from %s to %s has err: %s", f3.Key(), f5.Key(), err.Error())
+		t.Errorf("Connect from %s to %s has err: %s", f3, f5, err.Error())
 	}
 	if err := c.Connect(f4, f6); err != nil {
-		t.Errorf("Connect from %s to %s has err: %s", f4.Key(), f6.Key(), err.Error())
+		t.Errorf("Connect from %s to %s has err: %s", f4, f6, err.Error())
 	}
 	if err := c.Connect(f5, f7); err != nil {
-		t.Errorf("Connect from %s to %s has err: %s", f5.Key(), f7.Key(), err.Error())
+		t.Errorf("Connect from %s to %s has err: %s", f5, f7, err.Error())
 	}
 	if err := c.Connect(f6, f7); err != nil {
-		t.Errorf("Connect from %s to %s has err: %s", f6.Key(), f7.Key(), err.Error())
+		t.Errorf("Connect from %s to %s has err: %s", f6, f7, err.Error())
 	}
 
 	tests := []struct {
 		name   string
 		dir    WalkDirection
-		first  string
+		first  Key
 		orders []order
 	}{
 		{
 			name:  "Down",
 			dir:   WalkDown,
-			first: "f0",
+			first: 0xf0,
 			orders: []order{
-				{first: "f0", second: "f1"},
-				{first: "f0", second: "f2"},
-				{first: "f1", second: "f3"},
-				{first: "f2", second: "f3"},
-				{first: "f2", second: "f4"},
-				{first: "f3", second: "f5"},
-				{first: "f4", second: "f6"},
-				{first: "f5", second: "f7"},
-				{first: "f6", second: "f7"},
+				{first: 0xf0, second: 0xf1},
+				{first: 0xf0, second: 0xf2},
+				{first: 0xf1, second: 0xf3},
+				{first: 0xf2, second: 0xf3},
+				{first: 0xf2, second: 0xf4},
+				{first: 0xf3, second: 0xf5},
+				{first: 0xf4, second: 0xf6},
+				{first: 0xf5, second: 0xf7},
+				{first: 0xf6, second: 0xf7},
 			},
 		},
 		{
 			name:  "Up",
 			dir:   WalkUp,
-			first: "f7",
+			first: 0xf7,
 			orders: []order{
-				{first: "f7", second: "f5"},
-				{first: "f7", second: "f6"},
-				{first: "f5", second: "f3"},
-				{first: "f6", second: "f4"},
-				{first: "f3", second: "f1"},
-				{first: "f3", second: "f2"},
-				{first: "f4", second: "f2"},
-				{first: "f1", second: "f0"},
-				{first: "f2", second: "f0"},
+				{first: 0xf7, second: 0xf5},
+				{first: 0xf7, second: 0xf6},
+				{first: 0xf5, second: 0xf3},
+				{first: 0xf6, second: 0xf4},
+				{first: 0xf3, second: 0xf1},
+				{first: 0xf3, second: 0xf2},
+				{first: 0xf4, second: 0xf2},
+				{first: 0xf1, second: 0xf0},
+				{first: 0xf2, second: 0xf0},
 			},
 		},
 	}
@@ -674,31 +673,31 @@ func Test_Caravan_Walk_Foo(t *testing.T) {
 			walkedNodes := []Keyer{}
 
 			for _, v := range c.nodes {
-				f, _ := v.Element.(*Foo)
+				f := v.Element.(*Foo)
 				f.checked = false
 			}
 
 			c.Walk(tc.dir, func(n *Node) {
-				if i == 0 && n.Element.Key() != tc.first {
-					t.Errorf("Wrong first element; expected %s, got %s", tc.first, n.Element.Key())
+				f := n.Element.(*Foo)
+				if i == 0 && f.Key() != tc.first {
+					t.Errorf("Wrong first element; expected 0x%x, got %s", tc.first, f)
 				}
-				f, _ := n.Element.(*Foo)
 				if f.checked {
-					t.Errorf("Already checked element %s", f.Key())
+					t.Errorf("Already checked element %s", f)
 				}
 
 				if tc.dir == WalkDown {
 					for _, v := range n.Ascendants {
-						f1, _ := v.Element.(*Foo)
+						f1 := v.Element.(*Foo)
 						if !f1.checked {
-							t.Errorf("From %s, ascendant %s not checked", f.Key(), f1.Key())
+							t.Errorf("From %s, ascendant %s not checked", f, f1)
 						}
 					}
 				} else {
 					for _, v := range n.Descendants {
-						f1, _ := v.Element.(*Foo)
+						f1 := v.Element.(*Foo)
 						if !f1.checked {
-							t.Errorf("From %s, descendant %s not checked", f.Key(), f1.Key())
+							t.Errorf("From %s, descendant %s not checked", f, f1)
 						}
 					}
 				}
@@ -708,30 +707,30 @@ func Test_Caravan_Walk_Foo(t *testing.T) {
 			})
 
 			for _, v := range c.nodes {
-				f, _ := v.Element.(*Foo)
+				f := v.Element.(*Foo)
 				if !f.checked {
-					t.Errorf("Element %s was not checked", f.Key())
+					t.Errorf("Element %s was not checked", f)
 				}
 			}
 
 			for _, o := range tc.orders {
 				i0 := indexOf(walkedNodes, o.first)
 				if i0 == -1 {
-					t.Errorf("Failed to locate %s", o.first)
+					t.Errorf("Failed to locate 0x%x", o.first)
 				}
 				i1 := indexOf(walkedNodes, o.second)
 				if i1 == -1 {
-					t.Errorf("Failed to locate %s", o.second)
+					t.Errorf("Failed to locate 0x%x", o.second)
 				}
 				if i0 > i1 {
-					t.Errorf("Incorrect walking order; [%s:%d] > [%s:%d]", o.first, i0, o.second, i1)
+					t.Errorf("Incorrect walking order; [0x%x:%d] > [0x%x:%d]", o.first, i0, o.second, i1)
 				}
 			}
 		})
 	}
 }
 
-func createCross(t *testing.T) (*Caravan, []*Foo) {
+func createCross(t *testing.T) (*Caravan, []Keyer) {
 	// f0a   f0b
 	//  |\   /|
 	//  | \ / |
@@ -739,10 +738,10 @@ func createCross(t *testing.T) (*Caravan, []*Foo) {
 	//  |/   \|
 	// f1a   f1b
 
-	f0a := &Foo{key: "f0a"}
-	f0b := &Foo{key: "f0b"}
-	f1a := &Foo{key: "f1a"}
-	f1b := &Foo{key: "f1b"}
+	f0a := &Foo{key: 0xf0a}
+	f0b := &Foo{key: 0xf0b}
+	f1a := &Foo{key: 0xf1a}
+	f1b := &Foo{key: 0xf1b}
 
 	c := CreateCaravan()
 
@@ -752,22 +751,22 @@ func createCross(t *testing.T) (*Caravan, []*Foo) {
 	c.Insert(f1b)
 
 	if err := c.Connect(f0a, f1a); err != nil {
-		t.Errorf("Connect from %s to %s has err: %s", f0a.Key(), f1a.Key(), err.Error())
+		t.Errorf("Connect from %s to %s has err: %s", f0a, f1a, err.Error())
 	}
 	if err := c.Connect(f0a, f1b); err != nil {
-		t.Errorf("Connect from %s to %s has err: %s", f0a.Key(), f1b.Key(), err.Error())
+		t.Errorf("Connect from %s to %s has err: %s", f0a, f1b, err.Error())
 	}
 	if err := c.Connect(f0b, f1a); err != nil {
-		t.Errorf("Connect from %s to %s has err: %s", f0b.Key(), f1a.Key(), err.Error())
+		t.Errorf("Connect from %s to %s has err: %s", f0b, f1a, err.Error())
 	}
 	if err := c.Connect(f0b, f1b); err != nil {
-		t.Errorf("Connect from %s to %s has err: %s", f0b.Key(), f1b.Key(), err.Error())
+		t.Errorf("Connect from %s to %s has err: %s", f0b, f1b, err.Error())
 	}
 
-	return c, []*Foo{f0a, f0b, f1a, f1b}
+	return c, []Keyer{f0a, f0b, f1a, f1b}
 }
 
-func createDiamond(t *testing.T) (*Caravan, []*Foo) {
+func createDiamond(t *testing.T) (*Caravan, []Keyer) {
 	//      f0
 	//     /  \
 	//   f1a  f1b
@@ -778,14 +777,14 @@ func createDiamond(t *testing.T) (*Caravan, []*Foo) {
 	//     \  /
 	//      f4
 
-	f0 := &Foo{key: "f0"}
-	f1a := &Foo{key: "f1a"}
-	f1b := &Foo{key: "f1b"}
-	f2a := &Foo{key: "f2a"}
-	f2b := &Foo{key: "f2b"}
-	f3a := &Foo{key: "f3a"}
-	f3b := &Foo{key: "f3b"}
-	f4 := &Foo{key: "f4"}
+	f0 := &Foo{key: 0xf00}
+	f1a := &Foo{key: 0xf1a}
+	f1b := &Foo{key: 0xf1b}
+	f2a := &Foo{key: 0xf2a}
+	f2b := &Foo{key: 0xf2b}
+	f3a := &Foo{key: 0xf3a}
+	f3b := &Foo{key: 0xf3b}
+	f4 := &Foo{key: 0xf40}
 
 	c := CreateCaravan()
 
@@ -799,34 +798,34 @@ func createDiamond(t *testing.T) (*Caravan, []*Foo) {
 	c.Insert(f4)
 
 	if err := c.Connect(f0, f1a); err != nil {
-		t.Errorf("Connect from %s to %s has err: %s", f0.Key(), f1a.Key(), err.Error())
+		t.Errorf("Connect from %s to %s has err: %s", f0, f1a, err.Error())
 	}
 	if err := c.Connect(f0, f1b); err != nil {
-		t.Errorf("Connect from %s to %s has err: %s", f0.Key(), f1b.Key(), err.Error())
+		t.Errorf("Connect from %s to %s has err: %s", f0, f1b, err.Error())
 	}
 	if err := c.Connect(f1a, f2a); err != nil {
-		t.Errorf("Connect from %s to %s has err: %s", f1a.Key(), f2a.Key(), err.Error())
+		t.Errorf("Connect from %s to %s has err: %s", f1a, f2a, err.Error())
 	}
 	if err := c.Connect(f1b, f2b); err != nil {
-		t.Errorf("Connect from %s to %s has err: %s", f1b.Key(), f2b.Key(), err.Error())
+		t.Errorf("Connect from %s to %s has err: %s", f1b, f2b, err.Error())
 	}
 	if err := c.Connect(f2a, f3a); err != nil {
-		t.Errorf("Connect from %s to %s has err: %s", f2a.Key(), f3a.Key(), err.Error())
+		t.Errorf("Connect from %s to %s has err: %s", f2a, f3a, err.Error())
 	}
 	if err := c.Connect(f2b, f3b); err != nil {
-		t.Errorf("Connect from %s to %s has err: %s", f2b.Key(), f3b.Key(), err.Error())
+		t.Errorf("Connect from %s to %s has err: %s", f2b, f3b, err.Error())
 	}
 	if err := c.Connect(f3a, f4); err != nil {
-		t.Errorf("Connect from %s to %s has err: %s", f3a.Key(), f4.Key(), err.Error())
+		t.Errorf("Connect from %s to %s has err: %s", f3a, f4, err.Error())
 	}
 	if err := c.Connect(f3b, f4); err != nil {
-		t.Errorf("Connect from %s to %s has err: %s", f3b.Key(), f4.Key(), err.Error())
+		t.Errorf("Connect from %s to %s has err: %s", f3b, f4, err.Error())
 	}
 
-	return c, []*Foo{f0, f1a, f1b, f1a, f2b, f3a, f3b, f4}
+	return c, []Keyer{f0, f1a, f1b, f1a, f2b, f3a, f3b, f4}
 }
 
-func createOffsided(t *testing.T) (*Caravan, []*Foo) {
+func createOffsided(t *testing.T) (*Caravan, []Keyer) {
 	//      f0
 	//     / | \
 	//    /  |   \
@@ -843,14 +842,14 @@ func createOffsided(t *testing.T) (*Caravan, []*Foo) {
 	//     \ | /
 	//      f6
 
-	f0 := &Foo{key: "f0"}
-	f1 := &Foo{key: "f1"}
-	f2 := &Foo{key: "f2"}
-	f3a := &Foo{key: "f3a"}
-	f3b := &Foo{key: "f3b"}
-	f4 := &Foo{key: "f4"}
-	f5 := &Foo{key: "f5"}
-	f6 := &Foo{key: "f6"}
+	f0 := &Foo{key: 0xf00}
+	f1 := &Foo{key: 0xf10}
+	f2 := &Foo{key: 0xf20}
+	f3a := &Foo{key: 0xf3a}
+	f3b := &Foo{key: 0xf3b}
+	f4 := &Foo{key: 0xf40}
+	f5 := &Foo{key: 0xf50}
+	f6 := &Foo{key: 0xf60}
 
 	c := CreateCaravan()
 
@@ -865,48 +864,48 @@ func createOffsided(t *testing.T) (*Caravan, []*Foo) {
 
 	// Direct branch
 	if err := c.Connect(f0, f6); err != nil {
-		t.Errorf("Connect from %s to %s has err: %s", f0.Key(), f6.Key(), err.Error())
+		t.Errorf("Connect from %s to %s has err: %s", f0, f6, err.Error())
 	}
 
 	// 1-step branch
 	if err := c.Connect(f0, f3a); err != nil {
-		t.Errorf("Connect from %s to %s has err: %s", f0.Key(), f3a.Key(), err.Error())
+		t.Errorf("Connect from %s to %s has err: %s", f0, f3a, err.Error())
 	}
 	if err := c.Connect(f3a, f6); err != nil {
-		t.Errorf("Connect from %s to %s has err: %s", f3a.Key(), f6.Key(), err.Error())
+		t.Errorf("Connect from %s to %s has err: %s", f3a, f6, err.Error())
 	}
 
 	// 2-step branch
 	if err := c.Connect(f0, f1); err != nil {
-		t.Errorf("Connect from %s to %s has err: %s", f0.Key(), f1.Key(), err.Error())
+		t.Errorf("Connect from %s to %s has err: %s", f0, f1, err.Error())
 	}
 	if err := c.Connect(f1, f3b); err != nil {
-		t.Errorf("Connect from %s to %s has err: %s", f1.Key(), f3b.Key(), err.Error())
+		t.Errorf("Connect from %s to %s has err: %s", f1, f3b, err.Error())
 	}
 	if err := c.Connect(f3b, f5); err != nil {
-		t.Errorf("Connect from %s to %s has err: %s", f3b.Key(), f5.Key(), err.Error())
+		t.Errorf("Connect from %s to %s has err: %s", f3b, f5, err.Error())
 	}
 	if err := c.Connect(f5, f6); err != nil {
-		t.Errorf("Connect from %s to %s has err: %s", f5.Key(), f6.Key(), err.Error())
+		t.Errorf("Connect from %s to %s has err: %s", f5, f6, err.Error())
 	}
 
 	// 3-step branch
 	// Leg from f0 to f1 is already established.
 	if err := c.Connect(f1, f2); err != nil {
-		t.Errorf("Connect from %s to %s has err: %s", f1.Key(), f2.Key(), err.Error())
+		t.Errorf("Connect from %s to %s has err: %s", f1, f2, err.Error())
 	}
 	if err := c.Connect(f2, f4); err != nil {
-		t.Errorf("Connect from %s to %s has err: %s", f2.Key(), f4.Key(), err.Error())
+		t.Errorf("Connect from %s to %s has err: %s", f2, f4, err.Error())
 	}
 	if err := c.Connect(f4, f5); err != nil {
-		t.Errorf("Connect from %s to %s has err: %s", f4.Key(), f5.Key(), err.Error())
+		t.Errorf("Connect from %s to %s has err: %s", f4, f5, err.Error())
 	}
 	// Leg from f5 to f6 is already established.
 
-	return c, []*Foo{f0, f1, f2, f3a, f3b, f4, f5, f6}
+	return c, []Keyer{f0, f1, f2, f3a, f3b, f4, f5, f6}
 }
 
-func indexOf(walked []Keyer, key string) int {
+func indexOf(walked []Keyer, key Key) int {
 	for k, v := range walked {
 		if v.Key() == key {
 			return k

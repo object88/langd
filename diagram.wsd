@@ -1,0 +1,46 @@
+@startuml langd
+
+interface types.Importer
+interface types.ImporterFrom
+
+class Handler
+note right: Per user connection
+
+class Loader << singleton >> {
+	- LoadDirectory(lc LoaderContext)
+}
+
+class LoaderContext << types.Importer, types.ImporterFrom >> {
+	- config : types.Config
+	- context : build.Context
+}
+
+class Package {
+	- checker : types.Checker
+	- absPath : string
+	- os : string
+	- arch
+	- tags
+}
+
+class Workspace {
+	- loaderContext : LoaderContext
+	- startDir : string
+	- goroot : string
+	- os : string
+	- arch : string
+	- tags : string
+}
+
+Workspace "1" o-- "1" Handler
+LoaderContext "1" o-- "1" Workspace
+Loader "1" o-- "many" Workspace
+types.Config "1" o-- "1" LoaderContext
+types.Checker "1" o-- "1" Package
+types.Package "1" o-- "1" Package
+build.Package "1" o-- "1" Package
+Package "many" o-- "1" Caravan
+Caravan "1" o-- "1" Loader
+build.Context "1" o-- "1" LoaderContext
+
+@enduml

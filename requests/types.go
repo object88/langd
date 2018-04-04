@@ -109,7 +109,7 @@ type DynamicRegistration struct {
 // Hover is the result of a hover request.
 type Hover struct {
 	// Contents is the hover's content
-	Contents MarkupContent `json:"content"`
+	Contents MarkupContent `json:"contents"`
 
 	// Range is an optional range inside a text document, used to visualize a
 	// hover, e.g. by changing the background color.

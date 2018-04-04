@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"go/token"
 	"os"
+	"runtime"
 	"testing"
 
 	"github.com/object88/langd/log"
@@ -33,7 +34,8 @@ func Test_Workspace_Hugo(t *testing.T) {
 	logger := log.Stdout()
 	logger.SetLevel(log.Debug)
 	l := NewLoader()
-	w := CreateWorkspace(l, logger)
+	lc := NewLoaderContext(l, runtime.GOOS, runtime.GOARCH)
+	w := CreateWorkspace(l, lc, logger)
 
 	done := l.Start()
 	if done == nil {
@@ -41,7 +43,7 @@ func Test_Workspace_Hugo(t *testing.T) {
 	}
 
 	path := "../../gohugoio/hugo"
-	err := l.LoadDirectory(path)
+	err := l.LoadDirectory(lc, path)
 	if err != nil {
 		t.Fatalf("Failed to load directory '%s':\n\t%s\n", path, err.Error())
 	}
