@@ -18,7 +18,7 @@ import (
 func workspaceSetup(t *testing.T, startingPath string, packages map[string]map[string]string, expectFailure bool) *Workspace {
 	fc := buildutil.FakeContext(packages)
 	loader := NewLoader()
-	lc := NewLoaderContext(loader, runtime.GOOS, runtime.GOARCH, func(lc *LoaderContext) {
+	lc := NewLoaderContext(loader, runtime.GOOS, runtime.GOARCH, "/go", func(lc *LoaderContext) {
 		lc.context = fc
 	})
 	w := CreateWorkspace(loader, lc, log.CreateLog(os.Stdout))

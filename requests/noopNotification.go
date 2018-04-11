@@ -8,8 +8,7 @@ import (
 )
 
 const (
-	initializedNotification = "initialized"
-	willSaveNotification    = "textDocument/willSave"
+	willSaveNotification = "textDocument/willSave"
 )
 
 type noopNotificationHandler struct {

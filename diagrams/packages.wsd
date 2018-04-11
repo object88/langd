@@ -1,0 +1,63 @@
+@startuml Packages
+
+hide empty members
+
+class collections.Caravan {
+	- roots : map[Key]Node
+	- nodes : map[Key]Node
+}
+
+class collections.Node {
+	- ascendants : []Node
+	- descendants : []Node
+	- element : Keyer
+}
+
+class collections.Key << int >> {
+}
+
+class collections.Subkey << int >> {
+}
+
+interface collections.Keyer {
+	- Key() : Key
+	- String() : string
+}
+
+class Package << collections.Key >> {
+	- absPath : string
+	- buildPkg : build.Package
+	- distinctions : map[collections.Subkey]*DistinctPackage
+}
+
+class DistinctPackage << collections.Subkey >> {
+	- checker : types.Checker
+	- typesPkg : types.Package
+	- arch : string
+	- os : string
+	- tags : string
+}
+
+class types.Checker {
+	- info : types.Info
+}
+
+class types.Info {
+
+}
+
+collections.Caravan - "1..*" collections.Node
+
+collections.Node - "1..*" collections.Node
+
+collections.Node --o Package
+
+Package - "1..*" DistinctPackage
+
+DistinctPackage --o types.Checker
+
+types.Checker --o types.Info
+
+@enduml
+
+

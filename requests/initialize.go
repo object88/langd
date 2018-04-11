@@ -16,8 +16,6 @@ const (
 func (h *Handler) processInit(p *json.RawMessage) (interface{}, error) {
 	fmt.Printf("Got initialize method\n")
 
-	// fmt.Printf("Raw init params: %s\n", string(*p))
-
 	var params InitializeParams
 	if err := json.Unmarshal(*p, &params); err != nil {
 		return nil, err
@@ -27,6 +25,7 @@ func (h *Handler) processInit(p *json.RawMessage) (interface{}, error) {
 	fmt.Printf("Got parameters: %#v\n", params)
 
 	h.hFunc = h.initedHandler
+	h.rootURI = rootURI
 
 	go h.readRoot(rootURI)
 

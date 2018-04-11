@@ -8,20 +8,23 @@ import (
 	"go/types"
 	"path/filepath"
 	"strings"
-	"sync"
 
 	"github.com/object88/langd/log"
 	"github.com/object88/rope"
+	"github.com/pkg/errors"
+	"github.com/spf13/viper"
 )
 
 // Workspace is a mass of code
 type Workspace struct {
-	rwm sync.RWMutex
+	// rwm sync.RWMutex
 
 	Loader        *Loader
 	LoaderContext *LoaderContext
 
 	log *log.Log
+
+	settings *viper.Viper
 }
 
 // CreateWorkspace returns a new instance of the Workspace struct
@@ -30,7 +33,21 @@ func CreateWorkspace(loader *Loader, loaderContext *LoaderContext, log *log.Log)
 		LoaderContext: loaderContext,
 		Loader:        loader,
 		log:           log,
+		settings:      viper.New(),
 	}
+}
+
+// AssignLoader connects a loader to the workspace
+func (w *Workspace) AssignLoader(l *Loader) {
+	w.Loader = l
+}
+
+// AssignSettings updates the settings for a workspace
+func (w *Workspace) AssignSettings(settings *viper.Viper) {
+	fmt.Printf("Adding settings:\n\t%#v\n", settings)
+	fmt.Printf("langd: %#v\n", settings.Get("langd"))
+	goroot := settings.GetString("go.goroot")
+	fmt.Printf("go.goroot -> %s\n", goroot)
 }
 
 // ChangeFile applies changes to an opened file
@@ -65,7 +82,7 @@ func (w *Workspace) ChangeFile(absFilepath string, startLine, startCharacter, en
 	absPath := filepath.Dir(absFilepath)
 	err = w.reloadPackageAndAscendants(absPath)
 	if err != nil {
-		return err
+		return errors.Wrap(err, "From ChangeFile")
 	}
 
 	return nil
@@ -418,7 +435,7 @@ func (w *Workspace) OpenFile(absFilepath, text string) error {
 	absPath := filepath.Dir(absFilepath)
 	err := w.reloadPackageAndAscendants(absPath)
 	if err != nil {
-		return err
+		return errors.Wrap(err, "From OpenFile")
 	}
 
 	w.log.Debugf("Shadowed file '%s'\n", absFilepath)
@@ -446,23 +463,23 @@ func (w *Workspace) ReplaceFile(absFilepath, text string) error {
 	return nil
 }
 
-// Lock will synchronize access to the workspace for read or write access
-func (w *Workspace) Lock(write bool) {
-	if write {
-		w.rwm.Lock()
-	} else {
-		w.rwm.RLock()
-	}
-}
+// // Lock will synchronize access to the workspace for read or write access
+// func (w *Workspace) Lock(write bool) {
+// 	if write {
+// 		w.rwm.Lock()
+// 	} else {
+// 		w.rwm.RLock()
+// 	}
+// }
 
-// Unlock will synchronize access to the workspace for read or write access
-func (w *Workspace) Unlock(write bool) {
-	if write {
-		w.rwm.Unlock()
-	} else {
-		w.rwm.RUnlock()
-	}
-}
+// // Unlock will synchronize access to the workspace for read or write access
+// func (w *Workspace) Unlock(write bool) {
+// 	if write {
+// 		w.rwm.Unlock()
+// 	} else {
+// 		w.rwm.RUnlock()
+// 	}
+// }
 
 func (w *Workspace) locateDeclaration(p *token.Position) (types.Object, *Package, error) {
 	absPath := filepath.Dir(p.Filename)
@@ -508,6 +525,9 @@ func (w *Workspace) locateDeclaration(p *token.Position) (types.Object, *Package
 			pSelStart := pkg.Fset.Position(selPos.Pos())
 			pSelEnd := pkg.Fset.Position(selPos.End())
 			if WithinPosition(p, &pSelStart, &pSelEnd) {
+				if pkg.checker == nil {
+					panic(fmt.Sprintf("pkg '%s' does not have checker", pkg.AbsPath))
+				}
 				s := pkg.checker.Selections[v]
 				fmt.Printf("Selector: %#v\n", s)
 				x = v
@@ -519,8 +539,7 @@ func (w *Workspace) locateDeclaration(p *token.Position) (types.Object, *Package
 	})
 
 	if x == nil {
-		fmt.Printf("No x found\n")
-		return nil, nil, nil
+		return nil, nil, errors.New("No x found")
 	}
 
 	if pkg == nil {

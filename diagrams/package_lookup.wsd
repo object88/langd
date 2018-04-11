@@ -1,0 +1,67 @@
+@startuml Package lookup
+
+participant loader
+
+participant caravan
+
+collections nodes
+
+participant Package
+
+collections distincts
+
+participant DistinctPackage
+
+loader -> caravan : "ensure(abspath, os, arch)"
+
+activate caravan
+
+caravan -> nodes : abspath
+
+activate nodes
+
+nodes --> caravan : node
+
+deactivate nodes
+
+alt node present
+
+caravan -> Package : node.(*package)
+
+activate Package
+
+Package --> caravan : Package
+
+deactivate Package
+
+else node missing
+
+caravan -> Package : new
+
+Package --> caravan : Package
+
+caravan -> nodes : insert(package)
+
+nodes --> caravan
+
+end
+
+
+caravan -> distincts : os, arch
+
+activate distincts
+
+distincts --> caravan : DistinctPackage
+
+deactivate distincts
+alt distinct package missing
+
+
+
+end
+
+deactivate caravan
+
+loader <-- caravan : package
+
+@enduml

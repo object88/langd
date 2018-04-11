@@ -40,10 +40,30 @@ type CompletionOptions struct {
 	TriggerCharacters []string `json:"triggerCharacters,omitempty"`
 }
 
+// ConfigurationParams is a collection of ConfigurationItem, used by the
+// workspace/configuration request from the server
+type ConfigurationParams struct {
+	Items []ConfigurationItem `json:"items"`
+}
+
+// ConfigurationItem is used by the server to request a configuration section
+type ConfigurationItem struct {
+	// ScopeURI is the scope to get the configuration section for.
+	ScopeURI *string `json:"scopeUri,omitempty"`
+
+	// Section is the configuration section asked for.
+	Section *string `json:"section,omitempty"`
+}
+
 // DidChangeConfigurationParams contains all settings that have changed
 type DidChangeConfigurationParams struct {
 	// Settings are the changed settings
 	Settings map[string]interface{} `json:"settings"`
+}
+
+type Config struct {
+	Subs   map[string]*Config
+	Values map[string]interface{}
 }
 
 // DidChangeTextDocumentParams is supplied by the client to describe the
@@ -116,6 +136,8 @@ type Hover struct {
 	Range *Range `json:"range,omitempty"`
 }
 
+// InitializeParams contains the parameters provided by the client for the
+// initialize method
 type InitializeParams struct {
 	ProcessID int `json:"processId,omitempty"`
 
@@ -124,6 +146,14 @@ type InitializeParams struct {
 	InitializationOptions interface{} `json:"initializationOptions,omitempty"`
 
 	Capabilities ClientCapabilities `json:"capabilities"`
+
+	Trace string `json:"trace"`
+
+	// WorkspaceFolders are the workspace folders configured in the client when
+	// the server starts.  This property is only available if the client
+	// supports workspace folders.  It can be `null` if the client supports
+	// workspace folders but none are configured.
+	WorkspaceFolders *[]WorkspaceFolder `json:"workspaceFolders,omitempty"`
 }
 
 // Example initialization options:
@@ -669,4 +699,13 @@ type VersionedTextDocumentIdentifier struct {
 
 	// Version is the version number of this document.
 	Version int `json:"version"`
+}
+
+// WorkspaceFolder is provided when opening a workspace
+type WorkspaceFolder struct {
+	// URI is the associated URI for this workspace folder.
+	URI string `json:"uri"`
+
+	// Name is the name of the workspace folder. Defaults to the uri's basename.
+	Name string `json:"name"`
 }

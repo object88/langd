@@ -2,10 +2,12 @@ package server
 
 import (
 	"fmt"
-	"log"
 	"net"
+	"os"
 
+	"github.com/object88/langd"
 	"github.com/object88/langd/health"
+	"github.com/object88/langd/log"
 	"google.golang.org/grpc"
 )
 
@@ -28,20 +30,26 @@ type SocketHandler struct {
 }
 
 type server struct {
-	done chan bool
-	load *health.Load
+	done   chan bool
+	load   *health.Load
+	loader *langd.Loader
 }
 
 // InitializeService runs for the lifespan of the server instance
 func InitializeService() error {
+	l := log.CreateLog(os.Stdout)
+
 	s := &server{
-		done: make(chan bool),
-		load: health.StartLoadMonitoring(),
+		done:   make(chan bool),
+		load:   health.StartLoadMonitoring(),
+		loader: langd.NewLoader(),
 	}
+
+	s.loader.Log = l
 
 	grpcLis, err := net.Listen("tcp", grpcPort)
 	if err != nil {
-		log.Fatalf("failed to listen: %v", err)
+		l.Errorf("failed to listen: %v", err)
 		return err
 	}
 
@@ -53,7 +61,7 @@ func InitializeService() error {
 
 	socketLis, err := net.Listen("tcp", jsonPort)
 	if err != nil {
-		fmt.Printf("Error listening on port %s: %s\n", jsonPort, err.Error())
+		l.Errorf("Error listening on port %s: %s\n", jsonPort, err.Error())
 		return err
 	}
 

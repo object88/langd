@@ -22,11 +22,11 @@ func Test_LoadContext_Same_Package_Same_Env(t *testing.T) {
 	loader.Log.SetLevel(log.Debug)
 	done := loader.Start()
 
-	lc1 := NewLoaderContext(loader, "darwin", "x86", func(lc *LoaderContext) {
+	lc1 := NewLoaderContext(loader, "darwin", "x86", "/go", func(lc *LoaderContext) {
 		lc.context = buildutil.FakeContext(packages)
 	})
 
-	lc2 := NewLoaderContext(loader, "linux", "arm", func(lc *LoaderContext) {
+	lc2 := NewLoaderContext(loader, "linux", "arm", "/go", func(lc *LoaderContext) {
 		lc.context = buildutil.FakeContext(packages)
 	})
 
@@ -66,8 +66,6 @@ func Test_LoadContext_Same_Package_Same_Env(t *testing.T) {
 	if packageCount != 2 {
 		t.Errorf("Expected to find 2 packages; found %d\n", packageCount)
 	}
-
-	t.Error("OUTPUT")
 }
 
 func Test_LoadContext_Same_Package_Different_Env(t *testing.T) {
@@ -100,7 +98,7 @@ func Test_LoadContext_Same_Package_Different_Env(t *testing.T) {
 	for i := 0; i < 2; i++ {
 		env := envs[i]
 		go func() {
-			lc := NewLoaderContext(loader, env[0], env[1], func(lc *LoaderContext) {
+			lc := NewLoaderContext(loader, env[0], env[1], "/go", func(lc *LoaderContext) {
 				lc.context = buildutil.FakeContext(packages)
 			})
 
