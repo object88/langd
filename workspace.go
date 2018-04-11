@@ -17,8 +17,6 @@ import (
 
 // Workspace is a mass of code
 type Workspace struct {
-	// rwm sync.RWMutex
-
 	Loader        *Loader
 	LoaderContext *LoaderContext
 
@@ -37,17 +35,11 @@ func CreateWorkspace(loader *Loader, loaderContext *LoaderContext, log *log.Log)
 	}
 }
 
-// AssignLoader connects a loader to the workspace
-func (w *Workspace) AssignLoader(l *Loader) {
-	w.Loader = l
-}
-
-// AssignSettings updates the settings for a workspace
-func (w *Workspace) AssignSettings(settings *viper.Viper) {
-	fmt.Printf("Adding settings:\n\t%#v\n", settings)
-	fmt.Printf("langd: %#v\n", settings.Get("langd"))
-	goroot := settings.GetString("go.goroot")
-	fmt.Printf("go.goroot -> %s\n", goroot)
+// AssignLoaderContext attaches the new loader context to the workspace.  The
+// workspace should start to reload the packages.
+func (w *Workspace) AssignLoaderContext(lc *LoaderContext) {
+	w.LoaderContext = lc
+	// TODO: reload packages
 }
 
 // ChangeFile applies changes to an opened file
@@ -462,24 +454,6 @@ func (w *Workspace) ReplaceFile(absFilepath, text string) error {
 
 	return nil
 }
-
-// // Lock will synchronize access to the workspace for read or write access
-// func (w *Workspace) Lock(write bool) {
-// 	if write {
-// 		w.rwm.Lock()
-// 	} else {
-// 		w.rwm.RLock()
-// 	}
-// }
-
-// // Unlock will synchronize access to the workspace for read or write access
-// func (w *Workspace) Unlock(write bool) {
-// 	if write {
-// 		w.rwm.Unlock()
-// 	} else {
-// 		w.rwm.RUnlock()
-// 	}
-// }
 
 func (w *Workspace) locateDeclaration(p *token.Position) (types.Object, *Package, error) {
 	absPath := filepath.Dir(p.Filename)

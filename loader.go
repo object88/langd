@@ -102,11 +102,6 @@ type Package struct {
 	c         *sync.Cond
 }
 
-func NewPackage() *Package {
-
-	return &Package{}
-}
-
 // Key returns the collection key for the given Package
 func (p *Package) Key() collections.Key {
 	return p.key
