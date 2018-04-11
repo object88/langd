@@ -59,9 +59,6 @@ func (rh *initializedHandler) work() error {
 	s.SetConfigType("json")
 	s.Set(goString, (*result)[0])
 	s.Set(langdString, (*result)[1])
-	rh.h.workspace.AssignSettings(s)
-
-	// rh.h.InitLoader("")
 
 	rh.h.ConfigureLoader(s)
 

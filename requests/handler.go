@@ -87,9 +87,6 @@ func NewHandler(load *health.Load, loader *langd.Loader) *Handler {
 
 	h.hFunc = h.uninitedHandler
 
-	// Start a routine to process requests
-	// h.startProcessingQueue()
-
 	return h
 }
 
@@ -100,13 +97,19 @@ func (h *Handler) ConfigureLoader(settings *viper.Viper) {
 	if root == "" {
 		root = runtime.GOROOT()
 	}
-	loaderContext := langd.NewLoaderContext(h.workspace.Loader, runtime.GOOS, runtime.GOARCH, root, func(lc *langd.LoaderContext) {
+	goarch := settings.GetString("go.goarch")
+	if goarch == "" {
+		goarch = runtime.GOARCH
+	}
+	goos := settings.GetString("go.goos")
+	if goos == "" {
+		goos = runtime.GOOS
+	}
+	loaderContext := langd.NewLoaderContext(h.workspace.Loader, goos, goarch, root, func(lc *langd.LoaderContext) {
 		lc.Log = h.log
 	})
 
-	// FIXME: This loses the RWMutex on the existing workspace and creates a new one,
-	// which is then unlocked without getting locked, and panics.
-	h.workspace = langd.CreateWorkspace(h.workspace.Loader, loaderContext, h.log)
+	h.workspace.AssignLoaderContext(loaderContext)
 }
 
 // NextCid returns the next call id
@@ -224,9 +227,6 @@ func (h *Handler) startProcessing(rhid int) {
 		h.sq.WaitOn(rh.ID())
 	}
 
-	// h.log.Verbosef("%d: Locking...\n", rhid)
-	// h.workspace.Lock(rh.RequireWriteLock())
-
 	go h.finishProcessing(rh)
 }
 
@@ -234,8 +234,6 @@ func (h *Handler) finishProcessing(rh requestHandler) {
 	h.log.Verbosef("%d: processing...\n", rh.ID())
 
 	err := rh.work()
-
-	// h.workspace.Unlock(rh.RequireWriteLock())
 
 	if err != nil {
 		// Should we respond right away?  Set up with an auto-responder?
