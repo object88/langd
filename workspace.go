@@ -8,7 +8,6 @@ import (
 	"go/types"
 	"path/filepath"
 	"strings"
-	"sync"
 
 	"github.com/object88/langd/log"
 	"github.com/object88/rope"
@@ -18,7 +17,7 @@ import (
 
 // Workspace is a mass of code
 type Workspace struct {
-	rwm sync.RWMutex
+	// rwm sync.RWMutex
 
 	Loader        *Loader
 	LoaderContext *LoaderContext
@@ -48,7 +47,7 @@ func (w *Workspace) AssignSettings(settings *viper.Viper) {
 	fmt.Printf("Adding settings:\n\t%#v\n", settings)
 	fmt.Printf("langd: %#v\n", settings.Get("langd"))
 	goroot := settings.GetString("go.goroot")
-	fmt.Printf("langd.server.path -> %s\n", goroot)
+	fmt.Printf("go.goroot -> %s\n", goroot)
 }
 
 // ChangeFile applies changes to an opened file
@@ -464,23 +463,23 @@ func (w *Workspace) ReplaceFile(absFilepath, text string) error {
 	return nil
 }
 
-// Lock will synchronize access to the workspace for read or write access
-func (w *Workspace) Lock(write bool) {
-	if write {
-		w.rwm.Lock()
-	} else {
-		w.rwm.RLock()
-	}
-}
+// // Lock will synchronize access to the workspace for read or write access
+// func (w *Workspace) Lock(write bool) {
+// 	if write {
+// 		w.rwm.Lock()
+// 	} else {
+// 		w.rwm.RLock()
+// 	}
+// }
 
-// Unlock will synchronize access to the workspace for read or write access
-func (w *Workspace) Unlock(write bool) {
-	if write {
-		w.rwm.Unlock()
-	} else {
-		w.rwm.RUnlock()
-	}
-}
+// // Unlock will synchronize access to the workspace for read or write access
+// func (w *Workspace) Unlock(write bool) {
+// 	if write {
+// 		w.rwm.Unlock()
+// 	} else {
+// 		w.rwm.RUnlock()
+// 	}
+// }
 
 func (w *Workspace) locateDeclaration(p *token.Position) (types.Object, *Package, error) {
 	absPath := filepath.Dir(p.Filename)

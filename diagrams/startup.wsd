@@ -1,0 +1,42 @@
+@startuml
+
+"`langd serve`" --> "cmd.serve"
+"cmd.serve" -> "server" : InitializeService
+
+activate server
+
+server -> "channel" : new
+"channel" --> "server" : done
+
+"server" -> "net" : net.listen
+"net" --> "server" : TCP Listener created 
+
+"server" -> "grpc" : NewServer
+"grpc" --> "server" : grpc.Server
+
+create GrpcHandler
+server --> GrpcHandler : new(grpc.Server, listner, serve)
+
+create control "GrpcHandler.Listen"
+server --> "GrpcHandler.Listen" : listen
+
+"server" -> "net" : net.listen
+"net" --> "server" : TCP Listener created 
+
+create SocketHandler
+server --> SocketHandler : new(listner, serve)
+
+create control "SocketHandler.Listen"
+server --> "SocketHandler.Listen" : listen
+
+... service lifecycle ...
+
+server <-- channel : done
+
+server -> GrpcHandler : GracefulStop
+
+server -> channel : close
+
+deactivate server
+
+@enduml

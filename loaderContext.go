@@ -39,7 +39,7 @@ type LoaderContext struct {
 type LoaderContextOption func(lc *LoaderContext)
 
 // NewLoaderContext creates a new LoaderContext
-func NewLoaderContext(loader *Loader, goos, goarch string, options ...LoaderContextOption) *LoaderContext {
+func NewLoaderContext(loader *Loader, goos, goarch, goroot string, options ...LoaderContextOption) *LoaderContext {
 	globs := make([]glob.Glob, 2)
 	globs[0] = glob.MustCompile(filepath.Join("**", ".*"))
 	globs[1] = glob.MustCompile(filepath.Join("**", "testdata"))
@@ -59,6 +59,7 @@ func NewLoaderContext(loader *Loader, goos, goarch string, options ...LoaderCont
 
 	lc.context.GOARCH = goarch
 	lc.context.GOOS = goos
+	lc.context.GOROOT = goroot
 
 	if lc.context.IsDir == nil {
 		lc.context.IsDir = func(path string) bool {

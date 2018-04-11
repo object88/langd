@@ -22,7 +22,7 @@ func Test_Load_Own_Package(t *testing.T) {
 	fc := buildutil.FakeContext(packages)
 	loader := NewLoader()
 	loader.Log.SetLevel(log.Debug)
-	lc := NewLoaderContext(loader, runtime.GOOS, runtime.GOARCH, func(lc *LoaderContext) {
+	lc := NewLoaderContext(loader, runtime.GOOS, runtime.GOARCH, "/go", func(lc *LoaderContext) {
 		lc.context = fc
 	})
 

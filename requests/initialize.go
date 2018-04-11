@@ -22,11 +22,12 @@ func (h *Handler) processInit(p *json.RawMessage) (interface{}, error) {
 	}
 
 	rootURI := string(params.RootURI)
-	// fmt.Printf("Got raw parameters: %#v\n", string([]byte(*p)))
 	fmt.Printf("Got parameters: %#v\n", params)
 
 	h.hFunc = h.initedHandler
 	h.rootURI = rootURI
+
+	go h.readRoot(rootURI)
 
 	results := &InitializeResult{
 		Capabilities: ServerCapabilities{

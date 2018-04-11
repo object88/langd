@@ -1,0 +1,35 @@
+@startuml Client initialization
+
+actor Client
+entity SocketHandler
+entity Handler << jsonrpc2.Handler >>
+participant Conn << jsonrpc2.Conn >>
+participant Workspace
+participant Loader
+participant LoaderContext
+
+Client -> SocketHandler : 
+
+SocketHandler -> Handler : Handle("initialize")
+
+activate Handler
+
+Handler -> Handler : "processInit"
+
+activate Handler
+
+Handler -> Loader : "LoadDirectory"
+
+Handler -> Handler : "startProcessingQueue"
+
+deactivate Handler
+
+Handler -> Conn : "Reply"
+
+Conn --> Client : "InitializeResult"
+
+Handler --> SocketHandler
+
+deactivate Handler
+
+@enduml

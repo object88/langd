@@ -34,7 +34,7 @@ func Test_Workspace_Hugo(t *testing.T) {
 	logger := log.Stdout()
 	logger.SetLevel(log.Debug)
 	l := NewLoader()
-	lc := NewLoaderContext(l, runtime.GOOS, runtime.GOARCH)
+	lc := NewLoaderContext(l, runtime.GOOS, runtime.GOARCH, runtime.GOROOT())
 	w := CreateWorkspace(l, lc, logger)
 
 	done := l.Start()

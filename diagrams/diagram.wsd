@@ -19,8 +19,8 @@ class Package {
 	- checker : types.Checker
 	- absPath : string
 	- os : string
-	- arch
-	- tags
+	- arch : string
+	- tags : string
 }
 
 class Workspace {

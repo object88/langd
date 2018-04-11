@@ -4,7 +4,6 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
-	"os"
 	"reflect"
 	"runtime"
 
@@ -18,7 +17,9 @@ import (
 
 type handleReqFunc func(ctx context.Context, req *jsonrpc2.Request)
 
-// Handler implements jsonrpc2.Handle
+// Handler implements jsonrpc2.Handle.  There is one Handler per client
+// connection.  The Handler has a Workspace to service the incoming LSP
+// requests.
 type Handler struct {
 	conn          *jsonrpc2.Conn
 	rq            *requestMap
@@ -62,34 +63,32 @@ type replyHandler interface {
 	reply() (interface{}, error)
 }
 
-// NewHandler creates a new Handler
-func NewHandler(load *health.Load) *Handler {
+// NewHandler creates a new Handler.
+func NewHandler(load *health.Load, loader *langd.Loader) *Handler {
 	// Hopefully these queues are sufficiently deep.  Otherwise, the handler
 	// will start blocking.
-	l := log.CreateLog(os.Stdout)
-	loader := langd.NewLoader()
-	lc := langd.NewLoaderContext(loader, runtime.GOOS, runtime.GOARCH, func(lc *langd.LoaderContext) {
-		lc.Log = l
+	lc := langd.NewLoaderContext(loader, runtime.GOOS, runtime.GOARCH, runtime.GOROOT(), func(lc *langd.LoaderContext) {
+		lc.Log = loader.Log
 	})
-	l.SetLevel(log.Verbose)
+	loader.Log.SetLevel(log.Verbose)
 
 	outgoingQueue := make(chan int, 256)
 	h := &Handler{
 		incomingQueue: make(chan int, 1024),
 		load:          load,
-		log:           l,
+		log:           loader.Log,
 		outgoingQueue: outgoingQueue,
 		rm:            map[int]requestHandler{},
 		rq:            newRequestMap(getIniterFuncs()),
 		sq:            sigqueue.CreateSigqueue(outgoingQueue),
 
-		workspace: langd.CreateWorkspace(loader, lc, l),
+		workspace: langd.CreateWorkspace(loader, lc, loader.Log),
 	}
 
 	h.hFunc = h.uninitedHandler
 
 	// Start a routine to process requests
-	h.startProcessingQueue()
+	// h.startProcessingQueue()
 
 	return h
 }
@@ -97,20 +96,17 @@ func NewHandler(load *health.Load) *Handler {
 // ConfigureLoader will instantiate the loader if its not present, and provide
 // the GOROOT specified by the settings
 func (h *Handler) ConfigureLoader(settings *viper.Viper) {
-	if h.workspace.Loader != nil {
-		return
-	}
-
 	root := settings.GetString("go.goroot")
 	if root == "" {
 		root = runtime.GOROOT()
 	}
-	loader := langd.NewLoader()
-	loaderContext := langd.NewLoaderContext(loader, runtime.GOOS, runtime.GOARCH, func(lc *langd.LoaderContext) {
+	loaderContext := langd.NewLoaderContext(h.workspace.Loader, runtime.GOOS, runtime.GOARCH, root, func(lc *langd.LoaderContext) {
 		lc.Log = h.log
 	})
 
-	h.workspace = langd.CreateWorkspace(loader, loaderContext, h.log)
+	// FIXME: This loses the RWMutex on the existing workspace and creates a new one,
+	// which is then unlocked without getting locked, and panics.
+	h.workspace = langd.CreateWorkspace(h.workspace.Loader, loaderContext, h.log)
 }
 
 // NextCid returns the next call id
@@ -228,7 +224,8 @@ func (h *Handler) startProcessing(rhid int) {
 		h.sq.WaitOn(rh.ID())
 	}
 
-	h.workspace.Lock(rh.RequireWriteLock())
+	// h.log.Verbosef("%d: Locking...\n", rhid)
+	// h.workspace.Lock(rh.RequireWriteLock())
 
 	go h.finishProcessing(rh)
 }
@@ -238,7 +235,7 @@ func (h *Handler) finishProcessing(rh requestHandler) {
 
 	err := rh.work()
 
-	h.workspace.Unlock(rh.RequireWriteLock())
+	// h.workspace.Unlock(rh.RequireWriteLock())
 
 	if err != nil {
 		// Should we respond right away?  Set up with an auto-responder?
