@@ -17,11 +17,18 @@ import (
 
 type handleReqFunc func(ctx context.Context, req *jsonrpc2.Request)
 
+// Conn allows mocking jsonrpc2.Conn
+type Conn interface {
+	jsonrpc2.JSONRPC2
+	Reply(ctx context.Context, id jsonrpc2.ID, result interface{}) error
+	ReplyWithError(ctx context.Context, id jsonrpc2.ID, respErr *jsonrpc2.Error) error
+}
+
 // Handler implements jsonrpc2.Handle.  There is one Handler per client
 // connection.  The Handler has a Workspace to service the incoming LSP
 // requests.
 type Handler struct {
-	conn          *jsonrpc2.Conn
+	conn          Conn
 	rq            *requestMap
 	workspace     *langd.Workspace
 	log           *log.Log
@@ -121,7 +128,7 @@ func (h *Handler) NextCid() int {
 
 // SetConnection assigns a JSONRPC2 connection and connects the handler
 // to its log
-func (h *Handler) SetConnection(conn *jsonrpc2.Conn) {
+func (h *Handler) SetConnection(conn Conn) {
 	h.conn = conn
 	h.log.AssignSender(h)
 }
@@ -152,7 +159,6 @@ func (h *Handler) uninitedHandler(ctx context.Context, req *jsonrpc2.Request) {
 		// The moment we've been waiting for; initialize.
 		result, err := h.processInit(req.Params)
 		if err != nil {
-			// TODO: set up jsonrpc2.Error{}
 			e := &jsonrpc2.Error{
 				Code:    jsonrpc2.CodeInternalError,
 				Message: err.Error(),
@@ -161,11 +167,9 @@ func (h *Handler) uninitedHandler(ctx context.Context, req *jsonrpc2.Request) {
 			return
 		}
 		h.conn.Reply(ctx, req.ID, result)
-
-	// case initializedHandler:
-	// 	result, err :=
 	case meth == exitNotification:
-		// Should close down this connection.
+		// Should close down this server, in theory.  In practicality, will only
+		// want to shut down server if all handlers & connections are closed down.
 		// TODO: handle exit
 	case req.Notif:
 		// Do nothing.
