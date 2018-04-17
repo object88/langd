@@ -28,7 +28,7 @@ import (
 // 	testReferences(t, w, startPosition, referencePositions)
 // }
 
-func Test_Workspace_References_Imported_Package(t *testing.T) {
+func Test_Workspace_Declaration_Imported_Package(t *testing.T) {
 	src1 := `package foo
 	const MyNumber = 0`
 

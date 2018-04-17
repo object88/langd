@@ -10,14 +10,13 @@ import (
 	"strings"
 
 	"github.com/object88/langd/log"
-	"github.com/object88/rope"
 	"github.com/pkg/errors"
 	"github.com/spf13/viper"
 )
 
 // Workspace is a mass of code
 type Workspace struct {
-	Loader        *Loader
+	Loader        Loader
 	LoaderContext *LoaderContext
 
 	log *log.Log
@@ -26,7 +25,7 @@ type Workspace struct {
 }
 
 // CreateWorkspace returns a new instance of the Workspace struct
-func CreateWorkspace(loader *Loader, loaderContext *LoaderContext, log *log.Log) *Workspace {
+func CreateWorkspace(loader Loader, loaderContext *LoaderContext, log *log.Log) *Workspace {
 	return &Workspace{
 		LoaderContext: loaderContext,
 		Loader:        loader,
@@ -44,9 +43,13 @@ func (w *Workspace) AssignLoaderContext(lc *LoaderContext) {
 
 // ChangeFile applies changes to an opened file
 func (w *Workspace) ChangeFile(absFilepath string, startLine, startCharacter, endLine, endCharacter int, text string) error {
-	buf, ok := w.Loader.openedFiles[absFilepath]
-	if !ok {
-		return fmt.Errorf("File %s is not opened", absFilepath)
+	// buf, ok := w.Loader.openedFiles[absFilepath]
+	// if !ok {
+	// 	return fmt.Errorf("File %s is not opened", absFilepath)
+	// }
+	buf, err := w.Loader.OpenedFiles().Get(absFilepath)
+	if err != nil {
+		return err
 	}
 
 	// Have position (line, character), need to transform into offset into file
@@ -82,13 +85,16 @@ func (w *Workspace) ChangeFile(absFilepath string, startLine, startCharacter, en
 
 // CloseFile will take a file out of the OpenedFiles struct and reparse
 func (w *Workspace) CloseFile(absPath string) error {
-	_, ok := w.Loader.openedFiles[absPath]
-	if !ok {
-		w.log.Warnf("File %s is not opened\n", absPath)
-		return nil
+	if err := w.Loader.OpenedFiles().Close(absPath); err != nil {
+		w.log.Warnf(err.Error())
 	}
+	// _, ok := w.Loader.openedFiles[absPath]
+	// if !ok {
+	// 	w.log.Warnf("File %s is not opened\n", absPath)
+	// 	return nil
+	// }
 
-	delete(w.Loader.openedFiles, absPath)
+	// delete(w.Loader.openedFiles, absPath)
 
 	w.log.Debugf("File %s is closed\n", absPath)
 
@@ -269,7 +275,7 @@ func (w *Workspace) getVarType(sb *strings.Builder, v *types.Var) {
 		case *types.Basic:
 			sb.WriteString(getBasicType(t))
 		case *types.Named:
-			n, ok := w.Loader.caravan.Find(w.LoaderContext.BuildKey(t.Obj().Pkg().Path()))
+			n, ok := w.Loader.Caravan().Find(w.LoaderContext.BuildKey(t.Obj().Pkg().Path()))
 			if !ok {
 				sb.WriteString("error")
 			}
@@ -334,7 +340,7 @@ func (w *Workspace) LocateIdent(p *token.Position) (*ast.Ident, error) {
 	absPath := filepath.Dir(p.Filename)
 
 	key := w.LoaderContext.BuildKey(absPath)
-	n, ok := w.Loader.caravan.Find(key)
+	n, ok := w.Loader.Caravan().Find(key)
 	if !ok {
 		return nil, fmt.Errorf("No package loaded for '%s'", p.Filename)
 	}
@@ -419,10 +425,13 @@ func (w *Workspace) LocateReferences(p *token.Position) []token.Position {
 // OpenFile shadows the file read from the disk with an in-memory version,
 // which the workspace can accept edits to.
 func (w *Workspace) OpenFile(absFilepath, text string) error {
-	if _, ok := w.Loader.openedFiles[absFilepath]; ok {
-		return fmt.Errorf("File %s is already opened", absFilepath)
+	if err := w.Loader.OpenedFiles().EnsureOpened(absFilepath, text); err != nil {
+		return err
 	}
-	w.Loader.openedFiles[absFilepath] = rope.CreateRope(text)
+	// if _, ok := w.Loader.openedFiles[absFilepath]; ok {
+	// 	return fmt.Errorf("File %s is already opened", absFilepath)
+	// }
+	// w.Loader.openedFiles[absFilepath] = rope.CreateRope(text)
 
 	absPath := filepath.Dir(absFilepath)
 	err := w.reloadPackageAndAscendants(absPath)
@@ -437,14 +446,17 @@ func (w *Workspace) OpenFile(absFilepath, text string) error {
 
 // ReplaceFile replaces the entire contents of an opened file
 func (w *Workspace) ReplaceFile(absFilepath, text string) error {
-	_, ok := w.Loader.openedFiles[absFilepath]
-	if !ok {
-		return fmt.Errorf("File %s is not opened", absFilepath)
+	if err := w.Loader.OpenedFiles().Replace(absFilepath, text); err != nil {
+		return err
 	}
+	// _, ok := w.Loader.openedFiles[absFilepath]
+	// if !ok {
+	// 	return fmt.Errorf("File %s is not opened", absFilepath)
+	// }
 
-	// Replace the entire document
-	buf := rope.CreateRope(text)
-	w.Loader.openedFiles[absFilepath] = buf
+	// // Replace the entire document
+	// buf := rope.CreateRope(text)
+	// w.Loader.openedFiles[absFilepath] = buf
 
 	absPath := filepath.Dir(absFilepath)
 	err := w.reloadPackageAndAscendants(absPath)
@@ -459,7 +471,7 @@ func (w *Workspace) locateDeclaration(p *token.Position) (types.Object, *Package
 	absPath := filepath.Dir(p.Filename)
 
 	key := w.LoaderContext.BuildKey(absPath)
-	n, ok := w.Loader.caravan.Find(key)
+	n, ok := w.Loader.Caravan().Find(key)
 	if !ok {
 		return nil, nil, fmt.Errorf("No package loaded for '%s'", p.Filename)
 	}
@@ -566,7 +578,7 @@ func (w *Workspace) processSelectorExpr(v *ast.SelectorExpr, pkg *Package) (type
 		case *types.PkgName:
 			fmt.Printf("Have PkgName %s, type %s\n", v1.Name(), v1.Type())
 			absPath := v1.Imported().Path()
-			n, _ := w.Loader.caravan.Find(w.LoaderContext.BuildKey(absPath))
+			n, _ := w.Loader.Caravan().Find(w.LoaderContext.BuildKey(absPath))
 			pkg1 := n.Element.(*Package)
 			fmt.Printf("From pkg %#v\n", pkg1)
 
@@ -579,14 +591,14 @@ func (w *Workspace) processSelectorExpr(v *ast.SelectorExpr, pkg *Package) (type
 			fmt.Printf("Have Var %s, type %s\n\tv1: %#v\n\tv1.Sel: %#v\n", v1.Name(), v1.Type(), v1, v.Sel)
 			vSelObj := pkg.checker.ObjectOf(v.Sel)
 			path := vSelObj.Pkg().Path()
-			n, _ := w.Loader.caravan.Find(w.LoaderContext.BuildKey(path))
+			n, _ := w.Loader.Caravan().Find(w.LoaderContext.BuildKey(path))
 			pkg1 := n.Element.(*Package)
 			return vSelObj, pkg1, nil
 		}
 	case *ast.SelectorExpr:
 		vSelObj := pkg.checker.ObjectOf(v.Sel)
 		path := vSelObj.Pkg().Path()
-		n, _ := w.Loader.caravan.Find(w.LoaderContext.BuildKey(path))
+		n, _ := w.Loader.Caravan().Find(w.LoaderContext.BuildKey(path))
 		pkg1 := n.Element.(*Package)
 		return vSelObj, pkg1, nil
 	}
@@ -595,30 +607,33 @@ func (w *Workspace) processSelectorExpr(v *ast.SelectorExpr, pkg *Package) (type
 }
 
 func (w *Workspace) reloadPackageAndAscendants(absPath string) error {
-	n, ok := w.Loader.caravan.Find(w.LoaderContext.BuildKey(absPath))
+	n, ok := w.Loader.Caravan().Find(w.LoaderContext.BuildKey(absPath))
 	if !ok {
 		// Crapola.
 		return fmt.Errorf("Failed to find package for path %s", absPath)
 	}
 	p := n.Element.(*Package)
 
-	p.loadState = unloaded
-	p.ResetChecker()
-	w.Loader.done = false
-	w.Loader.stateChange <- &stateChangeEvent{
-		key: w.LoaderContext.BuildKey(absPath),
-		lc:  w.LoaderContext,
-	}
+	// TODO: Need to reset w.Loader.done
+	w.Loader.InvalidatePackage(w.LoaderContext, p)
+	// p.loadState = unloaded
+	// p.ResetChecker()
+	// w.Loader.done = false
+	// w.Loader.stateChange <- &stateChangeEvent{
+	// 	key: w.LoaderContext.BuildKey(absPath),
+	// 	lc:  w.LoaderContext,
+	// }
 
 	asc := flattenAscendants(n)
 
 	for _, p1 := range asc {
-		p1.loadState = unloaded
-		p1.ResetChecker()
-		w.Loader.stateChange <- &stateChangeEvent{
-			key: w.LoaderContext.BuildKey(p1.AbsPath),
-			lc:  w.LoaderContext,
-		}
+		w.Loader.InvalidatePackage(w.LoaderContext, p1)
+		// p1.loadState = unloaded
+		// p1.ResetChecker()
+		// w.Loader.stateChange <- &stateChangeEvent{
+		// 	key: w.LoaderContext.BuildKey(p1.AbsPath),
+		// 	lc:  w.LoaderContext,
+		// }
 	}
 
 	return nil

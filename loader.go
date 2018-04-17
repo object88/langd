@@ -22,7 +22,6 @@ import (
 
 	"github.com/object88/langd/collections"
 	"github.com/object88/langd/log"
-	"github.com/object88/rope"
 )
 
 type loadState int32
@@ -49,7 +48,19 @@ type stateChangeEvent struct {
 }
 
 // Loader is a Go code loader
-type Loader struct {
+type Loader interface {
+	io.Closer
+
+	Start() chan bool
+	Errors(handleErrs func(file string, errs []FileError))
+	LoadDirectory(lc *LoaderContext, path string) error
+	InvalidatePackage(lc *LoaderContext, p *Package)
+
+	Caravan() *collections.Caravan
+	OpenedFiles() *OpenedFiles
+}
+
+type loader struct {
 	mReady sync.Mutex
 	closer chan bool
 	ready  chan bool
@@ -60,7 +71,7 @@ type Loader struct {
 
 	stateChange chan *stateChangeEvent
 
-	openedFiles map[string]*rope.Rope
+	openedFiles *OpenedFiles // map[string]*rope.Rope
 
 	Log *log.Log
 }
@@ -137,21 +148,39 @@ func (p *Package) currentFiles() map[string]*File {
 var cgoRe = regexp.MustCompile(`[/\\:]`)
 
 // NewLoader creates a new loader
-func NewLoader() *Loader {
-	l := &Loader{
+func NewLoader() Loader {
+	l := &loader{
 		caravan:     collections.CreateCaravan(),
 		closer:      make(chan bool),
 		done:        false,
 		Log:         log.Stdout(),
-		openedFiles: map[string]*rope.Rope{},
+		openedFiles: &OpenedFiles{}, // map[string]*rope.Rope{},
 		stateChange: make(chan *stateChangeEvent),
 	}
 
 	return l
 }
 
+func (l *loader) Caravan() *collections.Caravan {
+	return l.caravan
+}
+
+func (l *loader) OpenedFiles() *OpenedFiles {
+	return l.openedFiles
+}
+
+func (l *loader) InvalidatePackage(lc *LoaderContext, p *Package) {
+	p.loadState = unloaded
+	p.ResetChecker()
+
+	l.stateChange <- &stateChangeEvent{
+		key: lc.BuildKey(p.AbsPath),
+		lc:  lc,
+	}
+}
+
 // Start initializes the asynchronous source processing
-func (l *Loader) Start() chan bool {
+func (l *loader) Start() chan bool {
 	l.mReady.Lock()
 	if l.ready != nil {
 		l.mReady.Unlock()
@@ -179,13 +208,14 @@ func (l *Loader) Start() chan bool {
 }
 
 // Close stops the loader processing
-func (l *Loader) Close() {
+func (l *loader) Close() error {
 	l.closer <- true
+	return nil
 }
 
 // Errors exposes problems with code found during compilation on a file-by-file
 // basis.
-func (l *Loader) Errors(handleErrs func(file string, errs []FileError)) {
+func (l *loader) Errors(handleErrs func(file string, errs []FileError)) {
 	l.caravan.Iter(func(key collections.Key, node *collections.Node) bool {
 		p := node.Element.(*Package)
 		for fname, f := range p.files {
@@ -203,7 +233,7 @@ func (l *Loader) Errors(handleErrs func(file string, errs []FileError)) {
 }
 
 // LoadDirectory adds the contents of a directory to the Loader
-func (l *Loader) LoadDirectory(lc *LoaderContext, path string) error {
+func (l *loader) LoadDirectory(lc *LoaderContext, path string) error {
 	if !lc.context.IsDir(path) {
 		return fmt.Errorf("Argument '%s' is not a directory", path)
 	}
@@ -219,7 +249,7 @@ func (l *Loader) LoadDirectory(lc *LoaderContext, path string) error {
 	return nil
 }
 
-func (l *Loader) readDir(lc *LoaderContext, absPath string) {
+func (l *loader) readDir(lc *LoaderContext, absPath string) {
 	for _, g := range lc.filteredPaths {
 		if g.Match(absPath) {
 			// We are looking at a filtered out path.
@@ -249,7 +279,7 @@ func (l *Loader) readDir(lc *LoaderContext, absPath string) {
 	}
 }
 
-func (l *Loader) processStateChange(sce *stateChangeEvent) {
+func (l *loader) processStateChange(sce *stateChangeEvent) {
 	n, _ := l.caravan.Find(sce.key)
 	p := n.Element.(*Package)
 
@@ -330,7 +360,7 @@ func importPathMapToArray(imports map[string]bool) []string {
 	return results
 }
 
-func (l *Loader) processComplete(lc *LoaderContext, p *Package) {
+func (l *loader) processComplete(lc *LoaderContext, p *Package) {
 	if lc.IsUnsafe(p) {
 		l.Log.Debugf(" PC: %s: Checking unsafe (skipping)\n", p)
 		return
@@ -375,7 +405,7 @@ func (l *Loader) processComplete(lc *LoaderContext, p *Package) {
 	}
 }
 
-func (l *Loader) processDirectory(lc *LoaderContext, p *Package) {
+func (l *loader) processDirectory(lc *LoaderContext, p *Package) {
 	if l.processUnsafe(lc, p) {
 		return
 	}
@@ -393,7 +423,7 @@ func (l *Loader) processDirectory(lc *LoaderContext, p *Package) {
 	p.buildPkg = buildPkg
 }
 
-func (l *Loader) processGoFiles(lc *LoaderContext, p *Package) bool {
+func (l *loader) processGoFiles(lc *LoaderContext, p *Package) bool {
 	if lc.IsUnsafe(p) {
 		return true
 	}
@@ -411,7 +441,8 @@ func (l *Loader) processGoFiles(lc *LoaderContext, p *Package) bool {
 		fpath := filepath.Join(p.AbsPath, fname)
 
 		var r io.Reader
-		if of, ok := l.openedFiles[fpath]; ok {
+		// if of, ok := l.openedFiles[fpath]; ok {
+		if of, err := l.openedFiles.Get(fpath); err != nil { // .openedFiles[fpath]; ok {
 			r = of.NewReader()
 		} else {
 			var err error
@@ -505,7 +536,7 @@ func pkgConfigFlags(p *build.Package) (cflags []string, err error) {
 	return pkgConfig("--cflags", p.CgoPkgConfig)
 }
 
-func (l *Loader) processCgoFiles(lc *LoaderContext, p *Package) bool {
+func (l *loader) processCgoFiles(lc *LoaderContext, p *Package) bool {
 	if lc.IsUnsafe(p) {
 		return true
 	}
@@ -610,7 +641,7 @@ func (l *Loader) processCgoFiles(lc *LoaderContext, p *Package) bool {
 	return true
 }
 
-func (l *Loader) processTestGoFiles(lc *LoaderContext, p *Package) bool {
+func (l *loader) processTestGoFiles(lc *LoaderContext, p *Package) bool {
 	if lc.IsUnsafe(p) || p.buildPkg == nil {
 		return false
 	}
@@ -656,7 +687,7 @@ func (l *Loader) processTestGoFiles(lc *LoaderContext, p *Package) bool {
 	return true
 }
 
-func (l *Loader) processAstFile(p *Package, fname string, astf *ast.File, importPaths map[string]bool) {
+func (l *loader) processAstFile(p *Package, fname string, astf *ast.File, importPaths map[string]bool) {
 	for _, decl := range astf.Decls {
 		decl, ok := decl.(*ast.GenDecl)
 		if !ok || decl.Tok != token.IMPORT {
@@ -683,7 +714,7 @@ func (l *Loader) processAstFile(p *Package, fname string, astf *ast.File, import
 	}
 }
 
-func (l *Loader) processUnsafe(lc *LoaderContext, p *Package) bool {
+func (l *loader) processUnsafe(lc *LoaderContext, p *Package) bool {
 	if !lc.IsUnsafe(p) {
 		return false
 	}
@@ -695,7 +726,7 @@ func (l *Loader) processUnsafe(lc *LoaderContext, p *Package) bool {
 	return true
 }
 
-func (l *Loader) processPackages(lc *LoaderContext, p *Package, importPaths []string, testing bool) {
+func (l *loader) processPackages(lc *LoaderContext, p *Package, importPaths []string, testing bool) {
 	loadState := p.loadState.get()
 	l.Log.Debugf(" PP: %s: %d: started\n", p, loadState)
 
@@ -763,7 +794,7 @@ func (l *Loader) processPackages(lc *LoaderContext, p *Package, importPaths []st
 	l.Log.Debugf(" PP: %s: %d: all imports fulfilled.\n", p, loadState)
 }
 
-func (l *Loader) checkImportReady(sourceLoadState loadState, targetP *Package) bool {
+func (l *loader) checkImportReady(sourceLoadState loadState, targetP *Package) bool {
 	targetLoadState := targetP.loadState.get()
 
 	switch sourceLoadState {
@@ -782,7 +813,7 @@ func (l *Loader) checkImportReady(sourceLoadState loadState, targetP *Package) b
 	return false
 }
 
-func (l *Loader) ensurePackage(lc *LoaderContext, absPath string) *Package {
+func (l *loader) ensurePackage(lc *LoaderContext, absPath string) *Package {
 	key := lc.BuildKey(absPath)
 	n, created := l.caravan.Ensure(key, func() collections.Keyer {
 		shortPath := absPath

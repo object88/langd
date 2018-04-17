@@ -32,7 +32,7 @@ type SocketHandler struct {
 type server struct {
 	done   chan bool
 	load   *health.Load
-	loader *langd.Loader
+	loader langd.Loader
 }
 
 // InitializeService runs for the lifespan of the server instance
@@ -45,7 +45,7 @@ func InitializeService() error {
 		loader: langd.NewLoader(),
 	}
 
-	s.loader.Log = l
+	// s.loader.Log = l
 
 	grpcLis, err := net.Listen("tcp", grpcPort)
 	if err != nil {

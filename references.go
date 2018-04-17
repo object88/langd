@@ -45,7 +45,7 @@ func (w *Workspace) locateReferences(obj types.Object, pkg *Package) []*ref {
 
 	if obj.Exported() {
 		key := w.LoaderContext.BuildKey(pkg.AbsPath)
-		n, ok := w.Loader.caravan.Find(key)
+		n, ok := w.Loader.Caravan().Find(key)
 		if !ok {
 			// Should never get here.
 			panic("Shit.")

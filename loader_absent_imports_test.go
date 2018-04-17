@@ -4,7 +4,6 @@ import (
 	"runtime"
 	"testing"
 
-	"github.com/object88/langd/log"
 	"golang.org/x/tools/go/buildutil"
 )
 
@@ -25,7 +24,7 @@ func Test_Load_Missing_Imports(t *testing.T) {
 
 	fc := buildutil.FakeContext(packages)
 	loader := NewLoader()
-	loader.Log.SetLevel(log.Verbose)
+	// loader.Log.SetLevel(log.Verbose)
 	lc := NewLoaderContext(loader, runtime.GOOS, runtime.GOARCH, "/go", func(lc *LoaderContext) {
 		lc.context = fc
 	})

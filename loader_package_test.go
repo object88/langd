@@ -4,7 +4,6 @@ import (
 	"runtime"
 	"testing"
 
-	"github.com/object88/langd/log"
 	"golang.org/x/tools/go/buildutil"
 )
 
@@ -21,7 +20,7 @@ func Test_Load_Own_Package(t *testing.T) {
 
 	fc := buildutil.FakeContext(packages)
 	loader := NewLoader()
-	loader.Log.SetLevel(log.Debug)
+	// loader.Log.SetLevel(log.Debug)
 	lc := NewLoaderContext(loader, runtime.GOOS, runtime.GOARCH, "/go", func(lc *LoaderContext) {
 		lc.context = fc
 	})

@@ -83,31 +83,33 @@ func (h *Handler) readRoot(root string) {
 	h.startProcessingQueue()
 
 	// Send off some errors.
-	h.workspace.Loader.Errors(func(file string, errs []langd.FileError) {
-		params := &PublishDiagnosticsParams{
-			URI:         DocumentURI("file://" + file),
-			Diagnostics: make([]Diagnostic, len(errs)),
+	h.workspace.Loader.Errors(h.foofofof)
+}
+
+func (h *Handler) foofofof(file string, errs []langd.FileError) {
+	params := &PublishDiagnosticsParams{
+		URI:         DocumentURI("file://" + file),
+		Diagnostics: make([]Diagnostic, len(errs)),
+	}
+	for k, e := range errs {
+		s := ErrorDiagnosticSeverity
+		if e.Warning {
+			s = WarningDiagnosticSeverity
 		}
-		for k, e := range errs {
-			s := ErrorDiagnosticSeverity
-			if e.Warning {
-				s = WarningDiagnosticSeverity
-			}
-			params.Diagnostics[k] = Diagnostic{
-				Range: Range{
-					Start: Position{
-						Line:      e.Line - 1,
-						Character: e.Column,
-					},
-					End: Position{
-						Line:      e.Line - 1,
-						Character: e.Column,
-					},
+		params.Diagnostics[k] = Diagnostic{
+			Range: Range{
+				Start: Position{
+					Line:      e.Line - 1,
+					Character: e.Column,
 				},
-				Severity: &s,
-				Message:  e.Message,
-			}
+				End: Position{
+					Line:      e.Line - 1,
+					Character: e.Column,
+				},
+			},
+			Severity: &s,
+			Message:  e.Message,
 		}
-		publishDiagnostics(context.Background(), h.conn, params)
-	})
+	}
+	publishDiagnostics(context.Background(), h.conn, params)
 }

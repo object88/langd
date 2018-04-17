@@ -71,25 +71,23 @@ type replyHandler interface {
 }
 
 // NewHandler creates a new Handler.
-func NewHandler(load *health.Load, loader *langd.Loader) *Handler {
+func NewHandler(load *health.Load, loader langd.Loader) *Handler {
 	// Hopefully these queues are sufficiently deep.  Otherwise, the handler
 	// will start blocking.
-	lc := langd.NewLoaderContext(loader, runtime.GOOS, runtime.GOARCH, runtime.GOROOT(), func(lc *langd.LoaderContext) {
-		lc.Log = loader.Log
-	})
-	loader.Log.SetLevel(log.Verbose)
+	lc := langd.NewLoaderContext(loader, runtime.GOOS, runtime.GOARCH, runtime.GOROOT())
+	// loader.Log.SetLevel(log.Verbose)
 
 	outgoingQueue := make(chan int, 256)
 	h := &Handler{
 		incomingQueue: make(chan int, 1024),
 		load:          load,
-		log:           loader.Log,
+		log:           lc.Log,
 		outgoingQueue: outgoingQueue,
 		rm:            map[int]requestHandler{},
 		rq:            newRequestMap(getIniterFuncs()),
 		sq:            sigqueue.CreateSigqueue(outgoingQueue),
 
-		workspace: langd.CreateWorkspace(loader, lc, loader.Log),
+		workspace: langd.CreateWorkspace(loader, lc, lc.Log),
 	}
 
 	h.hFunc = h.uninitedHandler
@@ -194,6 +192,10 @@ func (h *Handler) initedHandler(ctx context.Context, req *jsonrpc2.Request) {
 	}
 
 	rh := f(ctx, h, req)
+	if rh == nil {
+		h.log.Errorf("Initer method did not return a handler\n")
+		return
+	}
 	h.rm[rh.ID()] = rh
 
 	// NOTE: This should probably be removed after all handlers have been

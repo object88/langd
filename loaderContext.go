@@ -25,7 +25,7 @@ type LoaderContext struct {
 
 	Log *log.Log
 
-	loader *Loader
+	loader Loader
 
 	checkerMu  sync.Mutex
 	config     *types.Config
@@ -39,7 +39,7 @@ type LoaderContext struct {
 type LoaderContextOption func(lc *LoaderContext)
 
 // NewLoaderContext creates a new LoaderContext
-func NewLoaderContext(loader *Loader, goos, goarch, goroot string, options ...LoaderContextOption) *LoaderContext {
+func NewLoaderContext(loader Loader, goos, goarch, goroot string, options ...LoaderContextOption) *LoaderContext {
 	globs := make([]glob.Glob, 2)
 	globs[0] = glob.MustCompile(filepath.Join("**", ".*"))
 	globs[1] = glob.MustCompile(filepath.Join("**", "testdata"))
@@ -153,7 +153,7 @@ func (lc *LoaderContext) HandleTypeCheckerError(e error) {
 		position := terror.Fset.Position(terror.Pos)
 		absPath := filepath.Dir(position.Filename)
 		key := lc.BuildKey(absPath)
-		node, ok := lc.loader.caravan.Find(key)
+		node, ok := lc.loader.Caravan().Find(key)
 
 		if !ok {
 			lc.Log.Debugf("ERROR: (missing) No package for %s\n", absPath)
@@ -191,7 +191,7 @@ func (lc *LoaderContext) findImportPath(path, src string) (string, error) {
 }
 
 func (lc *LoaderContext) locatePackages(path string) (*Package, error) {
-	n, ok := lc.loader.caravan.Find(lc.BuildKey(path))
+	n, ok := lc.loader.Caravan().Find(lc.BuildKey(path))
 	if !ok {
 		fmt.Printf("**** Not found! *****\n")
 		return nil, fmt.Errorf("Failed to import %s", path)

@@ -4,7 +4,6 @@ import (
 	"testing"
 
 	"github.com/object88/langd/collections"
-	"github.com/object88/langd/log"
 	"golang.org/x/tools/go/buildutil"
 )
 
@@ -19,7 +18,7 @@ func Test_LoadContext_Same_Package_Same_Env(t *testing.T) {
 	}
 
 	loader := NewLoader()
-	loader.Log.SetLevel(log.Debug)
+	// loader.Log.SetLevel(log.Debug)
 	done := loader.Start()
 
 	lc1 := NewLoaderContext(loader, "darwin", "x86", "/go", func(lc *LoaderContext) {
@@ -58,7 +57,7 @@ func Test_LoadContext_Same_Package_Same_Env(t *testing.T) {
 	}
 
 	packageCount := 0
-	loader.caravan.Iter(func(key collections.Key, node *collections.Node) bool {
+	loader.Caravan().Iter(func(key collections.Key, node *collections.Node) bool {
 		packageCount++
 		return true
 	})
@@ -87,7 +86,7 @@ func Test_LoadContext_Same_Package_Different_Env(t *testing.T) {
 	}
 
 	loader := NewLoader()
-	loader.Log.SetLevel(log.Debug)
+	// loader.Log.SetLevel(log.Debug)
 	done := loader.Start()
 
 	envs := [][]string{
@@ -127,7 +126,7 @@ func Test_LoadContext_Same_Package_Different_Env(t *testing.T) {
 	}
 
 	packageCount := 0
-	loader.caravan.Iter(func(key collections.Key, node *collections.Node) bool {
+	loader.Caravan().Iter(func(key collections.Key, node *collections.Node) bool {
 		packageCount++
 		p := node.Element.(*Package)
 		if len(p.files) != 2 {

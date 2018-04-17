@@ -51,7 +51,7 @@ func Test_Workspace_Modify_File(t *testing.T) {
 		t.Errorf(err.Error())
 	}
 
-	rope := w.Loader.openedFiles["/go/src/foo/foo.go"]
+	rope, _ := w.Loader.OpenedFiles().Get("/go/src/foo/foo.go")
 	ropeString := rope.String()
 
 	if strings.Contains(ropeString, "foof") {
@@ -105,7 +105,8 @@ func Test_Workspace_Modify_Cross_File(t *testing.T) {
 
 	<-done
 
-	fmt.Printf("foo2.go:\n%s\n", w.Loader.openedFiles["/go/src/foo/foo2.go"].String())
+	rope, _ := w.Loader.OpenedFiles().Get("/go/src/foo/foo2.go")
+	fmt.Printf("foo2.go:\n%s\n", rope.String())
 
 	errCount := 0
 	w.Loader.Errors(func(file string, errs []FileError) {
