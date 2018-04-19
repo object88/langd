@@ -17,7 +17,7 @@ import (
 // Workspace is a mass of code
 type Workspace struct {
 	Loader        Loader
-	LoaderContext *LoaderContext
+	LoaderContext LoaderContext
 
 	log *log.Log
 
@@ -25,18 +25,18 @@ type Workspace struct {
 }
 
 // CreateWorkspace returns a new instance of the Workspace struct
-func CreateWorkspace(loader Loader, loaderContext *LoaderContext, log *log.Log) *Workspace {
+// func CreateWorkspace(loader Loader, loaderContext LoaderContext, log *log.Log) *Workspace {
+func CreateWorkspace(loader Loader, log *log.Log) *Workspace {
 	return &Workspace{
-		LoaderContext: loaderContext,
-		Loader:        loader,
-		log:           log,
-		settings:      viper.New(),
+		Loader:   loader,
+		log:      log,
+		settings: viper.New(),
 	}
 }
 
 // AssignLoaderContext attaches the new loader context to the workspace.  The
 // workspace should start to reload the packages.
-func (w *Workspace) AssignLoaderContext(lc *LoaderContext) {
+func (w *Workspace) AssignLoaderContext(lc LoaderContext) {
 	w.LoaderContext = lc
 	// TODO: reload packages
 }
@@ -607,7 +607,8 @@ func (w *Workspace) processSelectorExpr(v *ast.SelectorExpr, pkg *Package) (type
 }
 
 func (w *Workspace) reloadPackageAndAscendants(absPath string) error {
-	n, ok := w.Loader.Caravan().Find(w.LoaderContext.BuildKey(absPath))
+	key := w.LoaderContext.BuildKey(absPath)
+	n, ok := w.Loader.Caravan().Find(key)
 	if !ok {
 		// Crapola.
 		return fmt.Errorf("Failed to find package for path %s", absPath)

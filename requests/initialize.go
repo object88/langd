@@ -7,6 +7,7 @@ import (
 	"strings"
 
 	"github.com/object88/langd"
+	"github.com/spf13/viper"
 )
 
 const (
@@ -26,6 +27,8 @@ func (h *Handler) processInit(p *json.RawMessage) (interface{}, error) {
 
 	h.hFunc = h.initedHandler
 	h.rootURI = rootURI
+
+	h.ConfigureLoaderContext(rootURI, viper.New())
 
 	go h.readRoot(rootURI)
 
@@ -70,23 +73,23 @@ func (h *Handler) readRoot(root string) {
 		fmt.Printf("Failed to deliver message to client: %s\n", err.Error())
 	}
 
-	done := h.workspace.Loader.Start()
+	// done := h.workspace.Loader.Start()
 
 	fmt.Printf("About to load %s\n", base)
 	h.workspace.Loader.LoadDirectory(h.workspace.LoaderContext, base)
 
 	// NOTE: We are not doing anything with this, so... BLOCKED.
 	fmt.Printf("Waiting...\n")
-	<-done
+	// <-done
 
 	// Start a routine to process requests
 	h.startProcessingQueue()
 
 	// Send off some errors.
-	h.workspace.Loader.Errors(h.foofofof)
+	h.workspace.Loader.Errors(h.publishErrors)
 }
 
-func (h *Handler) foofofof(file string, errs []langd.FileError) {
+func (h *Handler) publishErrors(file string, errs []langd.FileError) {
 	params := &PublishDiagnosticsParams{
 		URI:         DocumentURI("file://" + file),
 		Diagnostics: make([]Diagnostic, len(errs)),

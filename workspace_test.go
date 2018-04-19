@@ -15,21 +15,23 @@ import (
 	"golang.org/x/tools/go/buildutil"
 )
 
-func workspaceSetup(t *testing.T, startingPath string, packages map[string]map[string]string, expectFailure bool) *Workspace {
+func workspaceSetup(t *testing.T, startingPath string, packages map[string]map[string]string, expectFailure bool) (*Workspace, LoaderContext) {
 	fc := buildutil.FakeContext(packages)
 	loader := NewLoader()
-	lc := NewLoaderContext(loader, runtime.GOOS, runtime.GOARCH, "/go", func(lc *LoaderContext) {
-		lc.context = fc
+	defer loader.Close()
+	lc := NewLoaderContext(loader, startingPath, runtime.GOOS, runtime.GOARCH, "/go", func(lc LoaderContext) {
+		lc.(*loaderContext).context = fc
 	})
-	w := CreateWorkspace(loader, lc, log.CreateLog(os.Stdout))
+	w := CreateWorkspace(loader, log.CreateLog(os.Stdout))
 	w.log.SetLevel(log.Verbose)
 
-	done := loader.Start()
+	// done := loader.Start()
 	err := loader.LoadDirectory(lc, startingPath)
 	if err != nil {
 		t.Fatalf("Error while loading directory '%s': %s", startingPath, err.Error())
 	}
-	<-done
+	// <-done
+	lc.Wait()
 
 	if expectFailure {
 		errCount := 0
@@ -56,7 +58,7 @@ func workspaceSetup(t *testing.T, startingPath string, packages map[string]map[s
 		}
 	}
 
-	return w
+	return w, lc
 }
 
 func testDeclaration(t *testing.T, w *Workspace, usagePosition, expectedDeclPosition *token.Position) {

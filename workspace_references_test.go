@@ -20,7 +20,7 @@ func Test_Workspace_References_Local_Const(t *testing.T) {
 		},
 	}
 
-	w := workspaceSetup(t, "/go/src/foo", packages, false)
+	w, _ := workspaceSetup(t, "/go/src/foo", packages, false)
 
 	startPosition := &token.Position{
 		Filename: "/go/src/foo/foo.go",
@@ -54,7 +54,7 @@ func Test_Workspace_References_Package_Const(t *testing.T) {
 		},
 	}
 
-	w := workspaceSetup(t, "/go/src/foo", packages, false)
+	w, _ := workspaceSetup(t, "/go/src/foo", packages, false)
 
 	startPosition := &token.Position{
 		Filename: "/go/src/foo/foo2.go",
@@ -91,7 +91,7 @@ func Test_Workspace_References_Imported_Const(t *testing.T) {
 		},
 	}
 
-	w := workspaceSetup(t, "/go/src/bar", packages, false)
+	w, _ := workspaceSetup(t, "/go/src/bar", packages, false)
 
 	startPosition := &token.Position{
 		Filename: "/go/src/bar/bar.go",
@@ -123,7 +123,7 @@ func Test_Workspace_References_Local_Var(t *testing.T) {
 		},
 	}
 
-	w := workspaceSetup(t, "/go/src/foo", packages, false)
+	w, _ := workspaceSetup(t, "/go/src/foo", packages, false)
 
 	startPosition := &token.Position{
 		Filename: "/go/src/foo/foo.go",
@@ -163,7 +163,7 @@ func Test_Workspace_References_Package_Var(t *testing.T) {
 		},
 	}
 
-	w := workspaceSetup(t, "/go/src/foo", packages, false)
+	w, _ := workspaceSetup(t, "/go/src/foo", packages, false)
 
 	startPosition := &token.Position{
 		Filename: "/go/src/foo/foo2.go",
@@ -205,7 +205,7 @@ func Test_Workspace_References_Imported_Var(t *testing.T) {
 		},
 	}
 
-	w := workspaceSetup(t, "/go/src/bar", packages, false)
+	w, _ := workspaceSetup(t, "/go/src/bar", packages, false)
 
 	startPosition := &token.Position{
 		Filename: "/go/src/bar/bar.go",
@@ -239,7 +239,7 @@ func Test_Workspace_References_Local_Struct(t *testing.T) {
 		},
 	}
 
-	w := workspaceSetup(t, "/go/src/foo", packages, false)
+	w, _ := workspaceSetup(t, "/go/src/foo", packages, false)
 
 	startPosition := &token.Position{
 		Filename: "/go/src/foo/foo.go",
@@ -276,7 +276,7 @@ func Test_Workspace_References_Package_Struct(t *testing.T) {
 		},
 	}
 
-	w := workspaceSetup(t, "/go/src/foo", packages, false)
+	w, _ := workspaceSetup(t, "/go/src/foo", packages, false)
 
 	startPosition := &token.Position{
 		Filename: "/go/src/foo/foo2.go",
@@ -316,7 +316,7 @@ func Test_Workspace_References_Imported_Struct(t *testing.T) {
 		},
 	}
 
-	w := workspaceSetup(t, "/go/src/bar", packages, false)
+	w, _ := workspaceSetup(t, "/go/src/bar", packages, false)
 
 	startPosition := &token.Position{
 		Filename: "/go/src/bar/bar.go",
@@ -350,7 +350,7 @@ func Test_Workspace_References_Local_Interface(t *testing.T) {
 		},
 	}
 
-	w := workspaceSetup(t, "/go/src/foo", packages, false)
+	w, _ := workspaceSetup(t, "/go/src/foo", packages, false)
 
 	startPosition := &token.Position{
 		Filename: "/go/src/foo/foo.go",
@@ -386,7 +386,7 @@ func Test_Workspace_References_Package_Interface(t *testing.T) {
 		},
 	}
 
-	w := workspaceSetup(t, "/go/src/foo", packages, false)
+	w, _ := workspaceSetup(t, "/go/src/foo", packages, false)
 
 	startPosition := &token.Position{
 		Filename: "/go/src/foo/foo2.go",
@@ -425,7 +425,7 @@ func Test_Workspace_References_Imported_Interface(t *testing.T) {
 		},
 	}
 
-	w := workspaceSetup(t, "/go/src/bar", packages, false)
+	w, _ := workspaceSetup(t, "/go/src/bar", packages, false)
 
 	startPosition := &token.Position{
 		Filename: "/go/src/bar/bar.go",
@@ -458,7 +458,7 @@ func Test_Workspace_References_Local_Func(t *testing.T) {
 		},
 	}
 
-	w := workspaceSetup(t, "/go/src/foo", packages, false)
+	w, _ := workspaceSetup(t, "/go/src/foo", packages, false)
 
 	startPosition := &token.Position{
 		Filename: "/go/src/foo/foo.go",
@@ -494,7 +494,7 @@ func Test_Workspace_References_Package_Func(t *testing.T) {
 		},
 	}
 
-	w := workspaceSetup(t, "/go/src/foo", packages, false)
+	w, _ := workspaceSetup(t, "/go/src/foo", packages, false)
 
 	startPosition := &token.Position{
 		Filename: "/go/src/foo/foo2.go",
@@ -533,7 +533,7 @@ func Test_Workspace_References_Imported_Func(t *testing.T) {
 		},
 	}
 
-	w := workspaceSetup(t, "/go/src/bar", packages, false)
+	w, _ := workspaceSetup(t, "/go/src/bar", packages, false)
 
 	startPosition := &token.Position{
 		Filename: "/go/src/bar/bar.go",
@@ -567,7 +567,7 @@ func Test_Workspace_References_Local_Selector_Field(t *testing.T) {
 		},
 	}
 
-	w := workspaceSetup(t, "/go/src/foo", packages, false)
+	w, _ := workspaceSetup(t, "/go/src/foo", packages, false)
 
 	startPosition := &token.Position{
 		Filename: "/go/src/foo/foo.go",
@@ -603,7 +603,7 @@ func Test_Workspace_References_Package_Selector_Field(t *testing.T) {
 		},
 	}
 
-	w := workspaceSetup(t, "/go/src/foo", packages, false)
+	w, _ := workspaceSetup(t, "/go/src/foo", packages, false)
 
 	startPosition := &token.Position{
 		Filename: "/go/src/foo/foo2.go",
@@ -642,7 +642,7 @@ func Test_Workspace_References_Imported_Selector_Field(t *testing.T) {
 		},
 	}
 
-	w := workspaceSetup(t, "/go/src/bar", packages, false)
+	w, _ := workspaceSetup(t, "/go/src/bar", packages, false)
 
 	startPosition := &token.Position{
 		Filename: "/go/src/bar/bar.go",
@@ -694,7 +694,7 @@ func Test_Workspace_References_Indirect_Imported_Selector_Field(t *testing.T) {
 		},
 	}
 
-	w := workspaceSetup(t, "/go/src/baz", packages, false)
+	w, _ := workspaceSetup(t, "/go/src/baz", packages, false)
 
 	startPosition := &token.Position{
 		Filename: "/go/src/baz/baz.go",
@@ -729,7 +729,7 @@ func Test_Workspace_References_Local_Selector_Method(t *testing.T) {
 		},
 	}
 
-	w := workspaceSetup(t, "/go/src/foo", packages, false)
+	w, _ := workspaceSetup(t, "/go/src/foo", packages, false)
 
 	startPosition := &token.Position{
 		Filename: "/go/src/foo/foo.go",
@@ -766,7 +766,7 @@ func Test_Workspace_References_Package_Selector_Method(t *testing.T) {
 		},
 	}
 
-	w := workspaceSetup(t, "/go/src/foo", packages, false)
+	w, _ := workspaceSetup(t, "/go/src/foo", packages, false)
 
 	startPosition := &token.Position{
 		Filename: "/go/src/foo/foo2.go",
@@ -806,7 +806,7 @@ func Test_Workspace_References_Imported_Selector_Method(t *testing.T) {
 		},
 	}
 
-	w := workspaceSetup(t, "/go/src/bar", packages, false)
+	w, _ := workspaceSetup(t, "/go/src/bar", packages, false)
 
 	startPosition := &token.Position{
 		Filename: "/go/src/bar/bar.go",
@@ -859,7 +859,7 @@ func Test_Workspace_References_Indirect_Imported_Selector_Method(t *testing.T) {
 		},
 	}
 
-	w := workspaceSetup(t, "/go/src/baz", packages, false)
+	w, _ := workspaceSetup(t, "/go/src/baz", packages, false)
 
 	startPosition := &token.Position{
 		Filename: "/go/src/baz/baz.go",
@@ -898,7 +898,7 @@ func Test_Workspace_References_Local_Selector_Interface_Method(t *testing.T) {
 		},
 	}
 
-	w := workspaceSetup(t, "/go/src/foo", packages, false)
+	w, _ := workspaceSetup(t, "/go/src/foo", packages, false)
 
 	startPosition := &token.Position{
 		Filename: "/go/src/foo/foo.go",
@@ -939,7 +939,7 @@ func Test_Workspace_References_Package_Selector_Interface_Method(t *testing.T) {
 		},
 	}
 
-	w := workspaceSetup(t, "/go/src/foo", packages, false)
+	w, _ := workspaceSetup(t, "/go/src/foo", packages, false)
 
 	startPosition := &token.Position{
 		Filename: "/go/src/foo/foo2.go",
@@ -983,7 +983,7 @@ func Test_Workspace_References_Imported_Selector_Interface_Method(t *testing.T) 
 		},
 	}
 
-	w := workspaceSetup(t, "/go/src/bar", packages, false)
+	w, _ := workspaceSetup(t, "/go/src/bar", packages, false)
 
 	startPosition := &token.Position{
 		Filename: "/go/src/bar/bar.go",
@@ -1045,7 +1045,7 @@ func Test_Workspace_References_Complex_Lookup(t *testing.T) {
 		},
 	}
 
-	w := workspaceSetup(t, "/go/src/baz", packages, false)
+	w, _ := workspaceSetup(t, "/go/src/baz", packages, false)
 
 	startPosition := &token.Position{
 		Filename: "/go/src/baz/baz.go",
@@ -1081,15 +1081,16 @@ func Test_Workspace_References_Complex_Lookup(t *testing.T) {
 func testReferences(t *testing.T, w *Workspace, startPosition *token.Position, referencePositions []*token.Position) {
 	// Ensure that the file at for startPosition is open.  We will use our
 	// override of the build.Context to get the file contents
-	load := w.Loader.Start()
-	rc, _ := w.LoaderContext.context.OpenFile(startPosition.Filename)
+	// load := w.Loader.Start()
+	rc := w.LoaderContext.OpenFile(startPosition.Filename)
 	b, err := ioutil.ReadAll(rc)
 	if err != nil {
 		t.Fatalf("Failed while attempting to read pseudo-file %s\n\t%s", startPosition.Filename, err.Error())
 	}
 	w.OpenFile(startPosition.Filename, string(b))
 
-	<-load
+	// <-load
+	w.LoaderContext.Wait()
 
 	actual := w.LocateReferences(startPosition)
 	if nil == actual {

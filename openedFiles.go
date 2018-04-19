@@ -6,8 +6,16 @@ import (
 	"github.com/object88/rope"
 )
 
+// OpenedFiles is a collection of files opened across the caravan
 type OpenedFiles struct {
 	ropes map[string]*rope.Rope
+}
+
+// NewOpenedFiles creates a new OpenedFiles instance
+func NewOpenedFiles() *OpenedFiles {
+	return &OpenedFiles{
+		ropes: map[string]*rope.Rope{},
+	}
 }
 
 func (of *OpenedFiles) EnsureOpened(absFilepath, text string) error {
@@ -21,7 +29,7 @@ func (of *OpenedFiles) EnsureOpened(absFilepath, text string) error {
 func (of *OpenedFiles) Close(absFilepath string) error {
 	_, ok := of.ropes[absFilepath]
 	if !ok {
-		return fmt.Errorf("File %s is not opened", absFilepath)
+		return fmt.Errorf("openedFiles.Close:: File %s is not opened", absFilepath)
 	}
 
 	delete(of.ropes, absFilepath)
@@ -31,7 +39,7 @@ func (of *OpenedFiles) Close(absFilepath string) error {
 func (of *OpenedFiles) Get(absFilepath string) (*rope.Rope, error) {
 	buf, ok := of.ropes[absFilepath]
 	if !ok {
-		return nil, fmt.Errorf("File %s is not opened", absFilepath)
+		return nil, fmt.Errorf("openedFiles.Get:: File %s is not opened", absFilepath)
 	}
 
 	return buf, nil

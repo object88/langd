@@ -31,18 +31,20 @@ func Test_Workspace_Hugo(t *testing.T) {
 		t.Skip("skipping in short mode")
 	}
 
+	path := "../../gohugoio/hugo"
+
 	logger := log.Stdout()
 	logger.SetLevel(log.Debug)
 	l := NewLoader()
-	lc := NewLoaderContext(l, runtime.GOOS, runtime.GOARCH, runtime.GOROOT())
-	w := CreateWorkspace(l, lc, logger)
+	defer l.Close()
+	lc := NewLoaderContext(l, path, runtime.GOOS, runtime.GOARCH, runtime.GOROOT())
+	w := CreateWorkspace(l, logger)
 
-	done := l.Start()
-	if done == nil {
-		t.Fatal("Did not check channel back.\n")
-	}
+	// done := l.Start()
+	// if done == nil {
+	// 	t.Fatal("Did not check channel back.\n")
+	// }
 
-	path := "../../gohugoio/hugo"
 	err := l.LoadDirectory(lc, path)
 	if err != nil {
 		t.Fatalf("Failed to load directory '%s':\n\t%s\n", path, err.Error())
@@ -50,7 +52,7 @@ func Test_Workspace_Hugo(t *testing.T) {
 
 	fmt.Printf("Load directory started; blocking...\n")
 
-	<-done
+	lc.Wait()
 
 	fmt.Printf("Load directory done\n")
 

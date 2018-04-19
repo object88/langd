@@ -51,7 +51,8 @@ func (rh *didChangeConfigurationHandler) work() error {
 
 	// rh.h.InitLoader("")
 
-	rh.h.ConfigureLoader(rh.settings)
+	startDir := rh.h.workspace.LoaderContext.GetStartDir()
+	rh.h.ConfigureLoaderContext(startDir, rh.settings)
 
 	return nil
 }

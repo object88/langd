@@ -1,7 +1,9 @@
 package langd
 
 import (
+	"sync"
 	"testing"
+	"time"
 
 	"github.com/object88/langd/collections"
 	"golang.org/x/tools/go/buildutil"
@@ -18,15 +20,16 @@ func Test_LoadContext_Same_Package_Same_Env(t *testing.T) {
 	}
 
 	loader := NewLoader()
+	defer loader.Close()
 	// loader.Log.SetLevel(log.Debug)
-	done := loader.Start()
+	// done := loader.Start()
 
-	lc1 := NewLoaderContext(loader, "darwin", "x86", "/go", func(lc *LoaderContext) {
-		lc.context = buildutil.FakeContext(packages)
+	lc1 := NewLoaderContext(loader, "/go/src/bar", "darwin", "x86", "/go", func(lc LoaderContext) {
+		lc.(*loaderContext).context = buildutil.FakeContext(packages)
 	})
 
-	lc2 := NewLoaderContext(loader, "linux", "arm", "/go", func(lc *LoaderContext) {
-		lc.context = buildutil.FakeContext(packages)
+	lc2 := NewLoaderContext(loader, "/go/src/bar", "linux", "arm", "/go", func(lc LoaderContext) {
+		lc.(*loaderContext).context = buildutil.FakeContext(packages)
 	})
 
 	err := loader.LoadDirectory(lc1, "/go/src/bar")
@@ -39,7 +42,9 @@ func Test_LoadContext_Same_Package_Same_Env(t *testing.T) {
 		t.Fatalf("(2) Error while loading: %s", err.Error())
 	}
 
-	<-done
+	// <-done
+	lc1.Wait()
+	lc2.Wait()
 
 	errCount := 0
 	loader.Errors(func(file string, errs []FileError) {
@@ -86,29 +91,40 @@ func Test_LoadContext_Same_Package_Different_Env(t *testing.T) {
 	}
 
 	loader := NewLoader()
+	defer loader.Close()
 	// loader.Log.SetLevel(log.Debug)
-	done := loader.Start()
+	// done := loader.Start()
 
 	envs := [][]string{
 		[]string{"darwin", "amd"},
 		[]string{"linux", "arm"},
 	}
 
+	wg := sync.WaitGroup{}
+	wg.Add(2)
+
 	for i := 0; i < 2; i++ {
 		env := envs[i]
 		go func() {
-			lc := NewLoaderContext(loader, env[0], env[1], "/go", func(lc *LoaderContext) {
-				lc.context = buildutil.FakeContext(packages)
+			lc := NewLoaderContext(loader, "/go/src/bar", env[0], env[1], "/go", func(lc LoaderContext) {
+				lc.(*loaderContext).context = buildutil.FakeContext(packages)
 			})
 
 			err := loader.LoadDirectory(lc, "/go/src/bar")
 			if err != nil {
 				t.Fatalf("Error while loading: %s", err.Error())
 			}
+
+			lc.Wait()
+
+			time.Sleep(100 * time.Millisecond)
+
+			wg.Done()
 		}()
 	}
 
-	<-done
+	// <-done
+	wg.Wait()
 
 	errCount := 0
 	loader.Errors(func(file string, errs []FileError) {

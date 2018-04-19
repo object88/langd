@@ -18,7 +18,6 @@ import (
 	"strings"
 	"sync"
 	"sync/atomic"
-	"unicode/utf8"
 
 	"github.com/object88/langd/collections"
 	"github.com/object88/langd/log"
@@ -43,7 +42,7 @@ func (ls *loadState) get() loadState {
 }
 
 type stateChangeEvent struct {
-	lc  *LoaderContext
+	lc  LoaderContext
 	key collections.Key
 }
 
@@ -51,10 +50,10 @@ type stateChangeEvent struct {
 type Loader interface {
 	io.Closer
 
-	Start() chan bool
+	// Start() chan bool
 	Errors(handleErrs func(file string, errs []FileError))
-	LoadDirectory(lc *LoaderContext, path string) error
-	InvalidatePackage(lc *LoaderContext, p *Package)
+	LoadDirectory(lc LoaderContext, path string) error
+	InvalidatePackage(lc LoaderContext, p *Package)
 
 	Caravan() *collections.Caravan
 	OpenedFiles() *OpenedFiles
@@ -63,7 +62,7 @@ type Loader interface {
 type loader struct {
 	mReady sync.Mutex
 	closer chan bool
-	ready  chan bool
+	// ready  chan bool
 
 	done bool
 
@@ -89,62 +88,6 @@ type File struct {
 	errs []FileError
 }
 
-// Package is the contents of a package
-type Package struct {
-	key       collections.Key
-	AbsPath   string
-	GOARCH    string
-	GOOS      string
-	Tags      string
-	shortPath string
-
-	buildPkg *build.Package
-	checker  *types.Checker
-	Fset     *token.FileSet
-	typesPkg *types.Package
-
-	files           map[string]*File
-	importPaths     map[string]bool
-	testFiles       map[string]*File
-	testImportPaths map[string]bool
-
-	loadState loadState
-	m         sync.Mutex
-	c         *sync.Cond
-}
-
-// Key returns the collection key for the given Package
-func (p *Package) Key() collections.Key {
-	return p.key
-}
-
-// ResetChecker sets the checker to nil
-func (p *Package) ResetChecker() {
-	p.checker = nil
-}
-
-func (p *Package) String() string {
-	return p.shortPath
-}
-
-func (p *Package) currentFiles() map[string]*File {
-	loadState := p.loadState.get()
-	switch loadState {
-	case unloaded:
-		if p.files == nil {
-			p.files = map[string]*File{}
-		}
-		return p.files
-	case loadedGo:
-		if p.testFiles == nil {
-			p.testFiles = map[string]*File{}
-		}
-		return p.testFiles
-	}
-	fmt.Printf("Package '%s' has loadState %d; no files.\n", p.AbsPath, loadState)
-	return nil
-}
-
 var cgoRe = regexp.MustCompile(`[/\\:]`)
 
 // NewLoader creates a new loader
@@ -154,38 +97,10 @@ func NewLoader() Loader {
 		closer:      make(chan bool),
 		done:        false,
 		Log:         log.Stdout(),
-		openedFiles: &OpenedFiles{}, // map[string]*rope.Rope{},
+		openedFiles: NewOpenedFiles(),
 		stateChange: make(chan *stateChangeEvent),
 	}
 
-	return l
-}
-
-func (l *loader) Caravan() *collections.Caravan {
-	return l.caravan
-}
-
-func (l *loader) OpenedFiles() *OpenedFiles {
-	return l.openedFiles
-}
-
-func (l *loader) InvalidatePackage(lc *LoaderContext, p *Package) {
-	p.loadState = unloaded
-	p.ResetChecker()
-
-	l.stateChange <- &stateChangeEvent{
-		key: lc.BuildKey(p.AbsPath),
-		lc:  lc,
-	}
-}
-
-// Start initializes the asynchronous source processing
-func (l *loader) Start() chan bool {
-	l.mReady.Lock()
-	if l.ready != nil {
-		l.mReady.Unlock()
-		return l.ready
-	}
 	go func() {
 		stop := false
 		for !stop {
@@ -198,14 +113,56 @@ func (l *loader) Start() chan bool {
 		}
 
 		l.Log.Debugf("Start: ending anon go func\n")
-		close(l.ready)
 	}()
 
-	l.ready = make(chan bool)
-
-	l.mReady.Unlock()
-	return l.ready
+	return l
 }
+
+func (l *loader) Caravan() *collections.Caravan {
+	return l.caravan
+}
+
+func (l *loader) OpenedFiles() *OpenedFiles {
+	return l.openedFiles
+}
+
+func (l *loader) InvalidatePackage(lc LoaderContext, p *Package) {
+	p.loadState = unloaded
+	p.ResetChecker()
+
+	l.stateChange <- &stateChangeEvent{
+		key: lc.BuildKey(p.AbsPath),
+		lc:  lc,
+	}
+}
+
+// // Start initializes the asynchronous source processing
+// func (l *loader) Start() chan bool {
+// 	l.mReady.Lock()
+// 	if l.ready != nil {
+// 		l.mReady.Unlock()
+// 		return l.ready
+// 	}
+// 	go func() {
+// 		stop := false
+// 		for !stop {
+// 			select {
+// 			case <-l.closer:
+// 				stop = true
+// 			case e := <-l.stateChange:
+// 				go l.processStateChange(e)
+// 			}
+// 		}
+
+// 		l.Log.Debugf("Start: ending anon go func\n")
+// 		close(l.ready)
+// 	}()
+
+// 	l.ready = make(chan bool)
+
+// 	l.mReady.Unlock()
+// 	return l.ready
+// }
 
 // Close stops the loader processing
 func (l *loader) Close() error {
@@ -233,8 +190,8 @@ func (l *loader) Errors(handleErrs func(file string, errs []FileError)) {
 }
 
 // LoadDirectory adds the contents of a directory to the Loader
-func (l *loader) LoadDirectory(lc *LoaderContext, path string) error {
-	if !lc.context.IsDir(path) {
+func (l *loader) LoadDirectory(lc LoaderContext, path string) error {
+	if !lc.IsDir(path) {
 		return fmt.Errorf("Argument '%s' is not a directory", path)
 	}
 
@@ -243,25 +200,22 @@ func (l *loader) LoadDirectory(lc *LoaderContext, path string) error {
 		return fmt.Errorf("Could not get absolute path for '%s'", absPath)
 	}
 
-	lc.startDir = absPath
+	// lc.startDir = absPath
 
 	l.readDir(lc, absPath)
 	return nil
 }
 
-func (l *loader) readDir(lc *LoaderContext, absPath string) {
-	for _, g := range lc.filteredPaths {
-		if g.Match(absPath) {
-			// We are looking at a filtered out path.
-			return
-		}
+func (l *loader) readDir(lc LoaderContext, absPath string) {
+	if !lc.IsAllowed(absPath) {
+		return
 	}
 
 	l.Log.Debugf("readDir: queueing '%s'...\n", absPath)
 
 	l.ensurePackage(lc, absPath)
 
-	fis, err := lc.context.ReadDir(absPath)
+	fis, err := lc.ReadDir(absPath)
 	if err != nil {
 		panic(fmt.Sprintf("Dang:\n\t%s", err.Error()))
 	}
@@ -345,7 +299,8 @@ func (l *loader) processStateChange(sce *stateChangeEvent) {
 
 		if complete {
 			l.Log.Debugf("All packages are loaded\n")
-			l.ready <- true
+			// l.ready <- true
+			sce.lc.Signal()
 		}
 	}
 }
@@ -360,42 +315,13 @@ func importPathMapToArray(imports map[string]bool) []string {
 	return results
 }
 
-func (l *loader) processComplete(lc *LoaderContext, p *Package) {
+func (l *loader) processComplete(lc LoaderContext, p *Package) {
 	if lc.IsUnsafe(p) {
 		l.Log.Debugf(" PC: %s: Checking unsafe (skipping)\n", p)
 		return
 	}
 
-	if p.checker == nil {
-		info := &types.Info{
-			Defs:       map[*ast.Ident]types.Object{},
-			Implicits:  map[ast.Node]types.Object{},
-			Scopes:     map[ast.Node]*types.Scope{},
-			Selections: map[*ast.SelectorExpr]*types.Selection{},
-			Types:      map[ast.Expr]types.TypeAndValue{},
-			Uses:       map[*ast.Ident]types.Object{},
-		}
-
-		p.typesPkg = types.NewPackage(p.AbsPath, p.buildPkg.Name)
-		p.checker = types.NewChecker(lc.config, p.Fset, p.typesPkg, info)
-	}
-
-	// Clear previous errors; all will be rechecked.
-	files := p.currentFiles()
-
-	// Loop over packages
-	astFiles := make([]*ast.File, len(files))
-	i := 0
-	for _, v := range files {
-		f := v
-		f.errs = []FileError{}
-		astFiles[i] = f.file
-		i++
-	}
-
-	lc.checkerMu.Lock()
-	err := p.checker.Files(astFiles)
-	lc.checkerMu.Unlock()
+	err := lc.CheckPackage(p)
 
 	if err != nil {
 		l.Log.Debugf("Error while checking %s:\n\t%s\n\n", p.AbsPath, err.Error())
@@ -405,25 +331,29 @@ func (l *loader) processComplete(lc *LoaderContext, p *Package) {
 	}
 }
 
-func (l *loader) processDirectory(lc *LoaderContext, p *Package) {
+func (l *loader) processDirectory(lc LoaderContext, p *Package) {
 	if l.processUnsafe(lc, p) {
 		return
 	}
 
-	buildPkg, err := lc.context.Import(".", p.AbsPath, 0)
-	if err != nil {
-		if _, ok := err.(*build.NoGoError); ok {
-			// There isn't any Go code here.
-			return
-		}
-		l.Log.Debugf(" PD: %s: proc error:\n\t%s\n", p, err.Error())
-		return
-	}
-
-	p.buildPkg = buildPkg
+	p.buildPkg = lc.ImportBuildPackage(p)
 }
 
-func (l *loader) processGoFiles(lc *LoaderContext, p *Package) bool {
+func (l *loader) getFileReader(lc LoaderContext, absFilepath string) (io.Reader, bool) {
+	var r io.Reader
+	if of, err := l.openedFiles.Get(absFilepath); err != nil {
+		r = lc.OpenFile(absFilepath)
+		if r == nil {
+			return nil, false
+		}
+	} else {
+		r = of.NewReader()
+	}
+
+	return r, true
+}
+
+func (l *loader) processGoFiles(lc LoaderContext, p *Package) bool {
 	if lc.IsUnsafe(p) {
 		return true
 	}
@@ -439,18 +369,9 @@ func (l *loader) processGoFiles(lc *LoaderContext, p *Package) bool {
 
 	for _, fname := range fnames {
 		fpath := filepath.Join(p.AbsPath, fname)
-
-		var r io.Reader
-		// if of, ok := l.openedFiles[fpath]; ok {
-		if of, err := l.openedFiles.Get(fpath); err != nil { // .openedFiles[fpath]; ok {
-			r = of.NewReader()
-		} else {
-			var err error
-			r, err = lc.context.OpenFile(fpath)
-			if err != nil {
-				l.Log.Debugf(" GF: ERROR: Failed to read file %s:\n\t%s\n", fpath, err.Error())
-				continue
-			}
+		r, ok := l.getFileReader(lc, fpath)
+		if !ok {
+			continue
 		}
 
 		astf, err := parser.ParseFile(p.Fset, fpath, r, parser.AllErrors)
@@ -536,7 +457,7 @@ func pkgConfigFlags(p *build.Package) (cflags []string, err error) {
 	return pkgConfig("--cflags", p.CgoPkgConfig)
 }
 
-func (l *loader) processCgoFiles(lc *LoaderContext, p *Package) bool {
+func (l *loader) processCgoFiles(lc LoaderContext, p *Package) bool {
 	if lc.IsUnsafe(p) {
 		return true
 	}
@@ -641,7 +562,7 @@ func (l *loader) processCgoFiles(lc *LoaderContext, p *Package) bool {
 	return true
 }
 
-func (l *loader) processTestGoFiles(lc *LoaderContext, p *Package) bool {
+func (l *loader) processTestGoFiles(lc LoaderContext, p *Package) bool {
 	if lc.IsUnsafe(p) || p.buildPkg == nil {
 		return false
 	}
@@ -665,16 +586,16 @@ func (l *loader) processTestGoFiles(lc *LoaderContext, p *Package) bool {
 	l.Log.Debugf("TFG: %s: processing %d test Go files\n", p, len(fnames))
 	for _, fname := range fnames {
 		fpath := filepath.Join(p.AbsPath, fname)
-
-		r, err := lc.context.OpenFile(fpath)
-		if err != nil {
-			l.Log.Debugf("TGF: ERROR: Failed to read file %s:\n\t%s\n", fpath, err.Error())
+		r, ok := l.getFileReader(lc, fpath)
+		if !ok {
 			continue
 		}
 
 		astf, err := parser.ParseFile(p.Fset, fpath, r, parser.AllErrors)
 
-		r.Close()
+		if c, ok := r.(io.Closer); ok {
+			c.Close()
+		}
 
 		if err != nil {
 			l.Log.Debugf("TGF: ERROR: While parsing %s:\n\t%s\n", fpath, err.Error())
@@ -714,7 +635,7 @@ func (l *loader) processAstFile(p *Package, fname string, astf *ast.File, import
 	}
 }
 
-func (l *loader) processUnsafe(lc *LoaderContext, p *Package) bool {
+func (l *loader) processUnsafe(lc LoaderContext, p *Package) bool {
 	if !lc.IsUnsafe(p) {
 		return false
 	}
@@ -726,21 +647,16 @@ func (l *loader) processUnsafe(lc *LoaderContext, p *Package) bool {
 	return true
 }
 
-func (l *loader) processPackages(lc *LoaderContext, p *Package, importPaths []string, testing bool) {
+func (l *loader) processPackages(lc LoaderContext, p *Package, importPaths []string, testing bool) {
 	loadState := p.loadState.get()
 	l.Log.Debugf(" PP: %s: %d: started\n", p, loadState)
 
 	importedPackages := map[string]bool{}
 
 	for _, importPath := range importPaths {
-		targetPath, err := lc.findImportPath(importPath, p.AbsPath)
+		targetPath, err := lc.FindImportPath(p, importPath)
 		if err != nil {
-			l.Log.Debugf(" PP: %s: %d: Failed to find import %s\n\t%s\n", p, loadState, importPath, err.Error())
-			continue
-		}
-		if targetPath == p.AbsPath {
-
-			l.Log.Debugf(" PP: %s: %d: Failed due to self-import\n", p, loadState)
+			l.Log.Debugf(" PP: %s: %d: %s\n\t%s\n", p, loadState, err.Error())
 			continue
 		}
 		l.ensurePackage(lc, targetPath)
@@ -813,36 +729,10 @@ func (l *loader) checkImportReady(sourceLoadState loadState, targetP *Package) b
 	return false
 }
 
-func (l *loader) ensurePackage(lc *LoaderContext, absPath string) *Package {
+func (l *loader) ensurePackage(lc LoaderContext, absPath string) *Package {
 	key := lc.BuildKey(absPath)
 	n, created := l.caravan.Ensure(key, func() collections.Keyer {
-		shortPath := absPath
-		if strings.HasPrefix(absPath, lc.context.GOROOT) {
-			shortPath = fmt.Sprintf("(%s, %s, stdlib) %s", lc.context.GOARCH, lc.context.GOOS, absPath[utf8.RuneCountInString(lc.context.GOROOT)+5:])
-		} else {
-			// Shorten the canonical name for logging purposes.
-			n := utf8.RuneCountInString(lc.startDir)
-			if len(absPath) >= n {
-				shortPath = absPath[n:]
-			}
-			shortPath = fmt.Sprintf("(%s, %s) %s", lc.context.GOARCH, lc.context.GOOS, shortPath)
-		}
-
-		p := &Package{
-			AbsPath:         absPath,
-			GOARCH:          lc.context.GOARCH,
-			GOOS:            lc.context.GOOS,
-			key:             key,
-			shortPath:       shortPath,
-			Fset:            token.NewFileSet(),
-			importPaths:     map[string]bool{},
-			testImportPaths: map[string]bool{},
-		}
-		p.c = sync.NewCond(&p.m)
-
-		l.Log.Debugf("ensurePackage: creating package for '%s' at 0x%x.\n", p.String(), p.Key())
-
-		return p
+		return lc.NewPackage(key, absPath)
 	})
 	p := n.Element.(*Package)
 
