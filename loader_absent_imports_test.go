@@ -37,7 +37,7 @@ func Test_Load_Missing_Imports(t *testing.T) {
 	lc.Wait()
 
 	errCount := 0
-	loader.Errors(func(file string, errs []FileError) {
+	loader.Errors(lc, func(file string, errs []FileError) {
 		t.Logf("Got %d errors\n", len(errs))
 		for _, v := range errs {
 			t.Logf("\t%s\n", v.String())
@@ -48,6 +48,4 @@ func Test_Load_Missing_Imports(t *testing.T) {
 	if errCount == 0 {
 		t.Fatalf("Loader did not emit any errors")
 	}
-
-	t.Errorf("NOPE.")
 }

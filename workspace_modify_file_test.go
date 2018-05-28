@@ -21,7 +21,8 @@ func Test_Workspace_Modify_File(t *testing.T) {
 		},
 	}
 
-	w, lc := workspaceSetup(t, "/go/src/foo", packages, false)
+	w, lc, closer := workspaceSetup(t, "/go/src/foo", packages, false)
+	defer closer()
 
 	// done := w.Loader.Start()
 
@@ -90,7 +91,8 @@ func Test_Workspace_Modify_Cross_File(t *testing.T) {
 		},
 	}
 
-	w, lc := workspaceSetup(t, "/go/src/foo", packages, true)
+	w, lc, closer := workspaceSetup(t, "/go/src/foo", packages, true)
+	defer closer()
 
 	// done := w.Loader.Start()
 
@@ -111,7 +113,7 @@ func Test_Workspace_Modify_Cross_File(t *testing.T) {
 	fmt.Printf("foo2.go:\n%s\n", rope.String())
 
 	errCount := 0
-	w.Loader.Errors(func(file string, errs []FileError) {
+	w.Loader.Errors(lc, func(file string, errs []FileError) {
 		for _, err := range errs {
 			t.Error(err.Message)
 		}

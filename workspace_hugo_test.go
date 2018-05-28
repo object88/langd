@@ -39,6 +39,7 @@ func Test_Workspace_Hugo(t *testing.T) {
 	defer l.Close()
 	lc := NewLoaderContext(l, path, runtime.GOOS, runtime.GOARCH, runtime.GOROOT())
 	w := CreateWorkspace(l, logger)
+	w.AssignLoaderContext(lc)
 
 	// done := l.Start()
 	// if done == nil {
@@ -58,7 +59,7 @@ func Test_Workspace_Hugo(t *testing.T) {
 
 	errCount := 0
 	var buf bytes.Buffer
-	l.Errors(func(file string, errs []FileError) {
+	l.Errors(lc, func(file string, errs []FileError) {
 		if len(errs) == 0 {
 			return
 		}

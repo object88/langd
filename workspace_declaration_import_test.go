@@ -28,7 +28,8 @@ func Test_Workspace_Declaration_Import_Const(t *testing.T) {
 		},
 	}
 
-	w, _ := workspaceSetup(t, "/go/src/bar", packages, false)
+	w, _, closer := workspaceSetup(t, "/go/src/bar", packages, false)
+	defer closer()
 
 	usagePosition := &token.Position{
 		Filename: "/go/src/bar/bar.go",
@@ -66,7 +67,8 @@ func Test_Workspace_Declaration_Import_Func(t *testing.T) {
 		},
 	}
 
-	w, _ := workspaceSetup(t, "/go/src/bar", packages, false)
+	w, _, closer := workspaceSetup(t, "/go/src/bar", packages, false)
+	defer closer()
 
 	usagePosition := &token.Position{
 		Filename: "/go/src/bar/bar.go",

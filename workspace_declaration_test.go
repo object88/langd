@@ -15,7 +15,8 @@ import (
 // 		},
 // 	}
 
-// 	w := workspaceSetup(t, "/go/src/foo", packages, false)
+// 	w, _, closer := workspaceSetup(t, "/go/src/foo", packages, false)
+// defer closer()
 
 // 	startPosition := &token.Position{
 // 		Filename: "/go/src/foo/foo.go",
@@ -47,7 +48,8 @@ func Test_Workspace_Declaration_Imported_Package(t *testing.T) {
 		},
 	}
 
-	w, _ := workspaceSetup(t, "/go/src/bar", packages, false)
+	w, _, closer := workspaceSetup(t, "/go/src/bar", packages, false)
+	defer closer()
 
 	usagePosition := &token.Position{
 		Filename: "/go/src/bar/bar.go",
@@ -77,7 +79,8 @@ func Test_Workspace_Declaration_Package_Const(t *testing.T) {
 		},
 	}
 
-	w, _ := workspaceSetup(t, "/go/src/foo", packages, false)
+	w, _, closer := workspaceSetup(t, "/go/src/foo", packages, false)
+	defer closer()
 
 	usagePosition := &token.Position{
 		Filename: "/go/src/foo/foo.go",
@@ -105,7 +108,8 @@ func Test_Workspace_Declaration_Package_Func(t *testing.T) {
 		},
 	}
 
-	w, _ := workspaceSetup(t, "/go/src/foo", packages, false)
+	w, _, closer := workspaceSetup(t, "/go/src/foo", packages, false)
+	defer closer()
 
 	usagePosition := &token.Position{
 		Filename: "/go/src/foo/foo.go",
@@ -133,7 +137,8 @@ func Test_Workspace_Declaration_Package_Var(t *testing.T) {
 		},
 	}
 
-	w, _ := workspaceSetup(t, "/go/src/foo", packages, false)
+	w, _, closer := workspaceSetup(t, "/go/src/foo", packages, false)
+	defer closer()
 
 	usagePosition := &token.Position{
 		Filename: "/go/src/foo/foo.go",
@@ -165,7 +170,8 @@ func Test_Workspace_Declaration_Package_Var_CrossFiles(t *testing.T) {
 		},
 	}
 
-	w, _ := workspaceSetup(t, "/go/src/foo", packages, false)
+	w, _, closer := workspaceSetup(t, "/go/src/foo", packages, false)
+	defer closer()
 	usagePosition := &token.Position{
 		Filename: "/go/src/foo/foo1.go",
 		Line:     3,
@@ -193,7 +199,8 @@ func Test_Workspace_Declaration_Package_Var_Shadowed(t *testing.T) {
 		},
 	}
 
-	w, _ := workspaceSetup(t, "/go/src/foo", packages, false)
+	w, _, closer := workspaceSetup(t, "/go/src/foo", packages, false)
+	defer closer()
 
 	declPosition := &token.Position{
 		Filename: "/go/src/foo/foo.go",

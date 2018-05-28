@@ -6,16 +6,16 @@ import (
 )
 
 type Foo struct {
-	key     Key
+	hash    Hash
 	checked bool
 }
 
-func (f *Foo) Key() Key {
-	return f.key
+func (f *Foo) Hash() Hash {
+	return f.hash
 }
 
 func (f *Foo) String() string {
-	return fmt.Sprintf("0x%x", f.key)
+	return fmt.Sprintf("0x%x", f.hash)
 }
 
 func Test_Caravan_Create(t *testing.T) {
@@ -35,11 +35,11 @@ func Test_Caravan_Create(t *testing.T) {
 
 func Test_Caravan_Ensure_Existing(t *testing.T) {
 	c := CreateCaravan()
-	f0 := &Foo{key: 123}
+	f0 := &Foo{hash: 123}
 	c.Insert(f0)
 
-	n, created := c.Ensure(123, func() Keyer {
-		return &Foo{key: 123}
+	n, created := c.Ensure(123, func() Hasher {
+		return &Foo{hash: 123}
 	})
 	if created {
 		t.Error("Got 'true' created")
@@ -58,11 +58,11 @@ func Test_Caravan_Ensure_Existing(t *testing.T) {
 
 func Test_Caravan_Ensure_New(t *testing.T) {
 	c := CreateCaravan()
-	f0 := &Foo{key: 123}
+	f0 := &Foo{hash: 123}
 	c.Insert(f0)
 
-	f1 := &Foo{key: 234}
-	n, created := c.Ensure(234, func() Keyer {
+	f1 := &Foo{hash: 234}
+	n, created := c.Ensure(234, func() Hasher {
 		return f1
 	})
 	if !created {
@@ -81,9 +81,9 @@ func Test_Caravan_Ensure_New(t *testing.T) {
 }
 
 func Test_Caravan_Insert(t *testing.T) {
-	f0 := &Foo{key: 123}
-	f0a := &Foo{key: 123}
-	f1 := &Foo{key: 456}
+	f0 := &Foo{hash: 123}
+	f0a := &Foo{hash: 123}
+	f1 := &Foo{hash: 456}
 
 	tests := []struct {
 		name    string
@@ -134,21 +134,21 @@ func Test_Caravan_Insert(t *testing.T) {
 			}
 
 			for _, v := range tc.nodes {
-				if n, ok := c.nodes[v.Key()]; !ok {
-					t.Errorf("Internal nodes does not include key '%x'", v.Key())
+				if n, ok := c.nodes[v.Hash()]; !ok {
+					t.Errorf("Internal nodes does not include hash '%x'", v.Hash())
 				} else {
 					if n.Element != v {
-						t.Errorf("Incorrect reference for key '%x'", v.Key())
+						t.Errorf("Incorrect reference for hash '%x'", v.Hash())
 					}
 				}
 			}
 
 			for _, v := range tc.roots {
-				if n, ok := c.roots[v.Key()]; !ok {
-					t.Errorf("Internal roots does not include key '%x'", v.Key())
+				if n, ok := c.roots[v.Hash()]; !ok {
+					t.Errorf("Internal roots does not include hash '%x'", v.Hash())
 				} else {
 					if n.Element != v {
-						t.Errorf("Incorrect reference for key '%x'", v.Key())
+						t.Errorf("Incorrect reference for hash '%x'", v.Hash())
 					}
 				}
 			}
@@ -163,8 +163,8 @@ type connect struct {
 
 // Lots more to test here.
 func Test_Caravan_Connect(t *testing.T) {
-	f0 := &Foo{key: 123}
-	f1 := &Foo{key: 456}
+	f0 := &Foo{hash: 123}
+	f1 := &Foo{hash: 456}
 
 	tests := []struct {
 		name     string
@@ -206,21 +206,21 @@ func Test_Caravan_Connect(t *testing.T) {
 			}
 
 			for _, v := range tc.nodes {
-				if n, ok := c.nodes[v.Key()]; !ok {
-					t.Errorf("Internal nodes does not include key '%s'", v)
+				if n, ok := c.nodes[v.Hash()]; !ok {
+					t.Errorf("Internal nodes does not include hash '%s'", v)
 				} else {
 					if n.Element != v {
-						t.Errorf("Incorrect reference for key '%s'", v)
+						t.Errorf("Incorrect reference for hash '%s'", v)
 					}
 				}
 			}
 
 			for _, v := range tc.roots {
-				if n, ok := c.roots[v.Key()]; !ok {
-					t.Errorf("Internal roots does not include key '%s'", v)
+				if n, ok := c.roots[v.Hash()]; !ok {
+					t.Errorf("Internal roots does not include hash '%s'", v)
 				} else {
 					if n.Element != v {
-						t.Errorf("Incorrect reference for key '%s'", v)
+						t.Errorf("Incorrect reference for hash '%s'", v)
 					}
 				}
 			}
@@ -229,11 +229,11 @@ func Test_Caravan_Connect(t *testing.T) {
 }
 
 func Test_Caravan_Walk_Linear(t *testing.T) {
-	foos := []Keyer{
-		&Foo{key: 12},
-		&Foo{key: 34},
-		&Foo{key: 56},
-		&Foo{key: 78},
+	foos := []Hasher{
+		&Foo{hash: 12},
+		&Foo{hash: 34},
+		&Foo{hash: 56},
+		&Foo{hash: 78},
 	}
 
 	tests := []struct {
@@ -290,11 +290,11 @@ func Test_Caravan_Walk_Linear(t *testing.T) {
 }
 
 func Test_Caravan_Walk_Flatten(t *testing.T) {
-	foos := []Keyer{
-		&Foo{key: 12},
-		&Foo{key: 34},
-		&Foo{key: 56},
-		&Foo{key: 78},
+	foos := []Hasher{
+		&Foo{hash: 12},
+		&Foo{hash: 34},
+		&Foo{hash: 56},
+		&Foo{hash: 78},
 	}
 
 	tests := []struct {
@@ -344,14 +344,14 @@ func Test_Caravan_Walk_Flatten(t *testing.T) {
 					}
 
 					i := 0
-					visited := map[Key]bool{}
+					visited := map[Hash]bool{}
 					c.Walk(tc.dir, func(n *Node) {
 						// Use this to test the fan-in, fan out, etc.
-						key := n.Element.Key()
-						if _, ok := visited[key]; ok {
+						hash := n.Element.Hash()
+						if _, ok := visited[hash]; ok {
 							t.Errorf("Revisiting node %s", n.Element)
 						}
-						visited[key] = true
+						visited[hash] = true
 
 						i++
 					})
@@ -365,8 +365,8 @@ func Test_Caravan_Walk_Flatten(t *testing.T) {
 }
 
 type order struct {
-	first  Key
-	second Key
+	first  Hash
+	second Hash
 }
 
 func Test_Caravan_Walk_Cross(t *testing.T) {
@@ -402,7 +402,7 @@ func Test_Caravan_Walk_Cross(t *testing.T) {
 	for _, tc := range tests {
 		t.Run(tc.name, func(t *testing.T) {
 			i := 0
-			walkedNodes := []Keyer{}
+			walkedNodes := []Hasher{}
 
 			c.Walk(tc.dir, func(n *Node) {
 				walkedNodes = append(walkedNodes, n.Element)
@@ -432,7 +432,7 @@ func Test_Caravan_Walk_Diamond(t *testing.T) {
 	tests := []struct {
 		name   string
 		dir    WalkDirection
-		first  Key
+		first  Hash
 		orders []order
 	}{
 		{
@@ -464,10 +464,10 @@ func Test_Caravan_Walk_Diamond(t *testing.T) {
 	for _, tc := range tests {
 		t.Run(tc.name, func(t *testing.T) {
 			i := 0
-			walkedNodes := []Keyer{}
+			walkedNodes := []Hasher{}
 
 			c.Walk(tc.dir, func(n *Node) {
-				if i == 0 && n.Element.Key() != tc.first {
+				if i == 0 && n.Element.Hash() != tc.first {
 					t.Errorf("Wrong first element; expected 0x%x, got %s", tc.first, n.Element)
 				}
 				walkedNodes = append(walkedNodes, n.Element)
@@ -497,7 +497,7 @@ func Test_Caravan_Walk_Offsided(t *testing.T) {
 	tests := []struct {
 		name   string
 		dir    WalkDirection
-		first  Key
+		first  Hash
 		orders []order
 	}{
 		{
@@ -541,10 +541,10 @@ func Test_Caravan_Walk_Offsided(t *testing.T) {
 	for _, tc := range tests {
 		t.Run(tc.name, func(t *testing.T) {
 			i := 0
-			walkedNodes := []Keyer{}
+			walkedNodes := []Hasher{}
 
 			c.Walk(tc.dir, func(n *Node) {
-				if i == 0 && n.Element.Key() != tc.first {
+				if i == 0 && n.Element.Hash() != tc.first {
 					t.Errorf("Wrong first element; expected 0x%x, got %s", tc.first, n.Element)
 				}
 				walkedNodes = append(walkedNodes, n.Element)
@@ -579,14 +579,14 @@ func Test_Caravan_Walk_Foo(t *testing.T) {
 	//  |/
 	// f7
 
-	f0 := &Foo{key: 0xf0}
-	f1 := &Foo{key: 0xf1}
-	f2 := &Foo{key: 0xf2}
-	f3 := &Foo{key: 0xf3}
-	f4 := &Foo{key: 0xf4}
-	f5 := &Foo{key: 0xf5}
-	f6 := &Foo{key: 0xf6}
-	f7 := &Foo{key: 0xf7}
+	f0 := &Foo{hash: 0xf0}
+	f1 := &Foo{hash: 0xf1}
+	f2 := &Foo{hash: 0xf2}
+	f3 := &Foo{hash: 0xf3}
+	f4 := &Foo{hash: 0xf4}
+	f5 := &Foo{hash: 0xf5}
+	f6 := &Foo{hash: 0xf6}
+	f7 := &Foo{hash: 0xf7}
 
 	c := CreateCaravan()
 
@@ -630,7 +630,7 @@ func Test_Caravan_Walk_Foo(t *testing.T) {
 	tests := []struct {
 		name   string
 		dir    WalkDirection
-		first  Key
+		first  Hash
 		orders []order
 	}{
 		{
@@ -670,7 +670,7 @@ func Test_Caravan_Walk_Foo(t *testing.T) {
 	for _, tc := range tests {
 		t.Run(tc.name, func(t *testing.T) {
 			i := 0
-			walkedNodes := []Keyer{}
+			walkedNodes := []Hasher{}
 
 			for _, v := range c.nodes {
 				f := v.Element.(*Foo)
@@ -679,7 +679,7 @@ func Test_Caravan_Walk_Foo(t *testing.T) {
 
 			c.Walk(tc.dir, func(n *Node) {
 				f := n.Element.(*Foo)
-				if i == 0 && f.Key() != tc.first {
+				if i == 0 && f.Hash() != tc.first {
 					t.Errorf("Wrong first element; expected 0x%x, got %s", tc.first, f)
 				}
 				if f.checked {
@@ -730,7 +730,7 @@ func Test_Caravan_Walk_Foo(t *testing.T) {
 	}
 }
 
-func createCross(t *testing.T) (*Caravan, []Keyer) {
+func createCross(t *testing.T) (*Caravan, []Hasher) {
 	// f0a   f0b
 	//  |\   /|
 	//  | \ / |
@@ -738,10 +738,10 @@ func createCross(t *testing.T) (*Caravan, []Keyer) {
 	//  |/   \|
 	// f1a   f1b
 
-	f0a := &Foo{key: 0xf0a}
-	f0b := &Foo{key: 0xf0b}
-	f1a := &Foo{key: 0xf1a}
-	f1b := &Foo{key: 0xf1b}
+	f0a := &Foo{hash: 0xf0a}
+	f0b := &Foo{hash: 0xf0b}
+	f1a := &Foo{hash: 0xf1a}
+	f1b := &Foo{hash: 0xf1b}
 
 	c := CreateCaravan()
 
@@ -763,10 +763,10 @@ func createCross(t *testing.T) (*Caravan, []Keyer) {
 		t.Errorf("Connect from %s to %s has err: %s", f0b, f1b, err.Error())
 	}
 
-	return c, []Keyer{f0a, f0b, f1a, f1b}
+	return c, []Hasher{f0a, f0b, f1a, f1b}
 }
 
-func createDiamond(t *testing.T) (*Caravan, []Keyer) {
+func createDiamond(t *testing.T) (*Caravan, []Hasher) {
 	//      f0
 	//     /  \
 	//   f1a  f1b
@@ -777,14 +777,14 @@ func createDiamond(t *testing.T) (*Caravan, []Keyer) {
 	//     \  /
 	//      f4
 
-	f0 := &Foo{key: 0xf00}
-	f1a := &Foo{key: 0xf1a}
-	f1b := &Foo{key: 0xf1b}
-	f2a := &Foo{key: 0xf2a}
-	f2b := &Foo{key: 0xf2b}
-	f3a := &Foo{key: 0xf3a}
-	f3b := &Foo{key: 0xf3b}
-	f4 := &Foo{key: 0xf40}
+	f0 := &Foo{hash: 0xf00}
+	f1a := &Foo{hash: 0xf1a}
+	f1b := &Foo{hash: 0xf1b}
+	f2a := &Foo{hash: 0xf2a}
+	f2b := &Foo{hash: 0xf2b}
+	f3a := &Foo{hash: 0xf3a}
+	f3b := &Foo{hash: 0xf3b}
+	f4 := &Foo{hash: 0xf40}
 
 	c := CreateCaravan()
 
@@ -822,10 +822,10 @@ func createDiamond(t *testing.T) (*Caravan, []Keyer) {
 		t.Errorf("Connect from %s to %s has err: %s", f3b, f4, err.Error())
 	}
 
-	return c, []Keyer{f0, f1a, f1b, f1a, f2b, f3a, f3b, f4}
+	return c, []Hasher{f0, f1a, f1b, f1a, f2b, f3a, f3b, f4}
 }
 
-func createOffsided(t *testing.T) (*Caravan, []Keyer) {
+func createOffsided(t *testing.T) (*Caravan, []Hasher) {
 	//      f0
 	//     / | \
 	//    /  |   \
@@ -842,14 +842,14 @@ func createOffsided(t *testing.T) (*Caravan, []Keyer) {
 	//     \ | /
 	//      f6
 
-	f0 := &Foo{key: 0xf00}
-	f1 := &Foo{key: 0xf10}
-	f2 := &Foo{key: 0xf20}
-	f3a := &Foo{key: 0xf3a}
-	f3b := &Foo{key: 0xf3b}
-	f4 := &Foo{key: 0xf40}
-	f5 := &Foo{key: 0xf50}
-	f6 := &Foo{key: 0xf60}
+	f0 := &Foo{hash: 0xf00}
+	f1 := &Foo{hash: 0xf10}
+	f2 := &Foo{hash: 0xf20}
+	f3a := &Foo{hash: 0xf3a}
+	f3b := &Foo{hash: 0xf3b}
+	f4 := &Foo{hash: 0xf40}
+	f5 := &Foo{hash: 0xf50}
+	f6 := &Foo{hash: 0xf60}
 
 	c := CreateCaravan()
 
@@ -902,12 +902,12 @@ func createOffsided(t *testing.T) (*Caravan, []Keyer) {
 	}
 	// Leg from f5 to f6 is already established.
 
-	return c, []Keyer{f0, f1, f2, f3a, f3b, f4, f5, f6}
+	return c, []Hasher{f0, f1, f2, f3a, f3b, f4, f5, f6}
 }
 
-func indexOf(walked []Keyer, key Key) int {
+func indexOf(walked []Hasher, hash Hash) int {
 	for k, v := range walked {
-		if v.Key() == key {
+		if v.Hash() == hash {
 			return k
 		}
 	}

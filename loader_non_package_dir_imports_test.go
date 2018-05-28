@@ -34,11 +34,10 @@ func Test_Load_PackageWithDifferentDir(t *testing.T) {
 		lc.(*loaderContext).context = fc
 	})
 	loader.LoadDirectory(lc, "/go/src/foo")
-	// <-done
 	lc.Wait()
 
 	errCount := 0
-	loader.Errors(func(file string, errs []FileError) {
+	loader.Errors(lc, func(file string, errs []FileError) {
 		if errCount == 0 {
 			t.Errorf("Loading error in %s:\n", file)
 		}

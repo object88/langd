@@ -34,32 +34,32 @@ type CaravanWalker func(node *Node)
 // "Oh, dogs.  Sure, I like dags.  I like caravans more."
 // -- http://www.imdb.com/character/ch0003626/quotes
 type Caravan struct {
-	nodes map[Key]*Node
-	roots map[Key]*Node
+	nodes map[Hash]*Node
+	roots map[Hash]*Node
 	m     sync.Mutex
 }
 
 // Node is an element in a caravan graph
 type Node struct {
-	Ascendants      map[Key]*Node
-	Descendants     map[Key]*Node
-	Element         Keyer
-	WeakDescendants map[Key]*Node
+	Ascendants      map[Hash]*Node
+	Descendants     map[Hash]*Node
+	Element         Hasher
+	WeakDescendants map[Hash]*Node
 }
 
-type Key int
+type Hash int32
 
-// Keyer is the interface by which an element in a graph exposes its key
-type Keyer interface {
-	Key() Key
-	String() string
+// Hasher is the interface by which an element in a graph exposes its key
+type Hasher interface {
+	fmt.Stringer
+	Hash() Hash
 }
 
 // CreateCaravan returns an initialized caravan struct
 func CreateCaravan() *Caravan {
 	return &Caravan{
-		nodes: map[Key]*Node{},
-		roots: map[Key]*Node{},
+		nodes: map[Hash]*Node{},
+		roots: map[Hash]*Node{},
 	}
 }
 
@@ -68,9 +68,9 @@ func CreateCaravan() *Caravan {
 // that are put into the caravan, and the resulting node is returned.  The
 // returned bool is true if the node already existed, and false if the create
 // method was invoked.
-func (c *Caravan) Ensure(key Key, create func() Keyer) (*Node, bool) {
+func (c *Caravan) Ensure(hash Hash, create func() Hasher) (*Node, bool) {
 	c.m.Lock()
-	n, ok := c.nodes[key]
+	n, ok := c.nodes[hash]
 	if !ok {
 		newP := create()
 		n = c.insert(newP)
@@ -81,9 +81,9 @@ func (c *Caravan) Ensure(key Key, create func() Keyer) (*Node, bool) {
 }
 
 // Find returns the element with the given key
-func (c *Caravan) Find(key Key) (*Node, bool) {
+func (c *Caravan) Find(hash Hash) (*Node, bool) {
 	c.m.Lock()
-	n, ok := c.nodes[key]
+	n, ok := c.nodes[hash]
 	c.m.Unlock()
 	if !ok {
 		return nil, false
@@ -92,10 +92,10 @@ func (c *Caravan) Find(key Key) (*Node, bool) {
 }
 
 // Insert adds an element to the caravan at the root level
-func (c *Caravan) Insert(p Keyer) {
-	key := p.Key()
+func (c *Caravan) Insert(p Hasher) {
+	hash := p.Hash()
 	c.m.Lock()
-	if _, ok := c.nodes[key]; ok {
+	if _, ok := c.nodes[hash]; ok {
 		// Node already exists.
 		c.m.Unlock()
 		return
@@ -106,23 +106,23 @@ func (c *Caravan) Insert(p Keyer) {
 	c.m.Unlock()
 }
 
-func (c *Caravan) insert(p Keyer) *Node {
-	key := p.Key()
+func (c *Caravan) insert(p Hasher) *Node {
+	hash := p.Hash()
 	n := &Node{
-		Ascendants:      map[Key]*Node{},
-		Descendants:     map[Key]*Node{},
+		Ascendants:      map[Hash]*Node{},
+		Descendants:     map[Hash]*Node{},
 		Element:         p,
-		WeakDescendants: map[Key]*Node{},
+		WeakDescendants: map[Hash]*Node{},
 	}
-	c.nodes[key] = n
-	c.roots[key] = n
+	c.nodes[hash] = n
+	c.roots[hash] = n
 
 	return n
 }
 
 // Connect establishes an edge between two elements
-func (c *Caravan) Connect(from, to Keyer) error {
-	fromKey, toKey := from.Key(), to.Key()
+func (c *Caravan) Connect(from, to Hasher) error {
+	fromKey, toKey := from.Hash(), to.Hash()
 
 	var ok bool
 	var fromNode, toNode *Node
@@ -147,7 +147,7 @@ func (c *Caravan) Connect(from, to Keyer) error {
 		return nil
 	}
 
-	checkedNodes := map[Key]bool{}
+	checkedNodes := map[Hash]bool{}
 	err := checkLoop(fromKey, toNode, checkedNodes)
 	if err != nil {
 		c.m.Unlock()
@@ -165,8 +165,8 @@ func (c *Caravan) Connect(from, to Keyer) error {
 	return nil
 }
 
-func (c *Caravan) WeakConnect(from, to Keyer) error {
-	fromKey, toKey := from.Key(), to.Key()
+func (c *Caravan) WeakConnect(from, to Hasher) error {
+	fromKey, toKey := from.Hash(), to.Hash()
 
 	var ok bool
 	var fromNode, toNode *Node
@@ -197,9 +197,9 @@ func (c *Caravan) WeakConnect(from, to Keyer) error {
 	return nil
 }
 
-func checkLoop(fromKey Key, n *Node, checkedNodes map[Key]bool) error {
-	key := n.Element.Key()
-	if fromKey == key {
+func checkLoop(fromHash Hash, n *Node, checkedNodes map[Hash]bool) error {
+	hash := n.Element.Hash()
+	if fromHash == hash {
 		return fmt.Errorf("Found loop:\n\t%s", n.Element)
 	}
 
@@ -207,12 +207,12 @@ func checkLoop(fromKey Key, n *Node, checkedNodes map[Key]bool) error {
 		if _, ok := checkedNodes[k]; ok {
 			continue
 		}
-		if err := checkLoop(fromKey, v, checkedNodes); err != nil {
+		if err := checkLoop(fromHash, v, checkedNodes); err != nil {
 			return fmt.Errorf("%s\n\t%s", err.Error(), n.Element)
 		}
 	}
 
-	checkedNodes[key] = true
+	checkedNodes[hash] = true
 
 	return nil
 }
@@ -221,12 +221,12 @@ func checkLoop(fromKey Key, n *Node, checkedNodes map[Key]bool) error {
 // Example:
 // c := NewCaravan()
 // // ...
-// caravan.Iter(func(key Key, node *Node) bool {
+// caravan.Iter(func(hash Hash, node *Node) bool {
 // 	 p := node.Element.(*Package)
 // 	 // Do something with `p`
 // 	 return true
 // })
-func (c *Caravan) Iter(iter func(Key, *Node) bool) {
+func (c *Caravan) Iter(iter func(Hash, *Node) bool) {
 	c.m.Lock()
 
 	for k, n := range c.nodes {
@@ -249,7 +249,7 @@ func (c *Caravan) Iter(iter func(Key, *Node) bool) {
 // start at a leaf or root, pass through some interior nodes, then return
 // to a different root or leaf.
 func (c *Caravan) Walk(direction WalkDirection, walker CaravanWalker) {
-	visits := map[Key]bool{}
+	visits := map[Hash]bool{}
 
 	c.m.Lock()
 
@@ -266,7 +266,7 @@ func (c *Caravan) Walk(direction WalkDirection, walker CaravanWalker) {
 	c.m.Unlock()
 }
 
-func (c *Caravan) walkNodeDown(visits map[Key]bool, node *Node, walker CaravanWalker) {
+func (c *Caravan) walkNodeDown(visits map[Hash]bool, node *Node, walker CaravanWalker) {
 	for k := range node.Ascendants {
 		if _, ok := visits[k]; !ok {
 			// An ascendent hasn't been visited; can't process this node yet.
@@ -274,7 +274,7 @@ func (c *Caravan) walkNodeDown(visits map[Key]bool, node *Node, walker CaravanWa
 		}
 	}
 
-	visits[node.Element.Key()] = true
+	visits[node.Element.Hash()] = true
 
 	walker(node)
 
@@ -287,8 +287,8 @@ func (c *Caravan) walkNodeDown(visits map[Key]bool, node *Node, walker CaravanWa
 	}
 }
 
-func (c *Caravan) walkNodeUp(visits map[Key]bool, node *Node, walker CaravanWalker) {
-	visits[node.Element.Key()] = true
+func (c *Caravan) walkNodeUp(visits map[Hash]bool, node *Node, walker CaravanWalker) {
+	visits[node.Element.Hash()] = true
 
 	for k, v := range node.Descendants {
 		if _, ok := visits[k]; ok {

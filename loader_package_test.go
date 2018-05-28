@@ -21,21 +21,18 @@ func Test_Load_Own_Package(t *testing.T) {
 	fc := buildutil.FakeContext(packages)
 	loader := NewLoader()
 	defer loader.Close()
-	// loader.Log.SetLevel(log.Debug)
 	lc := NewLoaderContext(loader, "/go/src/bar", runtime.GOOS, runtime.GOARCH, "/go", func(lc LoaderContext) {
 		lc.(*loaderContext).context = fc
 	})
 
-	// done := loader.Start()
 	err := loader.LoadDirectory(lc, "/go/src/bar")
 	if err != nil {
 		t.Fatalf("Error while loading: %s", err.Error())
 	}
-	// <-done
 	lc.Wait()
 
 	errCount := 0
-	loader.Errors(func(file string, errs []FileError) {
+	loader.Errors(lc, func(file string, errs []FileError) {
 		if errCount == 0 {
 			t.Errorf("Loading error in %s:\n", file)
 		}
