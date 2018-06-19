@@ -423,14 +423,8 @@ func (w *Workspace) OpenFile(absFilepath, text string) error {
 	}
 
 	absPath := filepath.Dir(absFilepath)
-	_, dp, _ := w.LoaderContext.EnsurePackage(absPath)
-	if dp == nil {
-		return errors.Errorf("Do not have distinct package for '%s'", absFilepath)
-	}
-	if dp.files == nil {
-		return errors.Errorf("Do not have distinct package file collection for '%s'", absFilepath)
-	}
-	existingHash := dp.files[filepath.Base(absFilepath)].hash
+	p, _, _ := w.LoaderContext.EnsurePackage(absPath)
+	existingHash := p.fileHashes[filepath.Base(absFilepath)]
 	if existingHash == hash {
 		w.log.Debugf("Shadowed file '%s'; unchanged\n", absFilepath)
 		return nil

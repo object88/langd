@@ -4,7 +4,6 @@ import (
 	"fmt"
 	"go/ast"
 	"go/build"
-	"go/token"
 	"go/types"
 	"io"
 	"io/ioutil"
@@ -31,6 +30,8 @@ type LoaderContext interface {
 	CheckPackage(p *Package) error
 	EnsurePackage(absPath string) (*Package, *DistinctPackage, bool)
 	FindImportPath(p *Package, importPath string) (string, error)
+	GetContextArch() string
+	GetContextOS() string
 	GetDistinctHash() collections.Hash
 	GetStartDir() string
 	ImportBuildPackage(p *Package) *build.Package
@@ -143,9 +144,16 @@ func NewLoaderContext(loader Loader, startDir, goos, goarch, goroot string, opti
 
 	lc.config = c
 	lc.hash = hash
-	fmt.Printf("Have hash 0x%x\n", lc.hash)
 
 	return lc
+}
+
+func (lc *loaderContext) GetContextArch() string {
+	return lc.context.GOARCH
+}
+
+func (lc *loaderContext) GetContextOS() string {
+	return lc.context.GOOS
 }
 
 func (lc *loaderContext) GetDistinctHash() collections.Hash {
@@ -210,7 +218,7 @@ func (lc *loaderContext) CheckPackage(p *Package) error {
 			Uses:       map[*ast.Ident]types.Object{},
 		}
 
-		dp.typesPkg = types.NewPackage(p.AbsPath, p.buildPkg.Name)
+		dp.typesPkg = types.NewPackage(p.AbsPath, dp.buildPkg.Name)
 		dp.checker = types.NewChecker(lc.config, p.Fset, dp.typesPkg, info)
 	}
 
@@ -234,7 +242,8 @@ func (lc *loaderContext) CheckPackage(p *Package) error {
 func (lc *loaderContext) EnsurePackage(absPath string) (*Package, *DistinctPackage, bool) {
 	hash := BuildPackageHash(absPath)
 	n, created := lc.loader.Caravan().Ensure(hash, func() collections.Hasher {
-		return lc.NewPackage(hash, absPath)
+		lc.Log.Debugf("NewPackage: creating package for '%s'.\n", absPath)
+		return NewPackage(absPath)
 	})
 	p := n.Element.(*Package)
 
@@ -246,20 +255,15 @@ func (lc *loaderContext) EnsurePackage(absPath string) (*Package, *DistinctPacka
 	lc.packages[hash] = true
 	lc.m.Unlock()
 
-	dhash := lc.GetDistinctHash()
-	dp, ok := p.distincts[dhash]
-	if !ok {
-		dp = &DistinctPackage{
-			hash:            dhash,
-			GOARCH:          lc.context.GOARCH,
-			GOOS:            lc.context.GOOS,
-			importPaths:     map[string]bool{},
-			testImportPaths: map[string]bool{},
-		}
-		dp.c = sync.NewCond(&dp.m)
-		p.distincts[dhash] = dp
-		created = true
-	}
+	dp, created := p.EnsureDistinct(lc)
+
+	// dhash := lc.GetDistinctHash()
+	// dp, ok := p.distincts[dhash]
+	// if !ok {
+	// 	dp = NewDistinctPackage(dhash, lc.context.GOARCH, lc.context.GOOS, "")
+	// 	p.distincts[dhash] = dp
+	// 	created = true
+	// }
 
 	return p, dp, created
 }
@@ -311,44 +315,6 @@ func (lc *loaderContext) IsAllowed(absPath string) bool {
 // package for the loader context
 func (lc *loaderContext) IsUnsafe(p *Package) bool {
 	return lc.unsafePath == p.AbsPath
-}
-
-func (lc *loaderContext) NewPackage(hash collections.Hash, absPath string) *Package {
-	shortPath := absPath
-	if strings.HasPrefix(absPath, lc.context.GOROOT) {
-		shortPath = fmt.Sprintf("(stdlib) %s", absPath[utf8.RuneCountInString(lc.context.GOROOT)+5:])
-	} else if strings.HasPrefix(absPath, lc.startDir) {
-		// Shorten the canonical name for logging purposes.
-		n := utf8.RuneCountInString(lc.startDir)
-		// if utf8.RuneCountInString(absPath) >= n {
-		shortPath = fmt.Sprintf("(root) %s", absPath[n:])
-		// }
-		// shortPath = fmt.Sprintf("%s", shortPath)
-	}
-	p := &Package{
-		AbsPath:   absPath,
-		distincts: map[collections.Hash]*DistinctPackage{},
-		hash:      hash,
-		shortPath: shortPath,
-		Fset:      token.NewFileSet(),
-		// importPaths:     map[string]bool{},
-		// testImportPaths: map[string]bool{},
-		loaderContexts: map[LoaderContext]bool{},
-	}
-
-	dp := &DistinctPackage{
-		hash:            lc.GetDistinctHash(),
-		GOARCH:          lc.context.GOARCH,
-		GOOS:            lc.context.GOOS,
-		importPaths:     map[string]bool{},
-		testImportPaths: map[string]bool{},
-	}
-	dp.c = sync.NewCond(&dp.m)
-
-	p.distincts[lc.GetDistinctHash()] = dp
-
-	lc.Log.Debugf("NewPackage: creating package for '%s' at 0x%x.\n", p.String(), p.Hash())
-	return p
 }
 
 func (lc *loaderContext) IsDir(absPath string) bool {
@@ -477,8 +443,8 @@ func (lc *loaderContext) HandleTypeCheckerError(e error) {
 func (lc *loaderContext) findImportPath(path, src string) (string, error) {
 	buildPkg, err := lc.context.Import(path, src, build.FindOnly)
 	if err != nil {
-		msg := fmt.Sprintf("Failed to find import path:\n\tAttempted build.Import('%s', '%s', build.FindOnly)\n\t%s\n", path, src, err.Error())
-		return "", errors.New(msg)
+		msg := fmt.Sprintf("Failed to find import path:\n\tAttempted build.Import('%s', '%s', build.FindOnly)", path, src)
+		return "", errors.Wrap(err, msg)
 	}
 	return buildPkg.Dir, nil
 }
@@ -486,11 +452,9 @@ func (lc *loaderContext) findImportPath(path, src string) (string, error) {
 func (lc *loaderContext) locatePackages(path string) (*Package, error) {
 	n, ok := lc.loader.Caravan().Find(BuildPackageHash(path))
 	if !ok {
-		fmt.Printf("**** Not found! *****\n")
 		return nil, fmt.Errorf("Failed to import %s", path)
 	}
 
 	p := n.Element.(*Package)
-
 	return p, nil
 }

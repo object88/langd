@@ -203,7 +203,7 @@ func (l *loader) processStateChange(sce *stateChangeEvent) {
 
 	switch loadState {
 	case queued:
-		l.processDirectory(sce.lc, p)
+		l.processDirectory(sce.lc, p, dp)
 
 		dp.loadState.increment()
 		dp.c.Broadcast()
@@ -211,7 +211,7 @@ func (l *loader) processStateChange(sce *stateChangeEvent) {
 	case unloaded:
 		haveGo := l.processGoFiles(sce.lc, p, dp)
 		haveCgo := l.processCgoFiles(sce.lc, p, dp)
-		if (haveGo || haveCgo) && p.buildPkg != nil {
+		if (haveGo || haveCgo) && dp.buildPkg != nil {
 			imports := importPathMapToArray(dp.importPaths)
 			l.processPackages(sce.lc, p, imports, false)
 			l.processComplete(sce.lc, p)
@@ -222,7 +222,7 @@ func (l *loader) processStateChange(sce *stateChangeEvent) {
 		l.stateChange <- sce
 	case loadedGo:
 		haveTestGo := l.processTestGoFiles(sce.lc, p, dp)
-		if haveTestGo && p.buildPkg != nil {
+		if haveTestGo && dp.buildPkg != nil {
 			imports := importPathMapToArray(dp.testImportPaths)
 			l.processPackages(sce.lc, p, imports, true)
 			l.processComplete(sce.lc, p)
@@ -275,17 +275,14 @@ func (l *loader) processComplete(lc LoaderContext, p *Package) {
 	if err != nil {
 		l.Log.Debugf("Error while checking %s:\n\t%s\n\n", p.AbsPath, err.Error())
 	}
-	// if !p.typesPkg.Complete() {
-	// 	l.Log.Debugf("Incomplete package %s\n", p.AbsPath)
-	// }
 }
 
-func (l *loader) processDirectory(lc LoaderContext, p *Package) {
+func (l *loader) processDirectory(lc LoaderContext, p *Package, dp *DistinctPackage) {
 	if l.processUnsafe(lc, p) {
 		return
 	}
 
-	p.buildPkg = lc.ImportBuildPackage(p)
+	dp.buildPkg = lc.ImportBuildPackage(p)
 }
 
 func (l *loader) getFileReader(lc LoaderContext, absFilepath string) (io.Reader, bool) {
@@ -307,11 +304,11 @@ func (l *loader) processGoFiles(lc LoaderContext, p *Package, dp *DistinctPackag
 		return true
 	}
 
-	if p.buildPkg == nil {
+	if dp.buildPkg == nil {
 		return false
 	}
 
-	fnames := p.buildPkg.GoFiles
+	fnames := dp.buildPkg.GoFiles
 	if len(fnames) == 0 {
 		return false
 	}
@@ -342,10 +339,11 @@ func (l *loader) processGoFiles(lc LoaderContext, p *Package, dp *DistinctPackag
 
 		l.processAstFile(astf, dp.importPaths)
 
+		p.fileHashes[fname] = hash
+
 		files := dp.currentFiles()
 		files[fname] = &File{
 			errs: []FileError{},
-			hash: hash,
 			file: astf,
 		}
 	}
@@ -425,20 +423,20 @@ func (l *loader) processCgoFiles(lc LoaderContext, p *Package, dp *DistinctPacka
 		return true
 	}
 
-	if p.buildPkg == nil {
+	if dp.buildPkg == nil {
 		return false
 	}
 
-	fnames := p.buildPkg.CgoFiles
+	fnames := dp.buildPkg.CgoFiles
 	if len(fnames) == 0 {
 		return false
 	}
 
-	cgoCPPFLAGS, _, _, _ := cflags(p.buildPkg, true)
-	_, cgoexeCFLAGS, _, _ := cflags(p.buildPkg, false)
+	cgoCPPFLAGS, _, _, _ := cflags(dp.buildPkg, true)
+	_, cgoexeCFLAGS, _, _ := cflags(dp.buildPkg, false)
 
-	if len(p.buildPkg.CgoPkgConfig) > 0 {
-		pcCFLAGS, err := pkgConfigFlags(p.buildPkg)
+	if len(dp.buildPkg.CgoPkgConfig) > 0 {
+		pcCFLAGS, err := pkgConfigFlags(dp.buildPkg)
 		if err != nil {
 			l.Log.Debugf("CGO: %s: Failed to get flags: %s\n", p, err.Error())
 			return false
@@ -465,10 +463,10 @@ func (l *loader) processCgoFiles(lc LoaderContext, p *Package, dp *DistinctPacka
 	}
 
 	var cgoflags []string
-	if p.buildPkg.Goroot && p.buildPkg.ImportPath == "runtime/cgo" {
+	if dp.buildPkg.Goroot && dp.buildPkg.ImportPath == "runtime/cgo" {
 		cgoflags = append(cgoflags, "-import_runtime_cgo=false")
 	}
-	if p.buildPkg.Goroot && p.buildPkg.ImportPath == "runtime/race" || p.buildPkg.ImportPath == "runtime/cgo" {
+	if dp.buildPkg.Goroot && dp.buildPkg.ImportPath == "runtime/race" || dp.buildPkg.ImportPath == "runtime/cgo" {
 		cgoflags = append(cgoflags, "-import_syscall=false")
 	}
 
@@ -524,10 +522,11 @@ func (l *loader) processCgoFiles(lc LoaderContext, p *Package, dp *DistinctPacka
 
 		l.processAstFile(astf, dp.importPaths)
 
+		p.fileHashes[fname] = hash
+
 		files := dp.currentFiles()
 		files[fname] = &File{
 			errs: []FileError{},
-			hash: hash,
 			file: astf,
 		}
 	}
@@ -537,7 +536,7 @@ func (l *loader) processCgoFiles(lc LoaderContext, p *Package, dp *DistinctPacka
 }
 
 func (l *loader) processTestGoFiles(lc LoaderContext, p *Package, dp *DistinctPackage) bool {
-	if lc.IsUnsafe(p) || p.buildPkg == nil {
+	if lc.IsUnsafe(p) || dp.buildPkg == nil {
 		return false
 	}
 
@@ -551,7 +550,7 @@ func (l *loader) processTestGoFiles(lc LoaderContext, p *Package, dp *DistinctPa
 		}
 	}
 
-	fnames := p.buildPkg.TestGoFiles
+	fnames := dp.buildPkg.TestGoFiles
 	if len(fnames) == 0 {
 		// No test files; continue on.
 		return false
@@ -580,10 +579,11 @@ func (l *loader) processTestGoFiles(lc LoaderContext, p *Package, dp *DistinctPa
 
 		l.processAstFile(astf, dp.testImportPaths)
 
+		p.fileHashes[fname] = hash
+
 		files := dp.currentFiles()
 		files[fname] = &File{
 			errs: []FileError{},
-			hash: hash,
 			file: astf,
 		}
 	}

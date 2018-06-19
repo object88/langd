@@ -18,6 +18,7 @@ func NewOpenedFiles() *OpenedFiles {
 	}
 }
 
+// EnsureOpened will create a new rope for a file that's not previously opened
 func (of *OpenedFiles) EnsureOpened(absFilepath, text string) error {
 	if _, ok := of.ropes[absFilepath]; ok {
 		return fmt.Errorf("File %s is already opened", absFilepath)
@@ -26,6 +27,7 @@ func (of *OpenedFiles) EnsureOpened(absFilepath, text string) error {
 	return nil
 }
 
+// Close will remove a rope from the collection
 func (of *OpenedFiles) Close(absFilepath string) error {
 	_, ok := of.ropes[absFilepath]
 	if !ok {
@@ -36,6 +38,7 @@ func (of *OpenedFiles) Close(absFilepath string) error {
 	return nil
 }
 
+// Get returns the rope for a file
 func (of *OpenedFiles) Get(absFilepath string) (*rope.Rope, error) {
 	buf, ok := of.ropes[absFilepath]
 	if !ok {
@@ -45,6 +48,8 @@ func (of *OpenedFiles) Get(absFilepath string) (*rope.Rope, error) {
 	return buf, nil
 }
 
+// Replace will replace an existing rope with a completely new rope based on
+// the provided text
 func (of *OpenedFiles) Replace(absFilepath, text string) error {
 	_, ok := of.ropes[absFilepath]
 	if !ok {

@@ -12,7 +12,6 @@ import (
 // File is an AST file and any errors that types.Config.Check discovers
 type File struct {
 	file *ast.File
-	hash collections.Hash
 	errs []FileError
 }
 
