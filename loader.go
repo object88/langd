@@ -110,7 +110,7 @@ func (l *loader) InvalidatePackage(lc LoaderContext, p *Package) {
 	p.Invalidate()
 
 	l.stateChange <- &stateChangeEvent{
-		hash: BuildPackageHash(p.AbsPath),
+		hash: calculateHashFromString(p.AbsPath),
 		lc:   lc,
 	}
 }
@@ -646,7 +646,7 @@ func (l *loader) processPackages(lc LoaderContext, p *Package, importPaths []str
 	func() {
 		imprts := []string{}
 		for importedPackage := range importedPackages {
-			n, ok := l.caravan.Find(BuildPackageHash(importedPackage))
+			n, ok := l.caravan.Find(calculateHashFromString(importedPackage))
 			if !ok {
 				continue
 			}
@@ -658,7 +658,7 @@ func (l *loader) processPackages(lc LoaderContext, p *Package, importPaths []str
 	}()
 
 	for importPath := range importedPackages {
-		n, ok := l.caravan.Find(BuildPackageHash(importPath))
+		n, ok := l.caravan.Find(calculateHashFromString(importPath))
 		if !ok {
 			l.Log.Debugf(" PP: %s: %d: import path is missing: %s\n", p, loadState, importPath)
 			continue

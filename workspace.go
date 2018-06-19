@@ -263,7 +263,7 @@ func (w *Workspace) getVarType(sb *strings.Builder, v *types.Var) {
 		case *types.Basic:
 			sb.WriteString(getBasicType(t))
 		case *types.Named:
-			n, ok := w.Loader.Caravan().Find(BuildPackageHash(t.Obj().Pkg().Path()))
+			n, ok := w.Loader.Caravan().Find(calculateHashFromString(t.Obj().Pkg().Path()))
 			if !ok {
 				sb.WriteString("error")
 			}
@@ -328,7 +328,7 @@ func getConstType(o *types.Const) string {
 func (w *Workspace) LocateIdent(p *token.Position) (*ast.Ident, error) {
 	absPath := filepath.Dir(p.Filename)
 
-	key := BuildPackageHash(absPath)
+	key := calculateHashFromString(absPath)
 	n, ok := w.Loader.Caravan().Find(key)
 	if !ok {
 		return nil, fmt.Errorf("No package loaded for '%s'", p.Filename)
@@ -458,7 +458,7 @@ func (w *Workspace) ReplaceFile(absFilepath, text string) error {
 func (w *Workspace) locateDeclaration(p *token.Position) (types.Object, *Package, *DistinctPackage, error) {
 	absPath := filepath.Dir(p.Filename)
 
-	key := BuildPackageHash(absPath)
+	key := calculateHashFromString(absPath)
 	n, ok := w.Loader.Caravan().Find(key)
 	if !ok {
 		return nil, nil, nil, fmt.Errorf("No package loaded for '%s'", p.Filename)
@@ -570,7 +570,7 @@ func (w *Workspace) processSelectorExpr(v *ast.SelectorExpr, pkg *Package, dpkg 
 		case *types.PkgName:
 			fmt.Printf("Have PkgName %s, type %s\n", v1.Name(), v1.Type())
 			absPath := v1.Imported().Path()
-			n, _ := w.Loader.Caravan().Find(BuildPackageHash(absPath))
+			n, _ := w.Loader.Caravan().Find(calculateHashFromString(absPath))
 			pkg1 := n.Element.(*Package)
 			dpkg1 := pkg1.distincts[w.LoaderContext.GetDistinctHash()]
 			fmt.Printf("From pkg %#v\n", pkg1)
@@ -584,7 +584,7 @@ func (w *Workspace) processSelectorExpr(v *ast.SelectorExpr, pkg *Package, dpkg 
 			fmt.Printf("Have Var %s, type %s\n\tv1: %#v\n\tv1.Sel: %#v\n", v1.Name(), v1.Type(), v1, v.Sel)
 			vSelObj := dpkg.checker.ObjectOf(v.Sel)
 			path := vSelObj.Pkg().Path()
-			n, _ := w.Loader.Caravan().Find(BuildPackageHash(path))
+			n, _ := w.Loader.Caravan().Find(calculateHashFromString(path))
 			pkg1 := n.Element.(*Package)
 			dpkg1 := pkg1.distincts[w.LoaderContext.GetDistinctHash()]
 			return vSelObj, pkg1, dpkg1, nil
@@ -592,7 +592,7 @@ func (w *Workspace) processSelectorExpr(v *ast.SelectorExpr, pkg *Package, dpkg 
 	case *ast.SelectorExpr:
 		vSelObj := dpkg.checker.ObjectOf(v.Sel)
 		path := vSelObj.Pkg().Path()
-		n, _ := w.Loader.Caravan().Find(BuildPackageHash(path))
+		n, _ := w.Loader.Caravan().Find(calculateHashFromString(path))
 		pkg1 := n.Element.(*Package)
 		dpkg1 := pkg1.distincts[w.LoaderContext.GetDistinctHash()]
 		return vSelObj, pkg1, dpkg1, nil
@@ -602,7 +602,7 @@ func (w *Workspace) processSelectorExpr(v *ast.SelectorExpr, pkg *Package, dpkg 
 }
 
 func (w *Workspace) reloadPackageAndAscendants(absPath string) error {
-	key := BuildPackageHash(absPath)
+	key := calculateHashFromString(absPath)
 	n, ok := w.Loader.Caravan().Find(key)
 	if !ok {
 		// Crapola.

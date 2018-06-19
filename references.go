@@ -46,7 +46,7 @@ func (w *Workspace) locateReferences(obj types.Object, pkg *Package) []*ref {
 	}
 
 	if obj.Exported() {
-		hash := BuildPackageHash(pkg.AbsPath)
+		hash := calculateHashFromString(pkg.AbsPath)
 		n, ok := w.Loader.Caravan().Find(hash)
 		if !ok {
 			// Should never get here.

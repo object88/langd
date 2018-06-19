@@ -71,7 +71,7 @@ func Test_LoadContext_Same_Package_Same_Env(t *testing.T) {
 		t.Errorf("Expected to find 1 package; found %d\n", packageCount)
 	}
 
-	phash := BuildPackageHash("/go/src/bar")
+	phash := calculateHashFromString("/go/src/bar")
 	n, ok := loader.Caravan().Find(phash)
 	if !ok {
 		t.Errorf("Failed to find package '%s' with hash %d", "/go/src/bar", phash)
@@ -165,7 +165,7 @@ func Test_LoadContext_Same_Package_Different_Env(t *testing.T) {
 		t.Errorf("Expected to find 1 packages; found %d\n", packageCount)
 	}
 
-	phash := BuildPackageHash("/go/src/bar")
+	phash := calculateHashFromString("/go/src/bar")
 	n, ok := loader.Caravan().Find(phash)
 	if !ok {
 		t.Errorf("Failed to find package '%s' with hash %d", "/go/src/bar", phash)

@@ -13,7 +13,6 @@ import (
 	"sync"
 	"unicode/utf8"
 
-	"github.com/OneOfOne/xxhash"
 	"github.com/gobwas/glob"
 	"github.com/object88/langd/collections"
 	"github.com/object88/langd/log"
@@ -129,21 +128,12 @@ func NewLoaderContext(loader Loader, startDir, goos, goarch, goroot string, opti
 		}
 	}
 
-	lc.unsafePath = filepath.Join(lc.context.GOROOT, "src", "unsafe")
-
-	c := &types.Config{
+	lc.config = &types.Config{
 		Error:    lc.HandleTypeCheckerError,
 		Importer: lc,
 	}
-
-	h := xxhash.New64()
-	h.WriteString(goarch)
-	h.WriteString(goos)
-	h.WriteString(strings.Join(lc.Tags, ","))
-	hash := collections.Hash(h.Sum64())
-
-	lc.config = c
-	lc.hash = hash
+	lc.hash = calculateHashFromStrings(append([]string{goarch, goos}, lc.Tags...)...)
+	lc.unsafePath = filepath.Join(lc.context.GOROOT, "src", "unsafe")
 
 	return lc
 }
@@ -239,7 +229,7 @@ func (lc *loaderContext) CheckPackage(p *Package) error {
 }
 
 func (lc *loaderContext) EnsurePackage(absPath string) (*Package, *DistinctPackage, bool) {
-	hash := BuildPackageHash(absPath)
+	hash := calculateHashFromString(absPath)
 	n, created := lc.loader.Caravan().Ensure(hash, func() collections.Hasher {
 		lc.Log.Debugf("NewPackage: creating package for '%s'.\n", absPath)
 		return NewPackage(absPath)
@@ -399,7 +389,7 @@ func (lc *loaderContext) HandleTypeCheckerError(e error) {
 	if terror, ok := e.(types.Error); ok {
 		position := terror.Fset.Position(terror.Pos)
 		absPath := filepath.Dir(position.Filename)
-		key := BuildPackageHash(absPath)
+		key := calculateHashFromString(absPath)
 		node, ok := lc.loader.Caravan().Find(key)
 
 		if !ok {
@@ -439,7 +429,7 @@ func (lc *loaderContext) findImportPath(path, src string) (string, error) {
 }
 
 func (lc *loaderContext) locatePackages(path string) (*Package, error) {
-	n, ok := lc.loader.Caravan().Find(BuildPackageHash(path))
+	n, ok := lc.loader.Caravan().Find(calculateHashFromString(path))
 	if !ok {
 		return nil, fmt.Errorf("Failed to import %s", path)
 	}

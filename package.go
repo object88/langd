@@ -4,17 +4,8 @@ import (
 	"go/token"
 	"sync"
 
-	"github.com/OneOfOne/xxhash"
 	"github.com/object88/langd/collections"
 )
-
-// BuildPackageHash returns the proper key for the provided path in the context of
-// the LoaderContext's arch & os
-func BuildPackageHash(absPath string) collections.Hash {
-	h := xxhash.New64()
-	h.WriteString(absPath)
-	return collections.Hash(h.Sum64())
-}
 
 // Package is the contents of a package
 type Package struct {
@@ -35,7 +26,7 @@ type Package struct {
 func NewPackage(absPath string) *Package {
 	p := &Package{
 		AbsPath:        absPath,
-		hash:           BuildPackageHash(absPath),
+		hash:           calculateHashFromString(absPath),
 		Fset:           token.NewFileSet(),
 		fileHashes:     map[string]collections.Hash{},
 		distincts:      map[collections.Hash]*DistinctPackage{},
@@ -45,6 +36,8 @@ func NewPackage(absPath string) *Package {
 	return p
 }
 
+// EnsureDistinct checks for a distinct package on this package that matches
+// the provided LoaderContext, and if missing, will create it
 func (p *Package) EnsureDistinct(lc LoaderContext) (*DistinctPackage, bool) {
 	created := false
 	dhash := lc.GetDistinctHash()
