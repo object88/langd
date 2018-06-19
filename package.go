@@ -33,7 +33,7 @@ type Package struct {
 	// testFiles       map[string]*File
 	// testImportPaths map[string]bool
 
-	// m sync.Mutex
+	m sync.Mutex
 	// c *sync.Cond
 
 	distincts map[collections.Hash]*DistinctPackage
@@ -132,7 +132,7 @@ func (dp *DistinctPackage) currentFiles() map[string]*File {
 		}
 		return dp.testFiles
 	}
-	fmt.Printf("DistinctPackage has loadState %d; no files.\n", loadState)
+	// fmt.Printf("DistinctPackage has loadState %d; no files.\n", loadState)
 	return nil
 }
 

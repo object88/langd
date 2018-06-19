@@ -80,6 +80,9 @@ func (h *Handler) readRoot(root string) {
 
 	// NOTE: We are not doing anything with this, so... BLOCKED.
 	fmt.Printf("Waiting...\n")
+
+	h.workspace.LoaderContext.Wait()
+
 	// <-done
 
 	// Start a routine to process requests

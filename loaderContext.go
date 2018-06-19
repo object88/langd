@@ -62,8 +62,6 @@ type loaderContext struct {
 
 	packages map[collections.Hash]bool
 
-	// complete bool
-
 	m sync.Mutex
 	c *sync.Cond
 }
@@ -77,6 +75,16 @@ func NewLoaderContext(loader Loader, startDir, goos, goarch, goroot string, opti
 	globs := make([]glob.Glob, 2)
 	globs[0] = glob.MustCompile(filepath.Join("**", ".*"))
 	globs[1] = glob.MustCompile(filepath.Join("**", "testdata"))
+
+	fmt.Printf("LC Start dir: %s\n", startDir)
+
+	if strings.HasPrefix(startDir, "file://") {
+		startDir = startDir[utf8.RuneCountInString("file://"):]
+	}
+	startDir, err := filepath.Abs(startDir)
+	if err != nil {
+		return nil
+	}
 
 	lc := &loaderContext{
 		filteredPaths: globs,
@@ -146,11 +154,6 @@ func (lc *loaderContext) GetDistinctHash() collections.Hash {
 
 func (lc *loaderContext) AreAllPackagesComplete() bool {
 	lc.m.Lock()
-	// if lc.complete {
-	// 	fmt.Printf("loaderContext.AreAllPackagesComplete (%s): already marked complete\n", lc)
-	// 	lc.m.Unlock()
-	// 	return true
-	// }
 
 	if len(lc.packages) == 0 {
 		// NOTE: this is a stopgap to address the problem where a loader context
@@ -167,7 +170,7 @@ func (lc *loaderContext) AreAllPackagesComplete() bool {
 
 	caravan := lc.loader.Caravan()
 	dhash := lc.GetDistinctHash()
-	fmt.Printf("loaderContext.AreAllPackagesComplete (%s): Checking %d packages...\n", lc, len(lc.packages))
+	// fmt.Printf("loaderContext.AreAllPackagesComplete (%s): Checking %d packages...\n", lc, len(lc.packages))
 	for hash := range lc.packages {
 		n, ok := caravan.Find(hash)
 		if !ok {
@@ -191,7 +194,6 @@ func (lc *loaderContext) AreAllPackagesComplete() bool {
 	}
 
 	fmt.Printf("loaderContext.AreAllPackagesComplete (%s): found to be complete? %t\n", lc, complete)
-	// lc.complete = complete
 	lc.m.Unlock()
 	return complete
 }
@@ -235,7 +237,10 @@ func (lc *loaderContext) EnsurePackage(absPath string) (*Package, *DistinctPacka
 		return lc.NewPackage(hash, absPath)
 	})
 	p := n.Element.(*Package)
+
+	p.m.Lock()
 	p.loaderContexts[lc] = true
+	p.m.Unlock()
 
 	lc.m.Lock()
 	lc.packages[hash] = true
@@ -255,8 +260,6 @@ func (lc *loaderContext) EnsurePackage(absPath string) (*Package, *DistinctPacka
 		p.distincts[dhash] = dp
 		created = true
 	}
-
-	// lc.complete = lc.complete && !created
 
 	return p, dp, created
 }
@@ -314,13 +317,13 @@ func (lc *loaderContext) NewPackage(hash collections.Hash, absPath string) *Pack
 	shortPath := absPath
 	if strings.HasPrefix(absPath, lc.context.GOROOT) {
 		shortPath = fmt.Sprintf("(stdlib) %s", absPath[utf8.RuneCountInString(lc.context.GOROOT)+5:])
-	} else {
+	} else if strings.HasPrefix(absPath, lc.startDir) {
 		// Shorten the canonical name for logging purposes.
 		n := utf8.RuneCountInString(lc.startDir)
-		if len(absPath) >= n {
-			shortPath = absPath[n:]
-		}
-		shortPath = fmt.Sprintf("%s", shortPath)
+		// if utf8.RuneCountInString(absPath) >= n {
+		shortPath = fmt.Sprintf("(root) %s", absPath[n:])
+		// }
+		// shortPath = fmt.Sprintf("%s", shortPath)
 	}
 	p := &Package{
 		AbsPath:   absPath,

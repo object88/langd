@@ -69,19 +69,6 @@ type loader struct {
 	Log *log.Log
 }
 
-// FileError is a translation of the types.Error struct
-type FileError struct {
-	token.Position
-	Message string
-	Warning bool
-}
-
-// File is an AST file and any errors that types.Config.Check discovers
-type File struct {
-	file *ast.File
-	errs []FileError
-}
-
 var cgoRe = regexp.MustCompile(`[/\\:]`)
 
 // NewLoader creates a new loader
@@ -208,7 +195,7 @@ func (l *loader) processStateChange(sce *stateChangeEvent) {
 	n, _ := l.caravan.Find(sce.hash)
 	p := n.Element.(*Package)
 	dp := p.distincts[sce.lc.GetDistinctHash()]
-	fmt.Printf("Processing %s::%s\n", p, dp)
+	// fmt.Printf("Processing %s::%s\n", p, dp)
 
 	loadState := dp.loadState.get()
 
@@ -253,8 +240,9 @@ func (l *loader) processStateChange(sce *stateChangeEvent) {
 		l.stateChange <- sce
 	case done:
 		fmt.Printf("Completed %s\n", p.AbsPath)
+		p.m.Lock()
 		for lc := range p.loaderContexts {
-			fmt.Printf("Checking %s\n", lc)
+			// fmt.Printf("Checking %s\n", lc)
 			complete := lc.AreAllPackagesComplete()
 			if complete {
 				l.Log.Debugf("All packages are loaded\n")
@@ -262,6 +250,7 @@ func (l *loader) processStateChange(sce *stateChangeEvent) {
 				lc.Signal()
 			}
 		}
+		p.m.Unlock()
 	}
 }
 
@@ -334,6 +323,13 @@ func (l *loader) processGoFiles(lc LoaderContext, p *Package, dp *DistinctPackag
 			continue
 		}
 
+		hash := calculateHash(r)
+		if s, ok := r.(io.Seeker); ok {
+			s.Seek(0, io.SeekStart)
+		} else {
+			r, _ = l.getFileReader(lc, fpath)
+		}
+
 		astf, err := parser.ParseFile(p.Fset, fpath, r, parser.AllErrors)
 
 		if c, ok := r.(io.Closer); ok {
@@ -344,7 +340,14 @@ func (l *loader) processGoFiles(lc LoaderContext, p *Package, dp *DistinctPackag
 			l.Log.Debugf(" GF: ERROR: While parsing %s:\n\t%s\n", fpath, err.Error())
 		}
 
-		l.processAstFile(p, dp, fname, astf, dp.importPaths)
+		l.processAstFile(astf, dp.importPaths)
+
+		files := dp.currentFiles()
+		files[fname] = &File{
+			errs: []FileError{},
+			hash: hash,
+			file: astf,
+		}
 	}
 
 	return true
@@ -507,6 +510,10 @@ func (l *loader) processCgoFiles(lc LoaderContext, p *Package, dp *DistinctPacka
 			continue
 		}
 
+		hash := calculateHash(f)
+		fmt.Printf("Generated hash 0x%x for '%s'\n", hash, fname)
+
+		f.Seek(0, io.SeekStart)
 		astf, err := parser.ParseFile(p.Fset, displayFiles[i], f, 0)
 
 		f.Close()
@@ -515,7 +522,14 @@ func (l *loader) processCgoFiles(lc LoaderContext, p *Package, dp *DistinctPacka
 			l.Log.Debugf("CGO: %s: ERROR: Failed to parse %s\n\t%s\n", p, fname, err.Error())
 		}
 
-		l.processAstFile(p, dp, fname, astf, dp.importPaths)
+		l.processAstFile(astf, dp.importPaths)
+
+		files := dp.currentFiles()
+		files[fname] = &File{
+			errs: []FileError{},
+			hash: hash,
+			file: astf,
+		}
 	}
 	l.Log.Debugf("CGO: %s: Done processing\n", p)
 
@@ -551,6 +565,9 @@ func (l *loader) processTestGoFiles(lc LoaderContext, p *Package, dp *DistinctPa
 			continue
 		}
 
+		hash := calculateHash(r)
+		fmt.Printf("Generated hash 0x%x for '%s'\n", hash, fpath)
+
 		astf, err := parser.ParseFile(p.Fset, fpath, r, parser.AllErrors)
 
 		if c, ok := r.(io.Closer); ok {
@@ -561,14 +578,21 @@ func (l *loader) processTestGoFiles(lc LoaderContext, p *Package, dp *DistinctPa
 			l.Log.Debugf("TGF: ERROR: While parsing %s:\n\t%s\n", fpath, err.Error())
 		}
 
-		l.processAstFile(p, dp, fname, astf, dp.testImportPaths)
+		l.processAstFile(astf, dp.testImportPaths)
+
+		files := dp.currentFiles()
+		files[fname] = &File{
+			errs: []FileError{},
+			hash: hash,
+			file: astf,
+		}
 	}
 
 	l.Log.Debugf("TFG: %s: processing complete\n", p)
 	return true
 }
 
-func (l *loader) processAstFile(p *Package, dp *DistinctPackage, fname string, astf *ast.File, importPaths map[string]bool) {
+func (l *loader) processAstFile(astf *ast.File, importPaths map[string]bool) {
 	for _, decl := range astf.Decls {
 		decl, ok := decl.(*ast.GenDecl)
 		if !ok || decl.Tok != token.IMPORT {
@@ -586,12 +610,6 @@ func (l *loader) processAstFile(p *Package, dp *DistinctPackage, fname string, a
 
 			importPaths[path] = true
 		}
-	}
-
-	files := dp.currentFiles()
-	files[fname] = &File{
-		errs: []FileError{},
-		file: astf,
 	}
 }
 

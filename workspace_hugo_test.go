@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"fmt"
 	"go/token"
+	"io/ioutil"
 	"os"
 	"runtime"
 	"testing"
@@ -41,11 +42,6 @@ func Test_Workspace_Hugo(t *testing.T) {
 	w := CreateWorkspace(l, logger)
 	w.AssignLoaderContext(lc)
 
-	// done := l.Start()
-	// if done == nil {
-	// 	t.Fatal("Did not check channel back.\n")
-	// }
-
 	err := l.LoadDirectory(lc, path)
 	if err != nil {
 		t.Fatalf("Failed to load directory '%s':\n\t%s\n", path, err.Error())
@@ -74,6 +70,13 @@ func Test_Workspace_Hugo(t *testing.T) {
 		buf.WriteString(fmt.Sprintf("Total: %d errors\n", errCount))
 		t.Fatal(buf.String())
 	}
+
+	byteContents, err := ioutil.ReadFile("/Users/bropa18/work/src/github.com/gohugoio/hugo/vendor/github.com/olekukonko/tablewriter/csv.go")
+	if err != nil {
+		t.Fatal(err)
+	}
+	contents := string(byteContents)
+	w.OpenFile("/Users/bropa18/work/src/github.com/gohugoio/hugo/vendor/github.com/olekukonko/tablewriter/csv.go", contents)
 
 	declPosition := &token.Position{
 		Filename: "/Users/bropa18/work/src/github.com/gohugoio/hugo/vendor/github.com/olekukonko/tablewriter/table.go",

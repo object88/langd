@@ -47,7 +47,7 @@ type Node struct {
 	WeakDescendants map[Hash]*Node
 }
 
-type Hash int32
+type Hash uint64
 
 // Hasher is the interface by which an element in a graph exposes its key
 type Hasher interface {

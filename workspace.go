@@ -83,13 +83,6 @@ func (w *Workspace) CloseFile(absPath string) error {
 	if err := w.Loader.OpenedFiles().Close(absPath); err != nil {
 		w.log.Warnf(err.Error())
 	}
-	// _, ok := w.Loader.openedFiles[absPath]
-	// if !ok {
-	// 	w.log.Warnf("File %s is not opened\n", absPath)
-	// 	return nil
-	// }
-
-	// delete(w.Loader.openedFiles, absPath)
 
 	w.log.Debugf("File %s is closed\n", absPath)
 
@@ -422,15 +415,27 @@ func (w *Workspace) LocateReferences(p *token.Position) []token.Position {
 // OpenFile shadows the file read from the disk with an in-memory version,
 // which the workspace can accept edits to.
 func (w *Workspace) OpenFile(absFilepath, text string) error {
+	hash := calculateHashFromString(text)
+	fmt.Printf("Have new hash 0x%x for '%s'\n", hash, absFilepath)
+
 	if err := w.Loader.OpenedFiles().EnsureOpened(absFilepath, text); err != nil {
-		return err
+		return errors.Wrap(err, "From OpenFile")
 	}
-	// if _, ok := w.Loader.openedFiles[absFilepath]; ok {
-	// 	return fmt.Errorf("File %s is already opened", absFilepath)
-	// }
-	// w.Loader.openedFiles[absFilepath] = rope.CreateRope(text)
 
 	absPath := filepath.Dir(absFilepath)
+	_, dp, _ := w.LoaderContext.EnsurePackage(absPath)
+	if dp == nil {
+		return errors.Errorf("Do not have distinct package for '%s'", absFilepath)
+	}
+	if dp.files == nil {
+		return errors.Errorf("Do not have distinct package file collection for '%s'", absFilepath)
+	}
+	existingHash := dp.files[filepath.Base(absFilepath)].hash
+	if existingHash == hash {
+		w.log.Debugf("Shadowed file '%s'; unchanged\n", absFilepath)
+		return nil
+	}
+
 	err := w.reloadPackageAndAscendants(absPath)
 	if err != nil {
 		return errors.Wrap(err, "From OpenFile")
@@ -446,14 +451,6 @@ func (w *Workspace) ReplaceFile(absFilepath, text string) error {
 	if err := w.Loader.OpenedFiles().Replace(absFilepath, text); err != nil {
 		return err
 	}
-	// _, ok := w.Loader.openedFiles[absFilepath]
-	// if !ok {
-	// 	return fmt.Errorf("File %s is not opened", absFilepath)
-	// }
-
-	// // Replace the entire document
-	// buf := rope.CreateRope(text)
-	// w.Loader.openedFiles[absFilepath] = buf
 
 	absPath := filepath.Dir(absFilepath)
 	err := w.reloadPackageAndAscendants(absPath)
@@ -619,26 +616,12 @@ func (w *Workspace) reloadPackageAndAscendants(absPath string) error {
 	}
 	p := n.Element.(*Package)
 
-	// TODO: Need to reset w.Loader.done
 	w.Loader.InvalidatePackage(w.LoaderContext, p)
-	// p.loadState = unloaded
-	// p.ResetChecker()
-	// w.Loader.done = false
-	// w.Loader.stateChange <- &stateChangeEvent{
-	// 	key: BuildPackageHash(absPath),
-	// 	lc:  w.LoaderContext,
-	// }
 
 	asc := flattenAscendants(n)
 
 	for _, p1 := range asc {
 		w.Loader.InvalidatePackage(w.LoaderContext, p1)
-		// p1.loadState = unloaded
-		// p1.ResetChecker()
-		// w.Loader.stateChange <- &stateChangeEvent{
-		// 	key: BuildPackageHash(p1.AbsPath),
-		// 	lc:  w.LoaderContext,
-		// }
 	}
 
 	return nil
