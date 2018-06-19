@@ -313,37 +313,7 @@ func (l *loader) processGoFiles(lc LoaderContext, p *Package, dp *DistinctPackag
 
 	for _, fname := range fnames {
 		fpath := filepath.Join(p.AbsPath, fname)
-		r, ok := l.getFileReader(lc, fpath)
-		if !ok {
-			continue
-		}
-
-		hash := calculateHash(r)
-		if s, ok := r.(io.Seeker); ok {
-			s.Seek(0, io.SeekStart)
-		} else {
-			r, _ = l.getFileReader(lc, fpath)
-		}
-
-		astf, err := parser.ParseFile(p.Fset, fpath, r, parser.AllErrors)
-
-		if c, ok := r.(io.Closer); ok {
-			c.Close()
-		}
-
-		if err != nil {
-			l.Log.Debugf(" GF: ERROR: While parsing %s:\n\t%s\n", fpath, err.Error())
-		}
-
-		l.processAstFile(astf, dp.importPaths)
-
-		p.fileHashes[fname] = hash
-
-		files := dp.currentFiles()
-		files[fname] = &File{
-			errs: []FileError{},
-			file: astf,
-		}
+		l.processFile(lc, p, dp, fname, fpath, fpath, dp.importPaths)
 	}
 
 	return true
@@ -499,34 +469,9 @@ func (l *loader) processCgoFiles(lc LoaderContext, p *Package, dp *DistinctPacka
 		return false
 	}
 
-	for i, fname := range files {
-		f, err := os.Open(fname)
-		if err != nil {
-			l.Log.Debugf("CGO: %s: ERROR: failed to open file %s\n\t%s\n", p, fname, err.Error())
-			continue
-		}
-
-		hash := calculateHash(f)
-		fmt.Printf("Generated hash 0x%x for '%s'\n", hash, fname)
-
-		f.Seek(0, io.SeekStart)
-		astf, err := parser.ParseFile(p.Fset, displayFiles[i], f, 0)
-
-		f.Close()
-
-		if err != nil {
-			l.Log.Debugf("CGO: %s: ERROR: Failed to parse %s\n\t%s\n", p, fname, err.Error())
-		}
-
-		l.processAstFile(astf, dp.importPaths)
-
-		p.fileHashes[fname] = hash
-
-		files := dp.currentFiles()
-		files[fname] = &File{
-			errs: []FileError{},
-			file: astf,
-		}
+	for i, fpath := range files {
+		fname := filepath.Base(fpath)
+		l.processFile(lc, p, dp, fname, fpath, displayFiles[i], dp.importPaths)
 	}
 	l.Log.Debugf("CGO: %s: Done processing\n", p)
 
@@ -557,37 +502,48 @@ func (l *loader) processTestGoFiles(lc LoaderContext, p *Package, dp *DistinctPa
 	l.Log.Debugf("TFG: %s: processing %d test Go files\n", p, len(fnames))
 	for _, fname := range fnames {
 		fpath := filepath.Join(p.AbsPath, fname)
-		r, ok := l.getFileReader(lc, fpath)
-		if !ok {
-			continue
-		}
-
-		hash := calculateHash(r)
-		fmt.Printf("Generated hash 0x%x for '%s'\n", hash, fpath)
-
-		astf, err := parser.ParseFile(p.Fset, fpath, r, parser.AllErrors)
-
-		if c, ok := r.(io.Closer); ok {
-			c.Close()
-		}
-
-		if err != nil {
-			l.Log.Debugf("TGF: ERROR: While parsing %s:\n\t%s\n", fpath, err.Error())
-		}
-
-		l.processAstFile(astf, dp.testImportPaths)
-
-		p.fileHashes[fname] = hash
-
-		files := dp.currentFiles()
-		files[fname] = &File{
-			errs: []FileError{},
-			file: astf,
-		}
+		l.processFile(lc, p, dp, fname, fpath, fpath, dp.testImportPaths)
 	}
 
 	l.Log.Debugf("TFG: %s: processing complete\n", p)
 	return true
+}
+
+func (l *loader) processFile(lc LoaderContext, p *Package, dp *DistinctPackage, fname, fpath, displayPath string, importPaths map[string]bool) {
+	r, ok := l.getFileReader(lc, fpath)
+	if !ok {
+		return
+	}
+
+	hash := calculateHash(r)
+	if s, ok := r.(io.Seeker); ok {
+		s.Seek(0, io.SeekStart)
+	} else {
+		if c, ok := r.(io.Closer); ok {
+			c.Close()
+		}
+		r, _ = l.getFileReader(lc, fpath)
+	}
+
+	astf, err := parser.ParseFile(p.Fset, displayPath, r, parser.AllErrors)
+
+	if c, ok := r.(io.Closer); ok {
+		c.Close()
+	}
+
+	if err != nil {
+		l.Log.Debugf("ERROR: While parsing %s:\n\t%s\n", fpath, err.Error())
+	}
+
+	l.processAstFile(astf, importPaths)
+
+	p.fileHashes[fname] = hash
+
+	files := dp.currentFiles()
+	files[fname] = &File{
+		errs: []FileError{},
+		file: astf,
+	}
 }
 
 func (l *loader) processAstFile(astf *ast.File, importPaths map[string]bool) {
