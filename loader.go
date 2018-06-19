@@ -242,11 +242,9 @@ func (l *loader) processStateChange(sce *stateChangeEvent) {
 		fmt.Printf("Completed %s\n", p.AbsPath)
 		p.m.Lock()
 		for lc := range p.loaderContexts {
-			// fmt.Printf("Checking %s\n", lc)
 			complete := lc.AreAllPackagesComplete()
 			if complete {
 				l.Log.Debugf("All packages are loaded\n")
-				// l.ready <- true
 				lc.Signal()
 			}
 		}

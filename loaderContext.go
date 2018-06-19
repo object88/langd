@@ -178,7 +178,6 @@ func (lc *loaderContext) AreAllPackagesComplete() bool {
 
 	caravan := lc.loader.Caravan()
 	dhash := lc.GetDistinctHash()
-	// fmt.Printf("loaderContext.AreAllPackagesComplete (%s): Checking %d packages...\n", lc, len(lc.packages))
 	for hash := range lc.packages {
 		n, ok := caravan.Find(hash)
 		if !ok {
@@ -256,15 +255,6 @@ func (lc *loaderContext) EnsurePackage(absPath string) (*Package, *DistinctPacka
 	lc.m.Unlock()
 
 	dp, created := p.EnsureDistinct(lc)
-
-	// dhash := lc.GetDistinctHash()
-	// dp, ok := p.distincts[dhash]
-	// if !ok {
-	// 	dp = NewDistinctPackage(dhash, lc.context.GOARCH, lc.context.GOOS, "")
-	// 	p.distincts[dhash] = dp
-	// 	created = true
-	// }
-
 	return p, dp, created
 }
 
@@ -366,7 +356,6 @@ func (lc *loaderContext) String() string {
 
 // Import is the implementation of types.Importer
 func (lc *loaderContext) Import(path string) (*types.Package, error) {
-	// fmt.Printf("Importer looking for '%s'\n", path)
 	p, err := lc.locatePackages(path)
 	if err != nil {
 		return nil, err

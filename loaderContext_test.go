@@ -21,8 +21,6 @@ func Test_LoadContext_Same_Package_Same_Env(t *testing.T) {
 
 	loader := NewLoader()
 	defer loader.Close()
-	// loader.Log.SetLevel(log.Debug)
-	// done := loader.Start()
 
 	lc1 := NewLoaderContext(loader, "/go/src/bar", "darwin", "x86", "/go", func(lc LoaderContext) {
 		lc.(*loaderContext).context = buildutil.FakeContext(packages)
@@ -42,7 +40,6 @@ func Test_LoadContext_Same_Package_Same_Env(t *testing.T) {
 		t.Fatalf("(2) Error while loading: %s", err.Error())
 	}
 
-	// <-done
 	lc1.Wait()
 	lc2.Wait()
 
@@ -106,8 +103,6 @@ func Test_LoadContext_Same_Package_Different_Env(t *testing.T) {
 
 	loader := NewLoader()
 	defer loader.Close()
-	// loader.Log.SetLevel(log.Debug)
-	// done := loader.Start()
 
 	envs := [][]string{
 		[]string{"darwin", "amd"},
@@ -141,7 +136,6 @@ func Test_LoadContext_Same_Package_Different_Env(t *testing.T) {
 		}()
 	}
 
-	// <-done
 	wg.Wait()
 
 	errCount := 0

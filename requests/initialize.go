@@ -73,8 +73,6 @@ func (h *Handler) readRoot(root string) {
 		fmt.Printf("Failed to deliver message to client: %s\n", err.Error())
 	}
 
-	// done := h.workspace.Loader.Start()
-
 	fmt.Printf("About to load %s\n", base)
 	h.workspace.Loader.LoadDirectory(h.workspace.LoaderContext, base)
 
@@ -82,8 +80,6 @@ func (h *Handler) readRoot(root string) {
 	fmt.Printf("Waiting...\n")
 
 	h.workspace.LoaderContext.Wait()
-
-	// <-done
 
 	// Start a routine to process requests
 	h.startProcessingQueue()

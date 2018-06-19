@@ -25,14 +25,10 @@ func Test_Workspace_Change_Creates_Error(t *testing.T) {
 	w, lc, closer := workspaceSetup(t, "/go/src/bar", packages, false)
 	defer closer()
 
-	// done := w.Loader.Start()
-
 	w.OpenFile("/go/src/foo/foo.go", src1)
-	// <-done
 	lc.Wait()
 
 	w.ChangeFile("/go/src/foo/foo.go", 1, 5, 1, 9, "FOOF")
-	// <-done
 	lc.Wait()
 
 	errCount := 0

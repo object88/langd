@@ -74,9 +74,6 @@ type replyHandler interface {
 func NewHandler(load *health.Load, loader langd.Loader) *Handler {
 	// Hopefully these queues are sufficiently deep.  Otherwise, the handler
 	// will start blocking.
-	// lc := langd.NewLoaderContext(loader, runtime.GOOS, runtime.GOARCH, runtime.GOROOT())
-	// loader.Log.SetLevel(log.Verbose)
-
 	l := log.Stdout()
 
 	outgoingQueue := make(chan int, 256)
@@ -112,9 +109,6 @@ func (h *Handler) ConfigureLoaderContext(startDir string, settings *viper.Viper)
 	if goos == "" {
 		goos = runtime.GOOS
 	}
-	// loaderContext := langd.NewLoaderContext(h.workspace.Loader, startDir, goos, goarch, root, func(lc langd.LoaderContext) {
-	// 	lc.Log = h.log
-	// })
 	loaderContext := langd.NewLoaderContext(h.workspace.Loader, startDir, goos, goarch, root)
 
 	h.workspace.AssignLoaderContext(loaderContext)
