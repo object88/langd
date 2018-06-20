@@ -58,6 +58,7 @@ func (p *Package) Hash() collections.Hash {
 
 // Invalidate resets the checker state for all distinct packages
 func (p *Package) Invalidate() {
+	p.Fset = token.NewFileSet()
 	for _, dp := range p.distincts {
 		dp.resetChecker()
 	}
