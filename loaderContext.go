@@ -2,7 +2,6 @@ package langd
 
 import (
 	"fmt"
-	"go/ast"
 	"go/build"
 	"go/types"
 	"io"
@@ -29,11 +28,12 @@ type LoaderContext interface {
 	CheckPackage(p *Package) error
 	EnsurePackage(absPath string) (*Package, *DistinctPackage, bool)
 	FindImportPath(p *Package, importPath string) (string, error)
+	GetConfig() *types.Config
 	GetContextArch() string
 	GetContextOS() string
 	GetDistinctHash() collections.Hash
 	GetStartDir() string
-	ImportBuildPackage(p *Package) *build.Package
+	ImportBuildPackage(p *Package)
 	IsAllowed(absPath string) bool
 	IsUnsafe(p *Package) bool
 
@@ -138,6 +138,10 @@ func NewLoaderContext(loader Loader, startDir, goos, goarch, goroot string, opti
 	return lc
 }
 
+func (lc *loaderContext) GetConfig() *types.Config {
+	return lc.config
+}
+
 func (lc *loaderContext) GetContextArch() string {
 	return lc.context.GOARCH
 }
@@ -197,33 +201,9 @@ func (lc *loaderContext) AreAllPackagesComplete() bool {
 
 func (lc *loaderContext) CheckPackage(p *Package) error {
 	dp := p.distincts[lc.GetDistinctHash()]
-	if dp.checker == nil {
-		info := &types.Info{
-			Defs:       map[*ast.Ident]types.Object{},
-			Implicits:  map[ast.Node]types.Object{},
-			Scopes:     map[ast.Node]*types.Scope{},
-			Selections: map[*ast.SelectorExpr]*types.Selection{},
-			Types:      map[ast.Expr]types.TypeAndValue{},
-			Uses:       map[*ast.Ident]types.Object{},
-		}
-
-		dp.typesPkg = types.NewPackage(p.AbsPath, dp.buildPkg.Name)
-		dp.checker = types.NewChecker(lc.config, p.Fset, dp.typesPkg, info)
-	}
-
-	// Loop over files and clear previous errors; all will be rechecked.
-	files := dp.currentFiles()
-	astFiles := make([]*ast.File, len(files))
-	i := 0
-	for _, v := range files {
-		f := v
-		f.errs = []FileError{}
-		astFiles[i] = f.file
-		i++
-	}
 
 	lc.checkerMu.Lock()
-	err := dp.checker.Files(astFiles)
+	err := dp.check()
 	lc.checkerMu.Unlock()
 	return err
 }
@@ -266,18 +246,19 @@ func (lc *loaderContext) GetStartDir() string {
 	return lc.startDir
 }
 
-func (lc *loaderContext) ImportBuildPackage(p *Package) *build.Package {
+func (lc *loaderContext) ImportBuildPackage(p *Package) {
 	buildPkg, err := lc.context.Import(".", p.AbsPath, 0)
 	if err != nil {
 		if _, ok := err.(*build.NoGoError); ok {
 			// There isn't any Go code here.
-			return nil
+			return
 		}
 		lc.Log.Debugf("ImportBuildPackage: %s: proc error:\n\t%s\n", p, err.Error())
-		return nil
+		return
 	}
 
-	return buildPkg
+	dp, _ := p.EnsureDistinct(lc)
+	dp.buildPkg = buildPkg
 }
 
 func (lc *loaderContext) IsAllowed(absPath string) bool {

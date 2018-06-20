@@ -280,7 +280,7 @@ func (l *loader) processDirectory(lc LoaderContext, p *Package, dp *DistinctPack
 		return
 	}
 
-	dp.buildPkg = lc.ImportBuildPackage(p)
+	lc.ImportBuildPackage(p)
 }
 
 func (l *loader) getFileReader(lc LoaderContext, absFilepath string) (io.Reader, bool) {

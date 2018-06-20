@@ -2,20 +2,16 @@ package langd
 
 import (
 	"fmt"
+	"go/ast"
 	"go/build"
 	"go/types"
 	"sync"
-
-	"github.com/object88/langd/collections"
 )
 
 // DistinctPackage contains the os/arch specific package AST
 type DistinctPackage struct {
-	hash collections.Hash
-
-	GOARCH string
-	GOOS   string
-	Tags   string
+	lc LoaderContext
+	p  *Package
 
 	loadState loadState
 
@@ -32,12 +28,10 @@ type DistinctPackage struct {
 	typesPkg *types.Package
 }
 
-func NewDistinctPackage(hash collections.Hash, goarch, goos, tags string) *DistinctPackage {
+func NewDistinctPackage(lc LoaderContext, p *Package) *DistinctPackage {
 	dp := &DistinctPackage{
-		hash:            hash,
-		GOARCH:          goarch,
-		GOOS:            goos,
-		Tags:            tags,
+		lc:              lc,
+		p:               p,
 		importPaths:     map[string]bool{},
 		testImportPaths: map[string]bool{},
 	}
@@ -65,6 +59,38 @@ func (dp *DistinctPackage) CheckReady(loadState loadState) bool {
 	return false
 }
 
+func (dp *DistinctPackage) check() error {
+	if dp.checker == nil {
+		info := &types.Info{
+			Defs:       map[*ast.Ident]types.Object{},
+			Implicits:  map[ast.Node]types.Object{},
+			Scopes:     map[ast.Node]*types.Scope{},
+			Selections: map[*ast.SelectorExpr]*types.Selection{},
+			Types:      map[ast.Expr]types.TypeAndValue{},
+			Uses:       map[*ast.Ident]types.Object{},
+		}
+
+		dp.typesPkg = types.NewPackage(dp.p.AbsPath, dp.buildPkg.Name)
+		dp.checker = types.NewChecker(dp.lc.GetConfig(), dp.p.Fset, dp.typesPkg, info)
+	}
+
+	// Loop over files and clear previous errors; all will be rechecked.
+	files := dp.currentFiles()
+	astFiles := make([]*ast.File, len(files))
+	i := 0
+	for _, v := range files {
+		f := v
+		f.errs = []FileError{}
+		astFiles[i] = f.file
+		i++
+	}
+
+	dp.m.Lock()
+	err := dp.checker.Files(astFiles)
+	dp.m.Unlock()
+	return err
+}
+
 func (dp *DistinctPackage) currentFiles() map[string]*File {
 	loadState := dp.loadState.get()
 	switch loadState {
@@ -83,17 +109,18 @@ func (dp *DistinctPackage) currentFiles() map[string]*File {
 	return nil
 }
 
-// Hash returns the hash for this distinct package
-func (dp *DistinctPackage) Hash() collections.Hash {
-	return dp.hash
-}
+// // Hash returns the hash for this distinct package
+// func (dp *DistinctPackage) Hash() collections.Hash {
+// 	return dp.lc.GetDistinctHash()
+// }
 
 // resetChecker sets the checker to nil and the loadState to unloaded
 func (dp *DistinctPackage) resetChecker() {
 	dp.loadState = unloaded
 	dp.checker = nil
+	dp.typesPkg = nil
 }
 
 func (dp *DistinctPackage) String() string {
-	return fmt.Sprintf("[%s, %s]", dp.GOARCH, dp.GOOS)
+	return fmt.Sprintf("[%s, %s]", dp.lc.GetContextArch(), dp.lc.GetContextOS())
 }

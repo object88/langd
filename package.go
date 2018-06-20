@@ -43,7 +43,7 @@ func (p *Package) EnsureDistinct(lc LoaderContext) (*DistinctPackage, bool) {
 	dhash := lc.GetDistinctHash()
 	dp, ok := p.distincts[dhash]
 	if !ok {
-		dp = NewDistinctPackage(dhash, lc.GetContextArch(), lc.GetContextOS(), "")
+		dp = NewDistinctPackage(lc, p)
 		p.distincts[dhash] = dp
 		created = true
 	}
