@@ -276,25 +276,15 @@ func (l *loader) processComplete(lc LoaderContext, p *Package) {
 }
 
 func (l *loader) processDirectory(lc LoaderContext, p *Package, dp *DistinctPackage) {
-	if l.processUnsafe(lc, p) {
-		return
-	}
+	if lc.IsUnsafe(p) {
+		l.Log.Debugf("*** Loading `%s`, replacing with types.Unsafe\n", p)
+		dp := p.distincts[lc.GetDistinctHash()]
+		dp.typesPkg = types.Unsafe
 
-	lc.ImportBuildPackage(p)
-}
-
-func (l *loader) getFileReader(lc LoaderContext, absFilepath string) (io.Reader, bool) {
-	var r io.Reader
-	if of, err := l.openedFiles.Get(absFilepath); err != nil {
-		r = lc.OpenFile(absFilepath)
-		if r == nil {
-			return nil, false
-		}
+		l.caravan.Insert(p)
 	} else {
-		r = of.NewReader()
+		lc.ImportBuildPackage(p)
 	}
-
-	return r, true
 }
 
 func (l *loader) processGoFiles(lc LoaderContext, p *Package, dp *DistinctPackage) bool {
@@ -535,7 +525,7 @@ func (l *loader) processFile(lc LoaderContext, p *Package, dp *DistinctPackage, 
 		l.Log.Debugf("ERROR: While parsing %s:\n\t%s\n", fpath, err.Error())
 	}
 
-	l.processAstFile(astf, importPaths)
+	l.findImportPathsFromAst(astf, importPaths)
 
 	p.fileHashes[fname] = hash
 
@@ -544,40 +534,6 @@ func (l *loader) processFile(lc LoaderContext, p *Package, dp *DistinctPackage, 
 		errs: []FileError{},
 		file: astf,
 	}
-}
-
-func (l *loader) processAstFile(astf *ast.File, importPaths map[string]bool) {
-	for _, decl := range astf.Decls {
-		decl, ok := decl.(*ast.GenDecl)
-		if !ok || decl.Tok != token.IMPORT {
-			continue
-		}
-
-		for _, spec := range decl.Specs {
-			spec := spec.(*ast.ImportSpec)
-
-			path, err := strconv.Unquote(spec.Path.Value)
-			if err != nil || path == "C" {
-				// Ignore any error and skip the C pseudo package
-				continue
-			}
-
-			importPaths[path] = true
-		}
-	}
-}
-
-func (l *loader) processUnsafe(lc LoaderContext, p *Package) bool {
-	if !lc.IsUnsafe(p) {
-		return false
-	}
-	l.Log.Debugf("*** Loading `%s`, replacing with types.Unsafe\n", p)
-	dp := p.distincts[lc.GetDistinctHash()]
-	dp.typesPkg = types.Unsafe
-
-	l.caravan.Insert(p)
-
-	return true
 }
 
 func (l *loader) processPackages(lc LoaderContext, p *Package, importPaths []string, testing bool) {
@@ -656,4 +612,39 @@ func (l *loader) ensurePackage(lc LoaderContext, absPath string) *Package {
 	}
 
 	return p
+}
+
+func (l *loader) findImportPathsFromAst(astf *ast.File, importPaths map[string]bool) {
+	for _, decl := range astf.Decls {
+		decl, ok := decl.(*ast.GenDecl)
+		if !ok || decl.Tok != token.IMPORT {
+			continue
+		}
+
+		for _, spec := range decl.Specs {
+			spec := spec.(*ast.ImportSpec)
+
+			path, err := strconv.Unquote(spec.Path.Value)
+			if err != nil || path == "C" {
+				// Ignore any error and skip the C pseudo package
+				continue
+			}
+
+			importPaths[path] = true
+		}
+	}
+}
+
+func (l *loader) getFileReader(lc LoaderContext, absFilepath string) (io.Reader, bool) {
+	var r io.Reader
+	if of, err := l.openedFiles.Get(absFilepath); err != nil {
+		r = lc.OpenFile(absFilepath)
+		if r == nil {
+			return nil, false
+		}
+	} else {
+		r = of.NewReader()
+	}
+
+	return r, true
 }
