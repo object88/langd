@@ -8,6 +8,17 @@ import (
 	"sync"
 )
 
+// TODO:
+// There is a problem with the current arrangement of Package and
+// DistinctPackage, as it was assumed that Package would hold the references
+// to DistinctPackages, and that the Caravan would hold references to the
+// Package.  This will not work cleanly, however, because import may differ
+// from the files in one DistinctPackage to another, causing a different
+// DAG in the Caravan.
+// This should be restructured so that the Caravan maps the relationship
+// between DistinctPackages, and the DistinctPackage will embed a common
+// Package to manage the shared resources.
+
 // DistinctPackage contains the os/arch specific package AST
 type DistinctPackage struct {
 	lc LoaderContext
