@@ -17,8 +17,6 @@ type Package struct {
 
 	m sync.Mutex
 
-	distincts map[collections.Hash]*DistinctPackage
-
 	loaderContexts map[LoaderContext]bool
 }
 
@@ -29,26 +27,10 @@ func NewPackage(absPath string) *Package {
 		hash:           calculateHashFromString(absPath),
 		Fset:           token.NewFileSet(),
 		fileHashes:     map[string]collections.Hash{},
-		distincts:      map[collections.Hash]*DistinctPackage{},
 		loaderContexts: map[LoaderContext]bool{},
 	}
 
 	return p
-}
-
-// EnsureDistinct checks for a distinct package on this package that matches
-// the provided LoaderContext, and if missing, will create it
-func (p *Package) EnsureDistinct(lc LoaderContext) (*DistinctPackage, bool) {
-	created := false
-	dhash := lc.GetDistinctHash()
-	dp, ok := p.distincts[dhash]
-	if !ok {
-		dp = NewDistinctPackage(lc, p)
-		p.distincts[dhash] = dp
-		created = true
-	}
-
-	return dp, created
 }
 
 // Hash returns the collection hash for the given Package
@@ -59,9 +41,6 @@ func (p *Package) Hash() collections.Hash {
 // Invalidate resets the checker state for all distinct packages
 func (p *Package) Invalidate() {
 	p.Fset = token.NewFileSet()
-	for _, dp := range p.distincts {
-		dp.resetChecker()
-	}
 }
 
 func (p *Package) String() string {

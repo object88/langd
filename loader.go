@@ -1,10 +1,8 @@
 package langd
 
 import (
-	"errors"
 	"fmt"
 	"go/ast"
-	"go/build"
 	"go/parser"
 	"go/token"
 	"go/types"
@@ -16,29 +14,10 @@ import (
 	"regexp"
 	"strconv"
 	"strings"
-	"sync/atomic"
 
 	"github.com/object88/langd/collections"
 	"github.com/object88/langd/log"
 )
-
-type loadState int32
-
-const (
-	queued loadState = iota
-	unloaded
-	loadedGo
-	loadedTest
-	done
-)
-
-func (ls *loadState) increment() int32 {
-	return atomic.AddInt32((*int32)(ls), 1)
-}
-
-func (ls *loadState) get() loadState {
-	return loadState(atomic.LoadInt32((*int32)(ls)))
-}
 
 type stateChangeEvent struct {
 	lc   LoaderContext
@@ -49,10 +28,10 @@ type stateChangeEvent struct {
 type Loader interface {
 	io.Closer
 
-	// Start() chan bool
+	EnsurePackage(absPath string) (*Package, bool)
 	Errors(lc LoaderContext, handleErrs func(file string, errs []FileError))
 	LoadDirectory(lc LoaderContext, path string) error
-	InvalidatePackage(lc LoaderContext, p *Package)
+	InvalidatePackage(absPath string)
 
 	Caravan() *collections.Caravan
 	OpenedFiles() *OpenedFiles
@@ -63,6 +42,7 @@ type loader struct {
 
 	caravan     *collections.Caravan
 	openedFiles *OpenedFiles
+	packages    map[string]*Package
 
 	stateChange chan *stateChangeEvent
 
@@ -78,6 +58,7 @@ func NewLoader() Loader {
 		closer:      make(chan bool),
 		Log:         log.Stdout(),
 		openedFiles: NewOpenedFiles(),
+		packages:    map[string]*Package{},
 		stateChange: make(chan *stateChangeEvent),
 	}
 
@@ -106,12 +87,40 @@ func (l *loader) OpenedFiles() *OpenedFiles {
 	return l.openedFiles
 }
 
-func (l *loader) InvalidatePackage(lc LoaderContext, p *Package) {
-	p.Invalidate()
+func (l *loader) InvalidatePackage(absPath string) {
+	p, ok := l.packages[absPath]
+	if !ok {
+		fmt.Printf("No package at %s\n", absPath)
+		return
+	}
 
-	l.stateChange <- &stateChangeEvent{
-		hash: calculateHashFromString(p.AbsPath),
-		lc:   lc,
+	phash := calculateHashFromString(absPath)
+	nodesMap := map[*collections.Node]bool{}
+	for lc := range p.loaderContexts {
+		n, _ := l.Caravan().Find(combineHashes(phash, lc.GetDistinctHash()))
+		nodesMap[n] = true
+	}
+
+	nodes := make([]*collections.Node, len(nodesMap))
+	i := 0
+	for n := range nodesMap {
+		nodes[i] = n
+		i++
+	}
+
+	dps := flattenAscendants(true, nodes...)
+
+	fmt.Printf("Have %d distinct packages\n", len(dps))
+
+	for _, dp := range dps {
+		fmt.Printf("Invalidating %s\n", dp)
+		dp.resetChecker()
+		lc := dp.lc
+
+		l.stateChange <- &stateChangeEvent{
+			hash: dp.Hash(),
+			lc:   lc,
+		}
 	}
 }
 
@@ -121,23 +130,34 @@ func (l *loader) Close() error {
 	return nil
 }
 
+// EnsurePackage will check for a package at the given path, and if one does
+// not exist, create it.
+func (l *loader) EnsurePackage(absPath string) (*Package, bool) {
+	p, ok := l.packages[absPath]
+	if !ok {
+		fmt.Printf("EnsurePackage: Creating new package for %s\n", absPath)
+		p = NewPackage(absPath)
+		l.packages[absPath] = p
+	}
+	return p, !ok
+}
+
 // Errors exposes problems with code found during compilation on a file-by-file
 // basis.
 func (l *loader) Errors(lc LoaderContext, handleErrs func(file string, errs []FileError)) {
 	l.caravan.Iter(func(key collections.Hash, node *collections.Node) bool {
-		p := node.Element.(*Package)
-		dp, ok := p.distincts[lc.GetDistinctHash()]
-		if !ok {
+		dp := node.Element.(*DistinctPackage)
+		if dp.lc != lc {
 			return true
 		}
 		for fname, f := range dp.files {
 			if len(f.errs) != 0 {
-				handleErrs(filepath.Join(p.AbsPath, fname), f.errs)
+				handleErrs(filepath.Join(dp.Package.AbsPath, fname), f.errs)
 			}
 		}
 		for fname, f := range dp.testFiles {
 			if len(f.errs) != 0 {
-				handleErrs(filepath.Join(p.AbsPath, fname), f.errs)
+				handleErrs(filepath.Join(dp.Package.AbsPath, fname), f.errs)
 			}
 		}
 		return true
@@ -171,7 +191,7 @@ func (l *loader) readDir(lc LoaderContext, absPath string) {
 
 	l.Log.Debugf("readDir: queueing '%s'...\n", absPath)
 
-	l.ensurePackage(lc, absPath)
+	l.ensureDistinctPackage(lc, absPath)
 
 	fis, err := lc.ReadDir(absPath)
 	if err != nil {
@@ -193,39 +213,39 @@ func (l *loader) readDir(lc LoaderContext, absPath string) {
 
 func (l *loader) processStateChange(sce *stateChangeEvent) {
 	n, _ := l.caravan.Find(sce.hash)
-	p := n.Element.(*Package)
-	dp := p.distincts[sce.lc.GetDistinctHash()]
+	dp := n.Element.(*DistinctPackage)
+	// dp := p.distincts[sce.lc.GetDistinctHash()]
 	// fmt.Printf("Processing %s::%s\n", p, dp)
 
 	loadState := dp.loadState.get()
 
-	l.Log.Debugf("PSC: %s: current state: %d\n", p, loadState)
+	l.Log.Debugf("PSC: %s: current state: %d\n", dp, loadState)
 
 	switch loadState {
 	case queued:
-		l.processDirectory(sce.lc, p, dp)
+		l.processDirectory(sce.lc, dp)
 
 		dp.loadState.increment()
 		dp.c.Broadcast()
 		l.stateChange <- sce
 	case unloaded:
-		haveGo := l.processGoFiles(sce.lc, p, dp)
-		haveCgo := l.processCgoFiles(sce.lc, p, dp)
+		haveGo := l.processGoFiles(sce.lc, dp)
+		haveCgo := l.processCgoFiles(sce.lc, dp)
 		if (haveGo || haveCgo) && dp.buildPkg != nil {
 			imports := importPathMapToArray(dp.importPaths)
-			l.processPackages(sce.lc, p, imports, false)
-			l.processComplete(sce.lc, p)
+			l.processPackages(sce.lc, dp, imports, false)
+			l.processComplete(sce.lc, dp)
 		}
 
 		dp.loadState.increment()
 		dp.c.Broadcast()
 		l.stateChange <- sce
 	case loadedGo:
-		haveTestGo := l.processTestGoFiles(sce.lc, p, dp)
+		haveTestGo := l.processTestGoFiles(sce.lc, dp)
 		if haveTestGo && dp.buildPkg != nil {
 			imports := importPathMapToArray(dp.testImportPaths)
-			l.processPackages(sce.lc, p, imports, true)
-			l.processComplete(sce.lc, p)
+			l.processPackages(sce.lc, dp, imports, true)
+			l.processComplete(sce.lc, dp)
 		}
 
 		dp.loadState.increment()
@@ -239,16 +259,16 @@ func (l *loader) processStateChange(sce *stateChangeEvent) {
 		dp.c.Broadcast()
 		l.stateChange <- sce
 	case done:
-		fmt.Printf("Completed %s\n", p.AbsPath)
-		p.m.Lock()
-		for lc := range p.loaderContexts {
+		fmt.Printf("Completed %s\n", dp.Package.AbsPath)
+		dp.m.Lock()
+		for lc := range dp.Package.loaderContexts {
 			complete := lc.AreAllPackagesComplete()
 			if complete {
 				l.Log.Debugf("All packages are loaded\n")
 				lc.Signal()
 			}
 		}
-		p.m.Unlock()
+		dp.m.Unlock()
 	}
 }
 
@@ -262,33 +282,33 @@ func importPathMapToArray(imports map[string]bool) []string {
 	return results
 }
 
-func (l *loader) processComplete(lc LoaderContext, p *Package) {
-	if lc.IsUnsafe(p) {
-		l.Log.Debugf(" PC: %s: Checking unsafe (skipping)\n", p)
+func (l *loader) processComplete(lc LoaderContext, dp *DistinctPackage) {
+	if lc.IsUnsafe(dp) {
+		l.Log.Debugf(" PC: %s: Checking unsafe (skipping)\n", dp)
 		return
 	}
 
-	err := lc.CheckPackage(p)
+	err := lc.CheckPackage(dp)
 
 	if err != nil {
-		l.Log.Debugf("Error while checking %s:\n\t%s\n\n", p.AbsPath, err.Error())
+		l.Log.Debugf("Error while checking %s:\n\t%s\n\n", dp.Package.AbsPath, err.Error())
 	}
 }
 
-func (l *loader) processDirectory(lc LoaderContext, p *Package, dp *DistinctPackage) {
-	if lc.IsUnsafe(p) {
-		l.Log.Debugf("*** Loading `%s`, replacing with types.Unsafe\n", p)
-		dp := p.distincts[lc.GetDistinctHash()]
+func (l *loader) processDirectory(lc LoaderContext, dp *DistinctPackage) {
+	if lc.IsUnsafe(dp) {
+		l.Log.Debugf("*** Loading `%s`, replacing with types.Unsafe\n", dp)
+		// dp := p.distincts[lc.GetDistinctHash()]
 		dp.typesPkg = types.Unsafe
 
-		l.caravan.Insert(p)
+		l.caravan.Insert(dp)
 	} else {
-		lc.ImportBuildPackage(p)
+		lc.ImportBuildPackage(dp)
 	}
 }
 
-func (l *loader) processGoFiles(lc LoaderContext, p *Package, dp *DistinctPackage) bool {
-	if lc.IsUnsafe(p) {
+func (l *loader) processGoFiles(lc LoaderContext, dp *DistinctPackage) bool {
+	if lc.IsUnsafe(dp) {
 		return true
 	}
 
@@ -302,82 +322,15 @@ func (l *loader) processGoFiles(lc LoaderContext, p *Package, dp *DistinctPackag
 	}
 
 	for _, fname := range fnames {
-		fpath := filepath.Join(p.AbsPath, fname)
-		l.processFile(lc, p, dp, fname, fpath, fpath, dp.importPaths)
+		fpath := filepath.Join(dp.Package.AbsPath, fname)
+		l.processFile(lc, dp, fname, fpath, fpath, dp.importPaths)
 	}
 
 	return true
 }
 
-// Return the flags to use when invoking the C or C++ compilers, or cgo.
-func cflags(p *build.Package, def bool) (cppflags, cflags, cxxflags, ldflags []string) {
-	var defaults string
-	if def {
-		defaults = "-g -O2"
-	}
-
-	cppflags = stringList(envList("CGO_CPPFLAGS", ""), p.CgoCPPFLAGS)
-	cflags = stringList(envList("CGO_CFLAGS", defaults), p.CgoCFLAGS)
-	cxxflags = stringList(envList("CGO_CXXFLAGS", defaults), p.CgoCXXFLAGS)
-	ldflags = stringList(envList("CGO_LDFLAGS", defaults), p.CgoLDFLAGS)
-	return
-}
-
-// envList returns the value of the given environment variable broken
-// into fields, using the default value when the variable is empty.
-func envList(key, def string) []string {
-	v := os.Getenv(key)
-	if v == "" {
-		v = def
-	}
-	return strings.Fields(v)
-}
-
-// stringList's arguments should be a sequence of string or []string values.
-// stringList flattens them into a single []string.
-func stringList(args ...interface{}) []string {
-	var x []string
-	for _, arg := range args {
-		switch arg := arg.(type) {
-		case []string:
-			x = append(x, arg...)
-		case string:
-			x = append(x, arg)
-		default:
-			panic("stringList: invalid argument")
-		}
-	}
-	return x
-}
-
-// pkgConfig runs pkg-config with the specified arguments and returns the flags it prints.
-func pkgConfig(mode string, pkgs []string) (flags []string, err error) {
-	cmd := exec.Command("pkg-config", append([]string{mode}, pkgs...)...)
-	out, err := cmd.CombinedOutput()
-	if err != nil {
-		s := fmt.Sprintf("%s failed: %v", strings.Join(cmd.Args, " "), err)
-		if len(out) > 0 {
-			s = fmt.Sprintf("%s: %s", s, out)
-		}
-		return nil, errors.New(s)
-	}
-	if len(out) > 0 {
-		flags = strings.Fields(string(out))
-	}
-	return
-}
-
-// pkgConfigFlags calls pkg-config if needed and returns the cflags
-// needed to build the package.
-func pkgConfigFlags(p *build.Package) (cflags []string, err error) {
-	if len(p.CgoPkgConfig) == 0 {
-		return nil, nil
-	}
-	return pkgConfig("--cflags", p.CgoPkgConfig)
-}
-
-func (l *loader) processCgoFiles(lc LoaderContext, p *Package, dp *DistinctPackage) bool {
-	if lc.IsUnsafe(p) {
+func (l *loader) processCgoFiles(lc LoaderContext, dp *DistinctPackage) bool {
+	if lc.IsUnsafe(dp) {
 		return true
 	}
 
@@ -396,7 +349,7 @@ func (l *loader) processCgoFiles(lc LoaderContext, p *Package, dp *DistinctPacka
 	if len(dp.buildPkg.CgoPkgConfig) > 0 {
 		pcCFLAGS, err := pkgConfigFlags(dp.buildPkg)
 		if err != nil {
-			l.Log.Debugf("CGO: %s: Failed to get flags: %s\n", p, err.Error())
+			l.Log.Debugf("CGO: %s: Failed to get flags: %s\n", dp, err.Error())
 			return false
 		}
 		cgoCPPFLAGS = append(cgoCPPFLAGS, pcCFLAGS...)
@@ -404,10 +357,10 @@ func (l *loader) processCgoFiles(lc LoaderContext, p *Package, dp *DistinctPacka
 
 	fpaths := make([]string, len(fnames))
 	for k, v := range fnames {
-		fpaths[k] = filepath.Join(p.AbsPath, v)
+		fpaths[k] = filepath.Join(dp.Package.AbsPath, v)
 	}
 
-	tmpdir, _ := ioutil.TempDir("", strings.Replace(p.AbsPath, "/", "_", -1)+"_C")
+	tmpdir, _ := ioutil.TempDir("", strings.Replace(dp.Package.AbsPath, "/", "_", -1)+"_C")
 	var files, displayFiles []string
 
 	// _cgo_gotypes.go (displayed "C") contains the type definitions.
@@ -451,25 +404,25 @@ func (l *loader) processCgoFiles(lc LoaderContext, p *Package, dp *DistinctPacka
 	}
 
 	cmd := exec.Command("go", args...)
-	cmd.Dir = p.AbsPath
+	cmd.Dir = dp.Package.AbsPath
 	cmd.Stdout = os.Stdout // os.Stderr
 	cmd.Stderr = os.Stdout // os.Stderr
 	if err := cmd.Run(); err != nil {
-		l.Log.Debugf("CGO: %s: ERROR: cgo failed: %s\n\t%s\n", p, args, err.Error())
+		l.Log.Debugf("CGO: %s: ERROR: cgo failed: %s\n\t%s\n", dp, args, err.Error())
 		return false
 	}
 
 	for i, fpath := range files {
 		fname := filepath.Base(fpath)
-		l.processFile(lc, p, dp, fname, fpath, displayFiles[i], dp.importPaths)
+		l.processFile(lc, dp, fname, fpath, displayFiles[i], dp.importPaths)
 	}
-	l.Log.Debugf("CGO: %s: Done processing\n", p)
+	l.Log.Debugf("CGO: %s: Done processing\n", dp)
 
 	return true
 }
 
-func (l *loader) processTestGoFiles(lc LoaderContext, p *Package, dp *DistinctPackage) bool {
-	if lc.IsUnsafe(p) || dp.buildPkg == nil {
+func (l *loader) processTestGoFiles(lc LoaderContext, dp *DistinctPackage) bool {
+	if lc.IsUnsafe(dp) || dp.buildPkg == nil {
 		return false
 	}
 
@@ -477,7 +430,7 @@ func (l *loader) processTestGoFiles(lc LoaderContext, p *Package, dp *DistinctPa
 	// contain references for packages which are not available.  May want to
 	// revisit this later; loading as much as possible for completion sake,
 	// but not reporting them as complete errors.
-	for _, part := range strings.Split(p.AbsPath, string(filepath.Separator)) {
+	for _, part := range strings.Split(dp.Package.AbsPath, string(filepath.Separator)) {
 		if part == "vendor" {
 			return false
 		}
@@ -489,17 +442,17 @@ func (l *loader) processTestGoFiles(lc LoaderContext, p *Package, dp *DistinctPa
 		return false
 	}
 
-	l.Log.Debugf("TFG: %s: processing %d test Go files\n", p, len(fnames))
+	l.Log.Debugf("TFG: %s: processing %d test Go files\n", dp, len(fnames))
 	for _, fname := range fnames {
-		fpath := filepath.Join(p.AbsPath, fname)
-		l.processFile(lc, p, dp, fname, fpath, fpath, dp.testImportPaths)
+		fpath := filepath.Join(dp.Package.AbsPath, fname)
+		l.processFile(lc, dp, fname, fpath, fpath, dp.testImportPaths)
 	}
 
-	l.Log.Debugf("TFG: %s: processing complete\n", p)
+	l.Log.Debugf("TFG: %s: processing complete\n", dp)
 	return true
 }
 
-func (l *loader) processFile(lc LoaderContext, p *Package, dp *DistinctPackage, fname, fpath, displayPath string, importPaths map[string]bool) {
+func (l *loader) processFile(lc LoaderContext, dp *DistinctPackage, fname, fpath, displayPath string, importPaths map[string]bool) {
 	r, ok := l.getFileReader(lc, fpath)
 	if !ok {
 		return
@@ -515,7 +468,7 @@ func (l *loader) processFile(lc LoaderContext, p *Package, dp *DistinctPackage, 
 		r, _ = l.getFileReader(lc, fpath)
 	}
 
-	astf, err := parser.ParseFile(p.Fset, displayPath, r, parser.AllErrors)
+	astf, err := parser.ParseFile(dp.Package.Fset, displayPath, r, parser.AllErrors)
 
 	if c, ok := r.(io.Closer); ok {
 		c.Close()
@@ -527,7 +480,9 @@ func (l *loader) processFile(lc LoaderContext, p *Package, dp *DistinctPackage, 
 
 	l.findImportPathsFromAst(astf, importPaths)
 
-	p.fileHashes[fname] = hash
+	dp.Package.m.Lock()
+	dp.Package.fileHashes[fname] = hash
+	dp.Package.m.Unlock()
 
 	files := dp.currentFiles()
 	files[fname] = &File{
@@ -536,51 +491,57 @@ func (l *loader) processFile(lc LoaderContext, p *Package, dp *DistinctPackage, 
 	}
 }
 
-func (l *loader) processPackages(lc LoaderContext, p *Package, importPaths []string, testing bool) {
-	dp := p.distincts[lc.GetDistinctHash()]
+func (l *loader) processPackages(lc LoaderContext, dp *DistinctPackage, importPaths []string, testing bool) {
+	// dp := p.distincts[lc.GetDistinctHash()]
 	loadState := dp.loadState.get()
-	l.Log.Debugf(" PP: %s: %d: started\n", p, loadState)
+	l.Log.Debugf(" PP: %s: %d: started\n", dp, loadState)
 
 	importedPackages := map[string]bool{}
 
 	for _, importPath := range importPaths {
-		targetPath, err := lc.FindImportPath(p, importPath)
+		targetPath, err := lc.FindImportPath(dp, importPath)
 		if err != nil {
-			l.Log.Debugf(" PP: %s: %d: %s\n\t%s\n", p, loadState, err.Error())
+			l.Log.Debugf(" PP: %s: %d: %s\n\t%s\n", dp, loadState, err.Error())
 			continue
 		}
-		l.ensurePackage(lc, targetPath)
+		l.ensureDistinctPackage(lc, targetPath)
 
 		importedPackages[targetPath] = true
 	}
 
 	// TEMPORARY
 	func() {
+		dhash := lc.GetDistinctHash()
 		imprts := []string{}
 		for importedPackage := range importedPackages {
-			n, ok := l.caravan.Find(calculateHashFromString(importedPackage))
+			phash := calculateHashFromString(importedPackage)
+			chash := combineHashes(phash, dhash)
+			n, ok := l.caravan.Find(chash)
 			if !ok {
 				continue
 			}
-			targetP := n.Element.(*Package)
-			imprts = append(imprts, targetP.String())
+			targetDp := n.Element.(*DistinctPackage)
+			imprts = append(imprts, targetDp.String())
 		}
 		allImprts := strings.Join(imprts, ", ")
-		l.Log.Debugf(" PP: %s: %d: -> %s\n", p, loadState, allImprts)
+		l.Log.Debugf(" PP: %s: %d: -> %s\n", dp, loadState, allImprts)
 	}()
 
+	dhash := lc.GetDistinctHash()
 	for importPath := range importedPackages {
-		n, ok := l.caravan.Find(calculateHashFromString(importPath))
+		phash := calculateHashFromString(importPath)
+		chash := combineHashes(phash, dhash)
+		n, ok := l.caravan.Find(chash)
 		if !ok {
-			l.Log.Debugf(" PP: %s: %d: import path is missing: %s\n", p, loadState, importPath)
+			l.Log.Debugf(" PP: %s: %d: import path is missing: %s\n", dp, loadState, importPath)
 			continue
 		}
-		targetP := n.Element.(*Package)
-		targetDp := targetP.distincts[lc.GetDistinctHash()]
+		targetDp := n.Element.(*DistinctPackage)
+		// targetDp := targetP.distincts[lc.GetDistinctHash()]
 
 		targetDp.m.Lock()
 		for !targetDp.CheckReady(loadState) {
-			l.Log.Debugf(" PP: %s: %d: *** still waiting on %s ***\n", p, loadState, targetP)
+			l.Log.Debugf(" PP: %s: %d: *** still waiting on %s ***\n", dp, loadState, targetDp)
 			targetDp.c.Wait()
 		}
 		targetDp.m.Unlock()
@@ -588,30 +549,28 @@ func (l *loader) processPackages(lc LoaderContext, p *Package, importPaths []str
 		var err error
 
 		if testing {
-			err = l.caravan.WeakConnect(p, targetP)
+			err = l.caravan.WeakConnect(dp, targetDp)
 		} else {
-			err = l.caravan.Connect(p, targetP)
+			err = l.caravan.Connect(dp, targetDp)
 		}
 
 		if err != nil {
-			panic(fmt.Sprintf(" PP: %s: %d: [weak] connect failed:\n\tfrom: %s\n\tto: %s\n\terr: %s\n\n", p, loadState, p, targetP, err.Error()))
+			panic(fmt.Sprintf(" PP: %s: %d: [weak] connect failed:\n\tfrom: %s\n\tto: %s\n\terr: %s\n\n", dp, loadState, dp, targetDp, err.Error()))
 		}
 	}
 	// All dependencies are loaded; can proceed.
-	l.Log.Debugf(" PP: %s: %d: all imports fulfilled.\n", p, loadState)
+	l.Log.Debugf(" PP: %s: %d: all imports fulfilled.\n", dp, loadState)
 }
 
-func (l *loader) ensurePackage(lc LoaderContext, absPath string) *Package {
-	p, _, created := lc.EnsurePackage(absPath)
+func (l *loader) ensureDistinctPackage(lc LoaderContext, absPath string) {
+	dp, created := lc.EnsureDistinctPackage(absPath)
 
 	if created {
 		l.stateChange <- &stateChangeEvent{
 			lc:   lc,
-			hash: p.Hash(),
+			hash: dp.Hash(),
 		}
 	}
-
-	return p
 }
 
 func (l *loader) findImportPathsFromAst(astf *ast.File, importPaths map[string]bool) {

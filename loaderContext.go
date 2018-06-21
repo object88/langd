@@ -25,17 +25,17 @@ type LoaderContext interface {
 	types.ImporterFrom
 
 	AreAllPackagesComplete() bool
-	CheckPackage(p *Package) error
-	EnsurePackage(absPath string) (*Package, *DistinctPackage, bool)
-	FindImportPath(p *Package, importPath string) (string, error)
+	CheckPackage(dp *DistinctPackage) error
+	EnsureDistinctPackage(absPath string) (*DistinctPackage, bool)
+	FindImportPath(dp *DistinctPackage, importPath string) (string, error)
 	GetConfig() *types.Config
 	GetContextArch() string
 	GetContextOS() string
 	GetDistinctHash() collections.Hash
 	GetStartDir() string
-	ImportBuildPackage(p *Package)
+	ImportBuildPackage(dp *DistinctPackage)
 	IsAllowed(absPath string) bool
-	IsUnsafe(p *Package) bool
+	IsUnsafe(dp *DistinctPackage) bool
 
 	IsDir(absPath string) bool
 	OpenFile(abdFilepath string) io.ReadCloser
@@ -60,7 +60,7 @@ type loaderContext struct {
 	startDir   string
 	unsafePath string
 
-	packages map[collections.Hash]bool
+	distinctPackageHashSet map[collections.Hash]bool
 
 	m sync.Mutex
 	c *sync.Cond
@@ -87,10 +87,10 @@ func NewLoaderContext(loader Loader, startDir, goos, goarch, goroot string, opti
 	}
 
 	lc := &loaderContext{
-		filteredPaths: globs,
-		loader:        loader,
-		packages:      map[collections.Hash]bool{},
-		startDir:      startDir,
+		filteredPaths:          globs,
+		loader:                 loader,
+		distinctPackageHashSet: map[collections.Hash]bool{},
+		startDir:               startDir,
 	}
 
 	lc.c = sync.NewCond(&lc.m)
@@ -157,7 +157,7 @@ func (lc *loaderContext) GetDistinctHash() collections.Hash {
 func (lc *loaderContext) AreAllPackagesComplete() bool {
 	lc.m.Lock()
 
-	if len(lc.packages) == 0 {
+	if len(lc.distinctPackageHashSet) == 0 {
 		// NOTE: this is a stopgap to address the problem where a loader context
 		// will report that all packages are loaded before any of them have been
 		// processed.  If we have a situation where a loader context is reading
@@ -171,24 +171,27 @@ func (lc *loaderContext) AreAllPackagesComplete() bool {
 	complete := true
 
 	caravan := lc.loader.Caravan()
-	dhash := lc.GetDistinctHash()
-	for hash := range lc.packages {
-		n, ok := caravan.Find(hash)
+	for chash := range lc.distinctPackageHashSet {
+		n, ok := caravan.Find(chash)
 		if !ok {
-			fmt.Printf("loaderContext.AreAllPackagesComplete (%s): package hash %x not found in caravan\n", lc, hash)
+			fmt.Printf("loaderContext.AreAllPackagesComplete (%s): package hash 0x%x not found in caravan\n", lc, chash)
+			caravan.Iter(func(hash collections.Hash, node *collections.Node) bool {
+				fmt.Printf("\t0x%x -> %s (0x%x)\n", hash, node.Element.(*DistinctPackage), node.Element.(*DistinctPackage).Hash())
+				return true
+			})
 			complete = false
 			break
 		}
-		p := n.Element.(*Package)
-		dp, ok := p.distincts[dhash]
+		dp := n.Element.(*DistinctPackage)
+		// dp, ok := p.distincts[dhash]
 		if !ok {
-			fmt.Printf("loaderContext.AreAllPackagesComplete (%s): distinct package for %s not found\n", lc, p)
+			fmt.Printf("loaderContext.AreAllPackagesComplete (%s): distinct package for %s not found\n", lc, dp)
 			complete = false
 			break
 		}
 		loadState := dp.loadState.get()
 		if loadState != done {
-			fmt.Printf("loaderContext.AreAllPackagesComplete (%s): distinct package for %s is not yet complete\n", lc, p)
+			fmt.Printf("loaderContext.AreAllPackagesComplete (%s): distinct package for %s is not yet complete\n", lc, dp)
 			complete = false
 			break
 		}
@@ -199,8 +202,8 @@ func (lc *loaderContext) AreAllPackagesComplete() bool {
 	return complete
 }
 
-func (lc *loaderContext) CheckPackage(p *Package) error {
-	dp := p.distincts[lc.GetDistinctHash()]
+func (lc *loaderContext) CheckPackage(dp *DistinctPackage) error {
+	// dp := p.distincts[lc.GetDistinctHash()]
 
 	lc.checkerMu.Lock()
 	err := dp.check()
@@ -208,33 +211,40 @@ func (lc *loaderContext) CheckPackage(p *Package) error {
 	return err
 }
 
-func (lc *loaderContext) EnsurePackage(absPath string) (*Package, *DistinctPackage, bool) {
-	hash := calculateHashFromString(absPath)
-	n, created := lc.loader.Caravan().Ensure(hash, func() collections.Hasher {
-		lc.Log.Debugf("NewPackage: creating package for '%s'.\n", absPath)
-		return NewPackage(absPath)
-	})
-	p := n.Element.(*Package)
+func (lc *loaderContext) EnsureDistinctPackage(absPath string) (*DistinctPackage, bool) {
+	phash := calculateHashFromString(absPath)
+	dhash := lc.GetDistinctHash()
+	chash := combineHashes(phash, dhash)
+	n, created := lc.loader.Caravan().Ensure(chash, func() collections.Hasher {
+		lc.Log.Debugf("EnsureDistinctPackage: miss on hash 0x%x; creating package for '%s'.\n", chash, absPath)
+		fmt.Printf("EnsureDistinctPackage: miss on hash 0x%x; creating package for '%s'.\n", chash, absPath)
 
-	p.m.Lock()
-	p.loaderContexts[lc] = true
-	p.m.Unlock()
+		p, _ := lc.loader.EnsurePackage(absPath)
+		fmt.Printf("EnsureDistinctPackage: Ensured package %s\n", p)
+		dp := NewDistinctPackage(lc, p)
+		fmt.Printf("EnsureDistinctPackage: Created distinct package 0x%x -> %s\n", dp.Hash(), dp)
+		return dp
+	})
+	dp := n.Element.(*DistinctPackage)
+
+	dp.m.Lock()
+	dp.Package.loaderContexts[lc] = true
+	dp.m.Unlock()
 
 	lc.m.Lock()
-	lc.packages[hash] = true
+	lc.distinctPackageHashSet[chash] = true
 	lc.m.Unlock()
 
-	dp, created := p.EnsureDistinct(lc)
-	return p, dp, created
+	return dp, created
 }
 
-func (lc *loaderContext) FindImportPath(p *Package, importPath string) (string, error) {
-	targetPath, err := lc.findImportPath(importPath, p.AbsPath)
+func (lc *loaderContext) FindImportPath(dp *DistinctPackage, importPath string) (string, error) {
+	targetPath, err := lc.findImportPath(importPath, dp.Package.AbsPath)
 	if err != nil {
 		err := errors.Wrap(err, fmt.Sprintf("Failed to find import %s", importPath))
 		return "", err
 	}
-	if targetPath == p.AbsPath {
+	if targetPath == dp.Package.AbsPath {
 		lc.Log.Debugf("Failed due to self-import\n")
 		return "", err
 	}
@@ -246,18 +256,18 @@ func (lc *loaderContext) GetStartDir() string {
 	return lc.startDir
 }
 
-func (lc *loaderContext) ImportBuildPackage(p *Package) {
-	buildPkg, err := lc.context.Import(".", p.AbsPath, 0)
+func (lc *loaderContext) ImportBuildPackage(dp *DistinctPackage) {
+	buildPkg, err := lc.context.Import(".", dp.Package.AbsPath, 0)
 	if err != nil {
 		if _, ok := err.(*build.NoGoError); ok {
 			// There isn't any Go code here.
 			return
 		}
-		lc.Log.Debugf("ImportBuildPackage: %s: proc error:\n\t%s\n", p, err.Error())
+		lc.Log.Debugf("ImportBuildPackage: %s: proc error:\n\t%s\n", dp, err.Error())
 		return
 	}
 
-	dp, _ := p.EnsureDistinct(lc)
+	// dp, _ := p.EnsureDistinct(lc)
 	dp.buildPkg = buildPkg
 }
 
@@ -274,8 +284,8 @@ func (lc *loaderContext) IsAllowed(absPath string) bool {
 
 // IsUnsafe returns whether the provided package represents the `unsafe`
 // package for the loader context
-func (lc *loaderContext) IsUnsafe(p *Package) bool {
-	return lc.unsafePath == p.AbsPath
+func (lc *loaderContext) IsUnsafe(dp *DistinctPackage) bool {
+	return lc.unsafePath == dp.Package.AbsPath
 }
 
 func (lc *loaderContext) IsDir(absPath string) bool {
@@ -303,6 +313,7 @@ func (lc *loaderContext) Signal() {
 
 func (lc *loaderContext) Wait() {
 	if lc.AreAllPackagesComplete() {
+		fmt.Printf("Packages are complete; returning from wait immediately\n")
 		return
 	}
 	fmt.Printf("%s: Entering wait lock...\n", lc)
@@ -327,15 +338,15 @@ func (lc *loaderContext) String() string {
 
 // Import is the implementation of types.Importer
 func (lc *loaderContext) Import(path string) (*types.Package, error) {
-	p, err := lc.locatePackages(path)
+	dp, err := lc.locatePackages(path)
 	if err != nil {
 		return nil, err
 	}
-	if p == nil {
+	if dp == nil {
 		return nil, fmt.Errorf("Path parsed, but does not contain package %s", path)
 	}
 
-	dp := p.distincts[lc.GetDistinctHash()]
+	// dp := p.distincts[lc.GetDistinctHash()]
 
 	return dp.typesPkg, nil
 }
@@ -348,13 +359,13 @@ func (lc *loaderContext) ImportFrom(path, srcDir string, mode types.ImportMode) 
 		return nil, fmt.Errorf("Failed to locate import path for %s, %s:\n\t%s", path, srcDir, err.Error())
 	}
 
-	p, err := lc.locatePackages(absPath)
+	dp, err := lc.locatePackages(absPath)
 	if err != nil {
 		fmt.Printf("Failed to locate package %s\n\tfrom %s, %s:\n\t%s\n", absPath, path, srcDir, err.Error())
 		return nil, err
 	}
 
-	dp := p.distincts[lc.hash]
+	// dp := p.distincts[lc.hash]
 
 	if dp.typesPkg == nil {
 		fmt.Printf("\t%s (nil)\n", absPath)
@@ -367,11 +378,13 @@ func (lc *loaderContext) ImportFrom(path, srcDir string, mode types.ImportMode) 
 // HandleTypeCheckerError is invoked from the types.Checker when it encounters
 // errors
 func (lc *loaderContext) HandleTypeCheckerError(e error) {
+	dhash := lc.GetDistinctHash()
 	if terror, ok := e.(types.Error); ok {
 		position := terror.Fset.Position(terror.Pos)
 		absPath := filepath.Dir(position.Filename)
-		key := calculateHashFromString(absPath)
-		node, ok := lc.loader.Caravan().Find(key)
+		phash := calculateHashFromString(absPath)
+		chash := combineHashes(phash, dhash)
+		node, ok := lc.loader.Caravan().Find(chash)
 
 		if !ok {
 			lc.Log.Debugf("ERROR: (missing) No package for %s\n", absPath)
@@ -384,8 +397,8 @@ func (lc *loaderContext) HandleTypeCheckerError(e error) {
 			Message:  terror.Msg,
 			Warning:  terror.Soft,
 		}
-		p := node.Element.(*Package)
-		dp := p.distincts[lc.GetDistinctHash()]
+		dp := node.Element.(*DistinctPackage)
+		// dp := p.distincts[lc.GetDistinctHash()]
 
 		files := dp.currentFiles()
 		f, ok := files[baseFilename]
@@ -409,12 +422,15 @@ func (lc *loaderContext) findImportPath(path, src string) (string, error) {
 	return buildPkg.Dir, nil
 }
 
-func (lc *loaderContext) locatePackages(path string) (*Package, error) {
-	n, ok := lc.loader.Caravan().Find(calculateHashFromString(path))
+func (lc *loaderContext) locatePackages(path string) (*DistinctPackage, error) {
+	dhash := lc.GetDistinctHash()
+	phash := calculateHashFromString(path)
+	chash := combineHashes(phash, dhash)
+	n, ok := lc.loader.Caravan().Find(chash)
 	if !ok {
 		return nil, fmt.Errorf("Failed to import %s", path)
 	}
 
-	p := n.Element.(*Package)
-	return p, nil
+	dp := n.Element.(*DistinctPackage)
+	return dp, nil
 }

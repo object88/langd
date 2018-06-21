@@ -70,11 +70,9 @@ func (w *Workspace) ChangeFile(absFilepath string, startLine, startCharacter, en
 	}
 
 	absPath := filepath.Dir(absFilepath)
-	err = w.reloadPackageAndAscendants(absPath)
-	if err != nil {
-		return errors.Wrap(err, "From ChangeFile")
-	}
+	w.Loader.InvalidatePackage(absPath)
 
+	fmt.Printf("Reload requested\n")
 	return nil
 }
 
@@ -91,7 +89,7 @@ func (w *Workspace) CloseFile(absPath string) error {
 
 // Hover supplies the hover text for a given position
 func (w *Workspace) Hover(p *token.Position) (string, error) {
-	obj, _, dpkg, err := w.locateDeclaration(p)
+	obj, dpkg, err := w.locateDeclaration(p)
 	if err != nil {
 		fmt.Printf("Have err: %s\n", err.Error())
 		return "", err
@@ -257,18 +255,21 @@ func (w *Workspace) makeTupleList(sb *strings.Builder, params *types.Tuple, vari
 }
 
 func (w *Workspace) getVarType(sb *strings.Builder, v *types.Var) {
+	dhash := w.LoaderContext.GetDistinctHash()
+
 	var f func(typ types.Type)
 	f = func(typ types.Type) {
 		switch t := typ.(type) {
 		case *types.Basic:
 			sb.WriteString(getBasicType(t))
 		case *types.Named:
-			n, ok := w.Loader.Caravan().Find(calculateHashFromString(t.Obj().Pkg().Path()))
+			phash := calculateHashFromString(t.Obj().Pkg().Path())
+			chash := combineHashes(phash, dhash)
+			n, ok := w.Loader.Caravan().Find(chash)
 			if !ok {
 				sb.WriteString("error")
 			}
-			pkg := n.Element.(*Package)
-			dpkg := pkg.distincts[w.LoaderContext.GetDistinctHash()]
+			dpkg := n.Element.(*DistinctPackage)
 			sb.WriteString(dpkg.typesPkg.Name())
 			sb.WriteRune('.')
 			sb.WriteString(t.Obj().Name())
@@ -328,13 +329,14 @@ func getConstType(o *types.Const) string {
 func (w *Workspace) LocateIdent(p *token.Position) (*ast.Ident, error) {
 	absPath := filepath.Dir(p.Filename)
 
-	key := calculateHashFromString(absPath)
-	n, ok := w.Loader.Caravan().Find(key)
+	dhash := w.LoaderContext.GetDistinctHash()
+	phash := calculateHashFromString(absPath)
+	chash := combineHashes(phash, dhash)
+	n, ok := w.Loader.Caravan().Find(chash)
 	if !ok {
 		return nil, fmt.Errorf("No package loaded for '%s'", p.Filename)
 	}
-	pkg := n.Element.(*Package)
-	dpkg := pkg.distincts[w.LoaderContext.GetDistinctHash()]
+	dpkg := n.Element.(*DistinctPackage)
 	fi := dpkg.files[filepath.Base(p.Filename)]
 	f := fi.file
 
@@ -349,8 +351,8 @@ func (w *Workspace) LocateIdent(p *token.Position) (*ast.Ident, error) {
 		if n == nil {
 			return false
 		}
-		pStart := pkg.Fset.Position(n.Pos())
-		pEnd := pkg.Fset.Position(n.End())
+		pStart := dpkg.Package.Fset.Position(n.Pos())
+		pEnd := dpkg.Package.Fset.Position(n.End())
 
 		if WithinPosition(p, &pStart, &pEnd) {
 			switch v := n.(type) {
@@ -373,7 +375,7 @@ func (w *Workspace) LocateIdent(p *token.Position) (*ast.Ident, error) {
 // LocateDeclaration returns the position where the provided identifier is
 // declared & defined
 func (w *Workspace) LocateDeclaration(p *token.Position) (*token.Position, error) {
-	obj, pkg, _, err := w.locateDeclaration(p)
+	obj, dp, err := w.locateDeclaration(p)
 	if err != nil {
 		return nil, err
 	}
@@ -382,7 +384,7 @@ func (w *Workspace) LocateDeclaration(p *token.Position) (*token.Position, error
 		return nil, nil
 	}
 
-	declPos := pkg.Fset.Position(obj.Pos())
+	declPos := dp.Package.Fset.Position(obj.Pos())
 
 	return &declPos, nil
 }
@@ -391,21 +393,22 @@ func (w *Workspace) LocateDeclaration(p *token.Position) (*token.Position, error
 // is referenced or used
 func (w *Workspace) LocateReferences(p *token.Position) []token.Position {
 	// Get declaration position, ident, and package
-	obj, pkg, _, err := w.locateDeclaration(p)
+	obj, dp, err := w.locateDeclaration(p)
 	if err != nil {
 		// Crappy crap.
+		fmt.Printf("Received error looking for declaration at %s:\n\t%s\n", p, err)
 		return nil
 	}
 
 	// TODO: If declaration should be included in results set, add to `ps`
 
-	refs := w.locateReferences(obj, pkg)
+	refs := w.locateReferences(obj, dp)
 
 	ps := make([]token.Position, len(refs)+1)
-	ps[0] = pkg.Fset.Position(obj.Pos())
+	ps[0] = dp.Package.Fset.Position(obj.Pos())
 	i := 1
 	for _, v := range refs {
-		ps[i] = v.pkg.Fset.Position(v.pos)
+		ps[i] = v.dp.Package.Fset.Position(v.pos)
 		i++
 	}
 
@@ -423,17 +426,14 @@ func (w *Workspace) OpenFile(absFilepath, text string) error {
 	}
 
 	absPath := filepath.Dir(absFilepath)
-	p, _, _ := w.LoaderContext.EnsurePackage(absPath)
-	existingHash := p.fileHashes[filepath.Base(absFilepath)]
+	dp, _ := w.LoaderContext.EnsureDistinctPackage(absPath)
+	existingHash := dp.Package.fileHashes[filepath.Base(absFilepath)]
 	if existingHash == hash {
 		w.log.Debugf("Shadowed file '%s'; unchanged\n", absFilepath)
 		return nil
 	}
 
-	err := w.reloadPackageAndAscendants(absPath)
-	if err != nil {
-		return errors.Wrap(err, "From OpenFile")
-	}
+	w.Loader.InvalidatePackage(absPath)
 
 	w.log.Debugf("Shadowed file '%s'\n", absFilepath)
 
@@ -447,24 +447,20 @@ func (w *Workspace) ReplaceFile(absFilepath, text string) error {
 	}
 
 	absPath := filepath.Dir(absFilepath)
-	err := w.reloadPackageAndAscendants(absPath)
-	if err != nil {
-		return err
-	}
+	w.Loader.InvalidatePackage(absPath)
 
 	return nil
 }
 
-func (w *Workspace) locateDeclaration(p *token.Position) (types.Object, *Package, *DistinctPackage, error) {
+func (w *Workspace) locateDeclaration(p *token.Position) (types.Object, *DistinctPackage, error) {
 	absPath := filepath.Dir(p.Filename)
 
-	key := calculateHashFromString(absPath)
-	n, ok := w.Loader.Caravan().Find(key)
+	chash := combineHashes(calculateHashFromString(absPath), w.LoaderContext.GetDistinctHash())
+	n, ok := w.Loader.Caravan().Find(chash)
 	if !ok {
-		return nil, nil, nil, fmt.Errorf("No package loaded for '%s'", p.Filename)
+		return nil, nil, fmt.Errorf("No package loaded for '%s'", p.Filename)
 	}
-	pkg, ok := n.Element.(*Package)
-	dpkg := pkg.distincts[w.LoaderContext.GetDistinctHash()]
+	dpkg, _ := n.Element.(*DistinctPackage)
 	fi, ok := dpkg.files[filepath.Base(p.Filename)]
 	if !ok {
 		panic(fmt.Sprintf("Did not find file '%s' in our workspace", p.Filename))
@@ -473,7 +469,7 @@ func (w *Workspace) locateDeclaration(p *token.Position) (types.Object, *Package
 
 	if f == nil {
 		// Failure response is failure.
-		return nil, nil, nil, fmt.Errorf("File %s isn't in our workspace", p.Filename)
+		return nil, nil, fmt.Errorf("File %s isn't in our workspace", p.Filename)
 	}
 
 	var x ast.Node
@@ -485,8 +481,8 @@ func (w *Workspace) locateDeclaration(p *token.Position) (types.Object, *Package
 			return false
 		}
 
-		pStart := pkg.Fset.Position(n.Pos())
-		pEnd := pkg.Fset.Position(n.End())
+		pStart := dpkg.Package.Fset.Position(n.Pos())
+		pEnd := dpkg.Package.Fset.Position(n.End())
 
 		if !WithinPosition(p, &pStart, &pEnd) {
 			return false
@@ -500,11 +496,11 @@ func (w *Workspace) locateDeclaration(p *token.Position) (types.Object, *Package
 		case *ast.SelectorExpr:
 			fmt.Printf("... found selector; %#v\n", v)
 			selPos := v.Sel
-			pSelStart := pkg.Fset.Position(selPos.Pos())
-			pSelEnd := pkg.Fset.Position(selPos.End())
+			pSelStart := dpkg.Package.Fset.Position(selPos.Pos())
+			pSelEnd := dpkg.Package.Fset.Position(selPos.End())
 			if WithinPosition(p, &pSelStart, &pSelEnd) {
 				if dpkg.checker == nil {
-					panic(fmt.Sprintf("pkg '%s' does not have checker", pkg.AbsPath))
+					panic(fmt.Sprintf("pkg '%s' does not have checker", dpkg.Package.AbsPath))
 				}
 				s := dpkg.checker.Selections[v]
 				fmt.Printf("Selector: %#v\n", s)
@@ -517,106 +513,92 @@ func (w *Workspace) locateDeclaration(p *token.Position) (types.Object, *Package
 	})
 
 	if x == nil {
-		return nil, nil, nil, errors.New("No x found")
+		return nil, nil, errors.New("No x found")
 	}
 
-	if pkg == nil {
+	if dpkg == nil {
 		fmt.Printf("No package found for x\n")
-		return nil, nil, nil, nil
+		return nil, nil, nil
 	}
 
-	return w.xyz(x, pkg, dpkg)
+	return w.xyz(x, dpkg)
 }
 
-func (w *Workspace) xyz(x ast.Node, pkg *Package, dpkg *DistinctPackage) (types.Object, *Package, *DistinctPackage, error) {
+func (w *Workspace) xyz(x ast.Node, dpkg *DistinctPackage) (types.Object, *DistinctPackage, error) {
 	switch v := x.(type) {
 	case *ast.Ident:
 		fmt.Printf("Have ident %#v\n", v)
 		if v.Obj != nil {
 			fmt.Printf("Ident has obj %#v (%d)\n", v.Obj, v.Pos())
 			vObj := dpkg.checker.ObjectOf(v)
-			return vObj, pkg, dpkg, nil
+			return vObj, dpkg, nil
 		}
 		if vDef, ok := dpkg.checker.Defs[v]; ok {
 			fmt.Printf("Have vDef from Defs: %#v\n", vDef)
-			return vDef, pkg, dpkg, nil
+			return vDef, dpkg, nil
 		}
 		if vUse, ok := dpkg.checker.Uses[v]; ok {
 			// Used when var is defined in a package, in another file
 			fmt.Printf("Have vUse from Uses: %#v\n", vUse)
-			return vUse, pkg, dpkg, nil
+			return vUse, dpkg, nil
 		}
 
 	case *ast.SelectorExpr:
-		return w.processSelectorExpr(v, pkg, dpkg)
+		return w.processSelectorExpr(v, dpkg)
 
 	default:
 		fmt.Printf("Is %#v\n", x)
 	}
 
-	return nil, nil, nil, nil
+	return nil, nil, nil
 }
 
-func (w *Workspace) processSelectorExpr(v *ast.SelectorExpr, pkg *Package, dpkg *DistinctPackage) (types.Object, *Package, *DistinctPackage, error) {
+func (w *Workspace) processSelectorExpr(v *ast.SelectorExpr, dpkg *DistinctPackage) (types.Object, *DistinctPackage, error) {
 	fmt.Printf("Have SelectorExpr\n")
+	dhash := w.LoaderContext.GetDistinctHash()
+
 	switch vX := v.X.(type) {
 	case *ast.Ident:
 		vXObj := dpkg.checker.ObjectOf(vX)
 		if vXObj == nil {
-			return nil, nil, nil, fmt.Errorf("v.X (%s) not in ObjectOf", vX.Name)
+			return nil, nil, fmt.Errorf("v.X (%s) not in ObjectOf", vX.Name)
 		}
 		fmt.Printf("checker.ObjectOf(v.X): %#v\n", vXObj)
 		switch v1 := vXObj.(type) {
 		case *types.PkgName:
 			fmt.Printf("Have PkgName %s, type %s\n", v1.Name(), v1.Type())
 			absPath := v1.Imported().Path()
-			n, _ := w.Loader.Caravan().Find(calculateHashFromString(absPath))
-			pkg1 := n.Element.(*Package)
-			dpkg1 := pkg1.distincts[w.LoaderContext.GetDistinctHash()]
-			fmt.Printf("From pkg %#v\n", pkg1)
+
+			phash := calculateHashFromString(absPath)
+			chash := combineHashes(phash, dhash)
+			n, _ := w.Loader.Caravan().Find(chash)
+			dpkg1 := n.Element.(*DistinctPackage)
+			fmt.Printf("From pkg %#v\n", dpkg1)
 
 			oooo := dpkg1.typesPkg.Scope().Lookup(v.Sel.Name)
 			if oooo != nil {
-				return oooo, pkg1, dpkg1, nil
+				return oooo, dpkg1, nil
 			}
 
 		case *types.Var:
 			fmt.Printf("Have Var %s, type %s\n\tv1: %#v\n\tv1.Sel: %#v\n", v1.Name(), v1.Type(), v1, v.Sel)
 			vSelObj := dpkg.checker.ObjectOf(v.Sel)
 			path := vSelObj.Pkg().Path()
-			n, _ := w.Loader.Caravan().Find(calculateHashFromString(path))
-			pkg1 := n.Element.(*Package)
-			dpkg1 := pkg1.distincts[w.LoaderContext.GetDistinctHash()]
-			return vSelObj, pkg1, dpkg1, nil
+			phash := calculateHashFromString(path)
+			chash := combineHashes(phash, dhash)
+			n, _ := w.Loader.Caravan().Find(chash)
+			dpkg1 := n.Element.(*DistinctPackage)
+			return vSelObj, dpkg1, nil
 		}
 	case *ast.SelectorExpr:
 		vSelObj := dpkg.checker.ObjectOf(v.Sel)
 		path := vSelObj.Pkg().Path()
-		n, _ := w.Loader.Caravan().Find(calculateHashFromString(path))
-		pkg1 := n.Element.(*Package)
-		dpkg1 := pkg1.distincts[w.LoaderContext.GetDistinctHash()]
-		return vSelObj, pkg1, dpkg1, nil
+		phash := calculateHashFromString(path)
+		chash := combineHashes(phash, dhash)
+		n, _ := w.Loader.Caravan().Find(chash)
+		dpkg1 := n.Element.(*DistinctPackage)
+		return vSelObj, dpkg1, nil
 	}
 
-	return nil, nil, nil, nil
-}
-
-func (w *Workspace) reloadPackageAndAscendants(absPath string) error {
-	key := calculateHashFromString(absPath)
-	n, ok := w.Loader.Caravan().Find(key)
-	if !ok {
-		// Crapola.
-		return fmt.Errorf("Failed to find package for path %s", absPath)
-	}
-	p := n.Element.(*Package)
-
-	w.Loader.InvalidatePackage(w.LoaderContext, p)
-
-	asc := flattenAscendants(n)
-
-	for _, p1 := range asc {
-		w.Loader.InvalidatePackage(w.LoaderContext, p1)
-	}
-
-	return nil
+	return nil, nil, nil
 }

@@ -6,6 +6,8 @@ import (
 	"go/build"
 	"go/types"
 	"sync"
+
+	"github.com/object88/langd/collections"
 )
 
 // TODO:
@@ -21,8 +23,9 @@ import (
 
 // DistinctPackage contains the os/arch specific package AST
 type DistinctPackage struct {
-	lc LoaderContext
-	p  *Package
+	Package *Package
+	hash    collections.Hash
+	lc      LoaderContext
 
 	loadState loadState
 
@@ -40,9 +43,11 @@ type DistinctPackage struct {
 }
 
 func NewDistinctPackage(lc LoaderContext, p *Package) *DistinctPackage {
+	hash := combineHashes(p.Hash(), lc.GetDistinctHash())
 	dp := &DistinctPackage{
+		Package:         p,
+		hash:            hash,
 		lc:              lc,
-		p:               p,
 		importPaths:     map[string]bool{},
 		testImportPaths: map[string]bool{},
 	}
@@ -81,8 +86,8 @@ func (dp *DistinctPackage) check() error {
 			Uses:       map[*ast.Ident]types.Object{},
 		}
 
-		dp.typesPkg = types.NewPackage(dp.p.AbsPath, dp.buildPkg.Name)
-		dp.checker = types.NewChecker(dp.lc.GetConfig(), dp.p.Fset, dp.typesPkg, info)
+		dp.typesPkg = types.NewPackage(dp.Package.AbsPath, dp.buildPkg.Name)
+		dp.checker = types.NewChecker(dp.lc.GetConfig(), dp.Package.Fset, dp.typesPkg, info)
 	}
 
 	// Loop over files and clear previous errors; all will be rechecked.
@@ -120,10 +125,10 @@ func (dp *DistinctPackage) currentFiles() map[string]*File {
 	return nil
 }
 
-// // Hash returns the hash for this distinct package
-// func (dp *DistinctPackage) Hash() collections.Hash {
-// 	return dp.lc.GetDistinctHash()
-// }
+// Hash returns the hash for this distinct package
+func (dp *DistinctPackage) Hash() collections.Hash {
+	return dp.hash
+}
 
 // resetChecker sets the checker to nil and the loadState to unloaded
 func (dp *DistinctPackage) resetChecker() {
@@ -133,5 +138,5 @@ func (dp *DistinctPackage) resetChecker() {
 }
 
 func (dp *DistinctPackage) String() string {
-	return fmt.Sprintf("[%s, %s]", dp.lc.GetContextArch(), dp.lc.GetContextOS())
+	return fmt.Sprintf("[%s, %s] %s", dp.lc.GetContextArch(), dp.lc.GetContextOS(), dp.Package)
 }

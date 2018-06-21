@@ -50,6 +50,8 @@ func Test_Workspace_Modify_File(t *testing.T) {
 		t.Errorf(err.Error())
 	}
 
+	lc.Wait()
+
 	rope, _ := w.Loader.OpenedFiles().Get("/go/src/foo/foo.go")
 	ropeString := rope.String()
 
