@@ -4,5 +4,6 @@
 bin
 
 .DS_Store
+*.out
 *.prof
 *.pdf
