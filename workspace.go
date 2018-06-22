@@ -251,16 +251,13 @@ func (w *Workspace) makeTupleList(sb *strings.Builder, params *types.Tuple, vari
 }
 
 func (w *Workspace) getVarType(sb *strings.Builder, v *types.Var) {
-	dhash := w.LoaderContext.GetDistinctHash()
-
 	var f func(typ types.Type)
 	f = func(typ types.Type) {
 		switch t := typ.(type) {
 		case *types.Basic:
 			sb.WriteString(getBasicType(t))
 		case *types.Named:
-			phash := calculateHashFromString(t.Obj().Pkg().Path())
-			chash := combineHashes(phash, dhash)
+			chash := w.LoaderContext.CalculateDistinctPackageHash(t.Obj().Pkg().Path())
 			n, ok := w.Loader.Caravan().Find(chash)
 			if !ok {
 				sb.WriteString("error")
@@ -326,9 +323,7 @@ func getConstType(o *types.Const) string {
 func (w *Workspace) LocateIdent(p *token.Position) (*ast.Ident, error) {
 	absPath := filepath.Dir(p.Filename)
 
-	dhash := w.LoaderContext.GetDistinctHash()
-	phash := calculateHashFromString(absPath)
-	chash := combineHashes(phash, dhash)
+	chash := w.LoaderContext.CalculateDistinctPackageHash(absPath)
 	n, ok := w.Loader.Caravan().Find(chash)
 	if !ok {
 		return nil, fmt.Errorf("No package loaded for '%s'", p.Filename)
@@ -451,7 +446,7 @@ func (w *Workspace) ReplaceFile(absFilepath, text string) error {
 func (w *Workspace) locateDeclaration(p *token.Position) (types.Object, *DistinctPackage, error) {
 	absPath := filepath.Dir(p.Filename)
 
-	chash := combineHashes(calculateHashFromString(absPath), w.LoaderContext.GetDistinctHash())
+	chash := w.LoaderContext.CalculateDistinctPackageHash(absPath)
 	n, ok := w.Loader.Caravan().Find(chash)
 	if !ok {
 		return nil, nil, fmt.Errorf("No package loaded for '%s'", p.Filename)
@@ -551,8 +546,6 @@ func (w *Workspace) xyz(x ast.Node, dpkg *DistinctPackage) (types.Object, *Disti
 
 func (w *Workspace) processSelectorExpr(v *ast.SelectorExpr, dpkg *DistinctPackage) (types.Object, *DistinctPackage, error) {
 	fmt.Printf("Have SelectorExpr\n")
-	dhash := w.LoaderContext.GetDistinctHash()
-
 	switch vX := v.X.(type) {
 	case *ast.Ident:
 		vXObj := dpkg.checker.ObjectOf(vX)
@@ -565,8 +558,7 @@ func (w *Workspace) processSelectorExpr(v *ast.SelectorExpr, dpkg *DistinctPacka
 			fmt.Printf("Have PkgName %s, type %s\n", v1.Name(), v1.Type())
 			absPath := v1.Imported().Path()
 
-			phash := calculateHashFromString(absPath)
-			chash := combineHashes(phash, dhash)
+			chash := w.LoaderContext.CalculateDistinctPackageHash(absPath)
 			n, _ := w.Loader.Caravan().Find(chash)
 			dpkg1 := n.Element.(*DistinctPackage)
 			fmt.Printf("From pkg %#v\n", dpkg1)
@@ -580,8 +572,7 @@ func (w *Workspace) processSelectorExpr(v *ast.SelectorExpr, dpkg *DistinctPacka
 			fmt.Printf("Have Var %s, type %s\n\tv1: %#v\n\tv1.Sel: %#v\n", v1.Name(), v1.Type(), v1, v.Sel)
 			vSelObj := dpkg.checker.ObjectOf(v.Sel)
 			path := vSelObj.Pkg().Path()
-			phash := calculateHashFromString(path)
-			chash := combineHashes(phash, dhash)
+			chash := w.LoaderContext.CalculateDistinctPackageHash(path)
 			n, _ := w.Loader.Caravan().Find(chash)
 			dpkg1 := n.Element.(*DistinctPackage)
 			return vSelObj, dpkg1, nil
@@ -589,8 +580,7 @@ func (w *Workspace) processSelectorExpr(v *ast.SelectorExpr, dpkg *DistinctPacka
 	case *ast.SelectorExpr:
 		vSelObj := dpkg.checker.ObjectOf(v.Sel)
 		path := vSelObj.Pkg().Path()
-		phash := calculateHashFromString(path)
-		chash := combineHashes(phash, dhash)
+		chash := w.LoaderContext.CalculateDistinctPackageHash(path)
 		n, _ := w.Loader.Caravan().Find(chash)
 		dpkg1 := n.Element.(*DistinctPackage)
 		return vSelObj, dpkg1, nil

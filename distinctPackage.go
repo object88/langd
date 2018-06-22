@@ -32,7 +32,7 @@ type DistinctPackage struct {
 
 // NewDistinctPackage returns a new instance of DistinctPackage
 func NewDistinctPackage(lc LoaderContext, p *Package) *DistinctPackage {
-	hash := combineHashes(p.Hash(), lc.GetDistinctHash())
+	hash := lc.CalculateDistinctPackageHash(p.AbsPath)
 	dp := &DistinctPackage{
 		Package:         p,
 		hash:            hash,

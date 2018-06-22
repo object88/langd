@@ -94,10 +94,9 @@ func (l *loader) InvalidatePackage(absPath string) {
 		return
 	}
 
-	phash := calculateHashFromString(absPath)
 	nodesMap := map[*collections.Node]bool{}
 	for lc := range p.loaderContexts {
-		n, _ := l.caravan.Find(combineHashes(phash, lc.GetDistinctHash()))
+		n, _ := l.caravan.Find(lc.CalculateDistinctPackageHash(absPath))
 		nodesMap[n] = true
 	}
 
@@ -507,11 +506,9 @@ func (l *loader) processPackages(lc LoaderContext, dp *DistinctPackage, importPa
 
 	// TEMPORARY
 	func() {
-		dhash := lc.GetDistinctHash()
 		imprts := []string{}
 		for importedPackage := range importedPackages {
-			phash := calculateHashFromString(importedPackage)
-			chash := combineHashes(phash, dhash)
+			chash := lc.CalculateDistinctPackageHash(importedPackage)
 			n, ok := l.caravan.Find(chash)
 			if !ok {
 				continue
@@ -523,10 +520,8 @@ func (l *loader) processPackages(lc LoaderContext, dp *DistinctPackage, importPa
 		l.Log.Debugf(" PP: %s: %d: -> %s\n", dp, loadState, allImprts)
 	}()
 
-	dhash := lc.GetDistinctHash()
 	for importPath := range importedPackages {
-		phash := calculateHashFromString(importPath)
-		chash := combineHashes(phash, dhash)
+		chash := lc.CalculateDistinctPackageHash(importPath)
 		n, ok := l.caravan.Find(chash)
 		if !ok {
 			l.Log.Debugf(" PP: %s: %d: import path is missing: %s\n", dp, loadState, importPath)

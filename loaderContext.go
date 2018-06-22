@@ -25,11 +25,11 @@ type LoaderContext interface {
 	types.ImporterFrom
 
 	AreAllPackagesComplete() bool
+	CalculateDistinctPackageHash(absPath string) collections.Hash
 	CheckPackage(dp *DistinctPackage) error
 	EnsureDistinctPackage(absPath string) (*DistinctPackage, bool)
 	FindImportPath(dp *DistinctPackage, importPath string) (string, error)
 	GetConfig() *types.Config
-	GetDistinctHash() collections.Hash
 	GetStartDir() string
 	GetTags() string
 	ImportBuildPackage(dp *DistinctPackage)
@@ -135,6 +135,12 @@ func NewLoaderContext(loader Loader, startDir, goos, goarch, goroot string, opti
 	return lc
 }
 
+func (lc *loaderContext) CalculateDistinctPackageHash(absPath string) collections.Hash {
+	phash := calculateHashFromString(absPath)
+	chash := combineHashes(phash, lc.hash)
+	return chash
+}
+
 func (lc *loaderContext) GetConfig() *types.Config {
 	return lc.config
 }
@@ -212,9 +218,7 @@ func (lc *loaderContext) CheckPackage(dp *DistinctPackage) error {
 }
 
 func (lc *loaderContext) EnsureDistinctPackage(absPath string) (*DistinctPackage, bool) {
-	phash := calculateHashFromString(absPath)
-	dhash := lc.GetDistinctHash()
-	chash := combineHashes(phash, dhash)
+	chash := lc.CalculateDistinctPackageHash(absPath)
 	n, created := lc.loader.Caravan().Ensure(chash, func() collections.Hasher {
 		lc.Log.Debugf("EnsureDistinctPackage: miss on hash 0x%x; creating package for '%s'.\n", chash, absPath)
 
