@@ -257,12 +257,10 @@ func (w *Workspace) getVarType(sb *strings.Builder, v *types.Var) {
 		case *types.Basic:
 			sb.WriteString(getBasicType(t))
 		case *types.Named:
-			chash := w.LoaderContext.CalculateDistinctPackageHash(t.Obj().Pkg().Path())
-			n, ok := w.Loader.Caravan().Find(chash)
-			if !ok {
+			dpkg, err := w.LoaderContext.FindDistinctPackage(t.Obj().Pkg().Path())
+			if err != nil {
 				sb.WriteString("error")
 			} else {
-				dpkg := n.Element.(*DistinctPackage)
 				sb.WriteString(dpkg.typesPkg.Name())
 				sb.WriteRune('.')
 				sb.WriteString(t.Obj().Name())
@@ -323,12 +321,10 @@ func getConstType(o *types.Const) string {
 func (w *Workspace) LocateIdent(p *token.Position) (*ast.Ident, error) {
 	absPath := filepath.Dir(p.Filename)
 
-	chash := w.LoaderContext.CalculateDistinctPackageHash(absPath)
-	n, ok := w.Loader.Caravan().Find(chash)
-	if !ok {
-		return nil, fmt.Errorf("No package loaded for '%s'", p.Filename)
+	dpkg, err := w.LoaderContext.FindDistinctPackage(absPath)
+	if err != nil {
+		return nil, errors.Wrapf(err, "No package loaded for '%s'", p.Filename)
 	}
-	dpkg := n.Element.(*DistinctPackage)
 	fi := dpkg.files[filepath.Base(p.Filename)]
 	f := fi.file
 
@@ -417,7 +413,10 @@ func (w *Workspace) OpenFile(absFilepath, text string) error {
 	}
 
 	absPath := filepath.Dir(absFilepath)
-	dp, _ := w.LoaderContext.EnsureDistinctPackage(absPath)
+	dp, err := w.LoaderContext.FindDistinctPackage(absPath)
+	if err != nil {
+		return errors.Wrapf(err, "Failed to find package for %s", absPath)
+	}
 	existingHash := dp.Package.fileHashes[filepath.Base(absFilepath)]
 	if existingHash == hash {
 		w.log.Debugf("Shadowed file '%s'; unchanged\n", absFilepath)
@@ -446,12 +445,10 @@ func (w *Workspace) ReplaceFile(absFilepath, text string) error {
 func (w *Workspace) locateDeclaration(p *token.Position) (types.Object, *DistinctPackage, error) {
 	absPath := filepath.Dir(p.Filename)
 
-	chash := w.LoaderContext.CalculateDistinctPackageHash(absPath)
-	n, ok := w.Loader.Caravan().Find(chash)
-	if !ok {
-		return nil, nil, fmt.Errorf("No package loaded for '%s'", p.Filename)
+	dpkg, err := w.LoaderContext.FindDistinctPackage(absPath)
+	if err != nil {
+		return nil, nil, errors.Wrapf(err, "No package loaded for '%s'", p.Filename)
 	}
-	dpkg, _ := n.Element.(*DistinctPackage)
 	fi, ok := dpkg.files[filepath.Base(p.Filename)]
 	if !ok {
 		panic(fmt.Sprintf("Did not find file '%s' in our workspace", p.Filename))
@@ -558,9 +555,10 @@ func (w *Workspace) processSelectorExpr(v *ast.SelectorExpr, dpkg *DistinctPacka
 			fmt.Printf("Have PkgName %s, type %s\n", v1.Name(), v1.Type())
 			absPath := v1.Imported().Path()
 
-			chash := w.LoaderContext.CalculateDistinctPackageHash(absPath)
-			n, _ := w.Loader.Caravan().Find(chash)
-			dpkg1 := n.Element.(*DistinctPackage)
+			dpkg1, err := w.LoaderContext.FindDistinctPackage(absPath)
+			if err != nil {
+				return nil, nil, errors.Wrapf(err, "Failed to find distinct package mentioned in %s", v1)
+			}
 			fmt.Printf("From pkg %#v\n", dpkg1)
 
 			oooo := dpkg1.typesPkg.Scope().Lookup(v.Sel.Name)
@@ -571,18 +569,18 @@ func (w *Workspace) processSelectorExpr(v *ast.SelectorExpr, dpkg *DistinctPacka
 		case *types.Var:
 			fmt.Printf("Have Var %s, type %s\n\tv1: %#v\n\tv1.Sel: %#v\n", v1.Name(), v1.Type(), v1, v.Sel)
 			vSelObj := dpkg.checker.ObjectOf(v.Sel)
-			path := vSelObj.Pkg().Path()
-			chash := w.LoaderContext.CalculateDistinctPackageHash(path)
-			n, _ := w.Loader.Caravan().Find(chash)
-			dpkg1 := n.Element.(*DistinctPackage)
+			dpkg1, err := w.LoaderContext.FindDistinctPackage(vSelObj.Pkg().Path())
+			if err != nil {
+				return nil, nil, errors.Wrapf(err, "Unknown package referenced in types.Var %s", v1)
+			}
 			return vSelObj, dpkg1, nil
 		}
 	case *ast.SelectorExpr:
 		vSelObj := dpkg.checker.ObjectOf(v.Sel)
-		path := vSelObj.Pkg().Path()
-		chash := w.LoaderContext.CalculateDistinctPackageHash(path)
-		n, _ := w.Loader.Caravan().Find(chash)
-		dpkg1 := n.Element.(*DistinctPackage)
+		dpkg1, err := w.LoaderContext.FindDistinctPackage(vSelObj.Pkg().Path())
+		if err != nil {
+			return nil, nil, errors.Wrapf(err, "Unknown package referenced in ast.SelectorExpr %s", v.Sel)
+		}
 		return vSelObj, dpkg1, nil
 	}
 

@@ -28,6 +28,7 @@ type LoaderContext interface {
 	CalculateDistinctPackageHash(absPath string) collections.Hash
 	CheckPackage(dp *DistinctPackage) error
 	EnsureDistinctPackage(absPath string) (*DistinctPackage, bool)
+	FindDistinctPackage(absPath string) (*DistinctPackage, error)
 	FindImportPath(dp *DistinctPackage, importPath string) (string, error)
 	GetConfig() *types.Config
 	GetStartDir() string
@@ -236,6 +237,16 @@ func (lc *loaderContext) EnsureDistinctPackage(absPath string) (*DistinctPackage
 	lc.m.Unlock()
 
 	return dp, created
+}
+
+func (lc *loaderContext) FindDistinctPackage(absPath string) (*DistinctPackage, error) {
+	chash := lc.CalculateDistinctPackageHash(absPath)
+	n, ok := lc.loader.Caravan().Find(chash)
+	if !ok {
+		return nil, errors.Errorf("Loader does not have an entry for %s with tags %s", absPath, lc.GetTags())
+	}
+	dp := n.Element.(*DistinctPackage)
+	return dp, nil
 }
 
 func (lc *loaderContext) FindImportPath(dp *DistinctPackage, importPath string) (string, error) {

@@ -45,27 +45,6 @@ func NewDistinctPackage(lc LoaderContext, p *Package) *DistinctPackage {
 	return dp
 }
 
-// CheckReady determines whether all of this package's dependencies have been
-// fulfilled
-func (dp *DistinctPackage) CheckReady(loadState loadState) bool {
-	thisLoadState := dp.loadState.get()
-
-	switch loadState {
-	case queued:
-		// Does not make sense that the source loadState would be here.
-	case unloaded:
-		return thisLoadState > unloaded
-	case loadedGo:
-		return thisLoadState > unloaded
-	case loadedTest:
-		// Should pass through here.
-	default:
-		// Should never get here.
-	}
-
-	return false
-}
-
 func (dp *DistinctPackage) check() error {
 	if dp.checker == nil {
 		info := &types.Info{
@@ -130,4 +109,33 @@ func (dp *DistinctPackage) Invalidate() {
 
 func (dp *DistinctPackage) String() string {
 	return fmt.Sprintf("%s %s", dp.lc.GetTags(), dp.Package)
+}
+
+// WaitUntilReady blocks until this distinct package has loaded sufficiently
+// for the requested load state.
+func (dp *DistinctPackage) WaitUntilReady(loadState loadState) {
+	check := func() bool {
+		thisLoadState := dp.loadState.get()
+
+		switch loadState {
+		case queued:
+			// Does not make sense that the source loadState would be here.
+		case unloaded:
+			return thisLoadState > unloaded
+		case loadedGo:
+			return thisLoadState > unloaded
+		case loadedTest:
+			// Should pass through here.
+		default:
+			// Should never get here.
+		}
+
+		return false
+	}
+
+	dp.m.Lock()
+	for !check() {
+		dp.c.Wait()
+	}
+	dp.m.Unlock()
 }

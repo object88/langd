@@ -508,35 +508,24 @@ func (l *loader) processPackages(lc LoaderContext, dp *DistinctPackage, importPa
 	func() {
 		imprts := []string{}
 		for importedPackage := range importedPackages {
-			chash := lc.CalculateDistinctPackageHash(importedPackage)
-			n, ok := l.caravan.Find(chash)
-			if !ok {
+			if targetDp, err := lc.FindDistinctPackage(importedPackage); err != nil {
 				continue
+			} else {
+				imprts = append(imprts, targetDp.String())
 			}
-			targetDp := n.Element.(*DistinctPackage)
-			imprts = append(imprts, targetDp.String())
 		}
 		allImprts := strings.Join(imprts, ", ")
 		l.Log.Debugf(" PP: %s: %d: -> %s\n", dp, loadState, allImprts)
 	}()
 
 	for importPath := range importedPackages {
-		chash := lc.CalculateDistinctPackageHash(importPath)
-		n, ok := l.caravan.Find(chash)
-		if !ok {
+		targetDp, err := lc.FindDistinctPackage(importPath)
+		if err != nil {
 			l.Log.Debugf(" PP: %s: %d: import path is missing: %s\n", dp, loadState, importPath)
 			continue
 		}
-		targetDp := n.Element.(*DistinctPackage)
 
-		targetDp.m.Lock()
-		for !targetDp.CheckReady(loadState) {
-			l.Log.Debugf(" PP: %s: %d: *** still waiting on %s ***\n", dp, loadState, targetDp)
-			targetDp.c.Wait()
-		}
-		targetDp.m.Unlock()
-
-		var err error
+		targetDp.WaitUntilReady(loadState)
 
 		if testing {
 			err = l.caravan.WeakConnect(dp, targetDp)
