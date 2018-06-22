@@ -10,23 +10,11 @@ import (
 	"github.com/object88/langd/collections"
 )
 
-// TODO:
-// There is a problem with the current arrangement of Package and
-// DistinctPackage, as it was assumed that Package would hold the references
-// to DistinctPackages, and that the Caravan would hold references to the
-// Package.  This will not work cleanly, however, because import may differ
-// from the files in one DistinctPackage to another, causing a different
-// DAG in the Caravan.
-// This should be restructured so that the Caravan maps the relationship
-// between DistinctPackages, and the DistinctPackage will embed a common
-// Package to manage the shared resources.
-
 // DistinctPackage contains the os/arch specific package AST
 type DistinctPackage struct {
-	Package *Package
-	hash    collections.Hash
-	lc      LoaderContext
-
+	Package   *Package
+	hash      collections.Hash
+	lc        LoaderContext
 	loadState loadState
 
 	files           map[string]*File
@@ -42,6 +30,7 @@ type DistinctPackage struct {
 	typesPkg *types.Package
 }
 
+// NewDistinctPackage returns a new instance of DistinctPackage
 func NewDistinctPackage(lc LoaderContext, p *Package) *DistinctPackage {
 	hash := combineHashes(p.Hash(), lc.GetDistinctHash())
 	dp := &DistinctPackage{
@@ -56,6 +45,8 @@ func NewDistinctPackage(lc LoaderContext, p *Package) *DistinctPackage {
 	return dp
 }
 
+// CheckReady determines whether all of this package's dependencies have been
+// fulfilled
 func (dp *DistinctPackage) CheckReady(loadState loadState) bool {
 	thisLoadState := dp.loadState.get()
 
@@ -130,13 +121,13 @@ func (dp *DistinctPackage) Hash() collections.Hash {
 	return dp.hash
 }
 
-// resetChecker sets the checker to nil and the loadState to unloaded
-func (dp *DistinctPackage) resetChecker() {
+// Invalidate sets the checker to nil and the loadState to unloaded
+func (dp *DistinctPackage) Invalidate() {
 	dp.loadState = unloaded
 	dp.checker = nil
 	dp.typesPkg = nil
 }
 
 func (dp *DistinctPackage) String() string {
-	return fmt.Sprintf("[%s, %s] %s", dp.lc.GetContextArch(), dp.lc.GetContextOS(), dp.Package)
+	return fmt.Sprintf("%s %s", dp.lc.GetTags(), dp.Package)
 }

@@ -29,10 +29,9 @@ type LoaderContext interface {
 	EnsureDistinctPackage(absPath string) (*DistinctPackage, bool)
 	FindImportPath(dp *DistinctPackage, importPath string) (string, error)
 	GetConfig() *types.Config
-	GetContextArch() string
-	GetContextOS() string
 	GetDistinctHash() collections.Hash
 	GetStartDir() string
+	GetTags() string
 	ImportBuildPackage(dp *DistinctPackage)
 	IsAllowed(absPath string) bool
 	IsUnsafe(dp *DistinctPackage) bool
@@ -75,8 +74,6 @@ func NewLoaderContext(loader Loader, startDir, goos, goarch, goroot string, opti
 	globs := make([]glob.Glob, 2)
 	globs[0] = glob.MustCompile(filepath.Join("**", ".*"))
 	globs[1] = glob.MustCompile(filepath.Join("**", "testdata"))
-
-	fmt.Printf("LC Start dir: %s\n", startDir)
 
 	if strings.HasPrefix(startDir, "file://") {
 		startDir = startDir[utf8.RuneCountInString("file://"):]
@@ -142,16 +139,26 @@ func (lc *loaderContext) GetConfig() *types.Config {
 	return lc.config
 }
 
-func (lc *loaderContext) GetContextArch() string {
-	return lc.context.GOARCH
-}
-
-func (lc *loaderContext) GetContextOS() string {
-	return lc.context.GOOS
-}
-
 func (lc *loaderContext) GetDistinctHash() collections.Hash {
 	return lc.hash
+}
+
+func (lc *loaderContext) GetStartDir() string {
+	return lc.startDir
+}
+
+func (lc *loaderContext) GetTags() string {
+	var sb strings.Builder
+	sb.WriteRune('[')
+	sb.WriteString(lc.context.GOARCH)
+	sb.WriteRune(',')
+	sb.WriteString(lc.context.GOOS)
+	for _, v := range lc.Tags {
+		sb.WriteRune(',')
+		sb.WriteString(v)
+	}
+	sb.WriteRune(']')
+	return sb.String()
 }
 
 func (lc *loaderContext) AreAllPackagesComplete() bool {
@@ -175,15 +182,10 @@ func (lc *loaderContext) AreAllPackagesComplete() bool {
 		n, ok := caravan.Find(chash)
 		if !ok {
 			fmt.Printf("loaderContext.AreAllPackagesComplete (%s): package hash 0x%x not found in caravan\n", lc, chash)
-			caravan.Iter(func(hash collections.Hash, node *collections.Node) bool {
-				fmt.Printf("\t0x%x -> %s (0x%x)\n", hash, node.Element.(*DistinctPackage), node.Element.(*DistinctPackage).Hash())
-				return true
-			})
 			complete = false
 			break
 		}
 		dp := n.Element.(*DistinctPackage)
-		// dp, ok := p.distincts[dhash]
 		if !ok {
 			fmt.Printf("loaderContext.AreAllPackagesComplete (%s): distinct package for %s not found\n", lc, dp)
 			complete = false
@@ -203,8 +205,6 @@ func (lc *loaderContext) AreAllPackagesComplete() bool {
 }
 
 func (lc *loaderContext) CheckPackage(dp *DistinctPackage) error {
-	// dp := p.distincts[lc.GetDistinctHash()]
-
 	lc.checkerMu.Lock()
 	err := dp.check()
 	lc.checkerMu.Unlock()
@@ -217,13 +217,9 @@ func (lc *loaderContext) EnsureDistinctPackage(absPath string) (*DistinctPackage
 	chash := combineHashes(phash, dhash)
 	n, created := lc.loader.Caravan().Ensure(chash, func() collections.Hasher {
 		lc.Log.Debugf("EnsureDistinctPackage: miss on hash 0x%x; creating package for '%s'.\n", chash, absPath)
-		fmt.Printf("EnsureDistinctPackage: miss on hash 0x%x; creating package for '%s'.\n", chash, absPath)
 
 		p, _ := lc.loader.EnsurePackage(absPath)
-		fmt.Printf("EnsureDistinctPackage: Ensured package %s\n", p)
-		dp := NewDistinctPackage(lc, p)
-		fmt.Printf("EnsureDistinctPackage: Created distinct package 0x%x -> %s\n", dp.Hash(), dp)
-		return dp
+		return NewDistinctPackage(lc, p)
 	})
 	dp := n.Element.(*DistinctPackage)
 
@@ -252,10 +248,6 @@ func (lc *loaderContext) FindImportPath(dp *DistinctPackage, importPath string) 
 	return targetPath, nil
 }
 
-func (lc *loaderContext) GetStartDir() string {
-	return lc.startDir
-}
-
 func (lc *loaderContext) ImportBuildPackage(dp *DistinctPackage) {
 	buildPkg, err := lc.context.Import(".", dp.Package.AbsPath, 0)
 	if err != nil {
@@ -267,7 +259,6 @@ func (lc *loaderContext) ImportBuildPackage(dp *DistinctPackage) {
 		return
 	}
 
-	// dp, _ := p.EnsureDistinct(lc)
 	dp.buildPkg = buildPkg
 }
 
@@ -306,34 +297,21 @@ func (lc *loaderContext) ReadDir(absPath string) ([]os.FileInfo, error) {
 }
 
 func (lc *loaderContext) Signal() {
-	fmt.Printf("%s: Entering signal...\n", lc)
 	lc.c.Broadcast()
-	fmt.Printf("%s: Exiting signal...\n", lc)
 }
 
 func (lc *loaderContext) Wait() {
 	if lc.AreAllPackagesComplete() {
-		fmt.Printf("Packages are complete; returning from wait immediately\n")
 		return
 	}
-	fmt.Printf("%s: Entering wait lock...\n", lc)
 	lc.c.L.Lock()
-	fmt.Printf("%s: Entering wait...\n", lc)
 	lc.c.Wait()
-	fmt.Printf("%s: Exiting wait...\n", lc)
 	lc.c.L.Unlock()
-	fmt.Printf("%s: Exiting wait lock...\n", lc)
 }
 
 // String is the implementation of fmt.Stringer
 func (lc *loaderContext) String() string {
-	x := make([]string, 2+len(lc.Tags))
-	x[0] = lc.context.GOARCH
-	x[1] = lc.context.GOOS
-	for k, v := range lc.Tags {
-		x[k+2] = v
-	}
-	return fmt.Sprintf("%s [%s]", lc.startDir, strings.Join(x, ", "))
+	return fmt.Sprintf("%s %s", lc.startDir, lc.GetTags())
 }
 
 // Import is the implementation of types.Importer
@@ -346,8 +324,6 @@ func (lc *loaderContext) Import(path string) (*types.Package, error) {
 		return nil, fmt.Errorf("Path parsed, but does not contain package %s", path)
 	}
 
-	// dp := p.distincts[lc.GetDistinctHash()]
-
 	return dp.typesPkg, nil
 }
 
@@ -355,20 +331,17 @@ func (lc *loaderContext) Import(path string) (*types.Package, error) {
 func (lc *loaderContext) ImportFrom(path, srcDir string, mode types.ImportMode) (*types.Package, error) {
 	absPath, err := lc.findImportPath(path, srcDir)
 	if err != nil {
-		fmt.Printf("Failed to locate import path for %s, %s:\n\t%s", path, srcDir, err.Error())
-		return nil, fmt.Errorf("Failed to locate import path for %s, %s:\n\t%s", path, srcDir, err.Error())
+		msg := fmt.Sprintf("Failed to locate import path for %s, %s", path, srcDir)
+		return nil, errors.Wrap(err, msg)
 	}
 
 	dp, err := lc.locatePackages(absPath)
 	if err != nil {
-		fmt.Printf("Failed to locate package %s\n\tfrom %s, %s:\n\t%s\n", absPath, path, srcDir, err.Error())
-		return nil, err
+		msg := fmt.Sprintf("Failed to locate package %s\n\tfrom %s, %s", absPath, path, srcDir)
+		return nil, errors.Wrap(err, msg)
 	}
 
-	// dp := p.distincts[lc.hash]
-
 	if dp.typesPkg == nil {
-		fmt.Printf("\t%s (nil)\n", absPath)
 		return nil, fmt.Errorf("Got nil in packages map")
 	}
 
@@ -378,11 +351,11 @@ func (lc *loaderContext) ImportFrom(path, srcDir string, mode types.ImportMode) 
 // HandleTypeCheckerError is invoked from the types.Checker when it encounters
 // errors
 func (lc *loaderContext) HandleTypeCheckerError(e error) {
-	dhash := lc.GetDistinctHash()
 	if terror, ok := e.(types.Error); ok {
 		position := terror.Fset.Position(terror.Pos)
 		absPath := filepath.Dir(position.Filename)
 		phash := calculateHashFromString(absPath)
+		dhash := lc.GetDistinctHash()
 		chash := combineHashes(phash, dhash)
 		node, ok := lc.loader.Caravan().Find(chash)
 
@@ -398,7 +371,6 @@ func (lc *loaderContext) HandleTypeCheckerError(e error) {
 			Warning:  terror.Soft,
 		}
 		dp := node.Element.(*DistinctPackage)
-		// dp := p.distincts[lc.GetDistinctHash()]
 
 		files := dp.currentFiles()
 		f, ok := files[baseFilename]

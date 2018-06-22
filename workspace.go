@@ -52,27 +52,23 @@ func (w *Workspace) ChangeFile(absFilepath string, startLine, startCharacter, en
 	r1 := buf.NewReader()
 	startOffset, err := CalculateOffsetForPosition(r1, startLine, startCharacter)
 	if err != nil {
-		// Crap crap crap crap.
-		fmt.Printf("Error from start: %s", err.Error())
+		return errors.Wrapf(err, "Error from start (%d, %d)", startLine, startCharacter)
 	}
 
 	r2 := buf.NewReader()
 	endOffset, err := CalculateOffsetForPosition(r2, endLine, endCharacter)
 	if err != nil {
-		// Crap crap crap crap.
-		fmt.Printf("Error from end: %s", err.Error())
+		return errors.Wrapf(err, "Error from end (%d, %d)", endLine, endCharacter)
 	}
 
 	fmt.Printf("offsets: [%d:%d]\n", startOffset, endOffset)
 
 	if err = buf.Alter(startOffset, endOffset, text); err != nil {
-		return err
+		return errors.Wrap(err, "ChangeFile: failed to alter the file buffer")
 	}
 
-	absPath := filepath.Dir(absFilepath)
-	w.Loader.InvalidatePackage(absPath)
+	w.Loader.InvalidatePackage(filepath.Dir(absFilepath))
 
-	fmt.Printf("Reload requested\n")
 	return nil
 }
 
@@ -268,11 +264,12 @@ func (w *Workspace) getVarType(sb *strings.Builder, v *types.Var) {
 			n, ok := w.Loader.Caravan().Find(chash)
 			if !ok {
 				sb.WriteString("error")
+			} else {
+				dpkg := n.Element.(*DistinctPackage)
+				sb.WriteString(dpkg.typesPkg.Name())
+				sb.WriteRune('.')
+				sb.WriteString(t.Obj().Name())
 			}
-			dpkg := n.Element.(*DistinctPackage)
-			sb.WriteString(dpkg.typesPkg.Name())
-			sb.WriteRune('.')
-			sb.WriteString(t.Obj().Name())
 		case *types.Pointer:
 			sb.WriteRune('*')
 			f(t.Elem())
@@ -419,7 +416,6 @@ func (w *Workspace) LocateReferences(p *token.Position) []token.Position {
 // which the workspace can accept edits to.
 func (w *Workspace) OpenFile(absFilepath, text string) error {
 	hash := calculateHashFromString(text)
-	fmt.Printf("Have new hash 0x%x for '%s'\n", hash, absFilepath)
 
 	if err := w.Loader.OpenedFiles().EnsureOpened(absFilepath, text); err != nil {
 		return errors.Wrap(err, "From OpenFile")

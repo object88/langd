@@ -97,7 +97,7 @@ func (l *loader) InvalidatePackage(absPath string) {
 	phash := calculateHashFromString(absPath)
 	nodesMap := map[*collections.Node]bool{}
 	for lc := range p.loaderContexts {
-		n, _ := l.Caravan().Find(combineHashes(phash, lc.GetDistinctHash()))
+		n, _ := l.caravan.Find(combineHashes(phash, lc.GetDistinctHash()))
 		nodesMap[n] = true
 	}
 
@@ -114,7 +114,7 @@ func (l *loader) InvalidatePackage(absPath string) {
 
 	for _, dp := range dps {
 		fmt.Printf("Invalidating %s\n", dp)
-		dp.resetChecker()
+		dp.Invalidate()
 		lc := dp.lc
 
 		l.stateChange <- &stateChangeEvent{
@@ -214,8 +214,6 @@ func (l *loader) readDir(lc LoaderContext, absPath string) {
 func (l *loader) processStateChange(sce *stateChangeEvent) {
 	n, _ := l.caravan.Find(sce.hash)
 	dp := n.Element.(*DistinctPackage)
-	// dp := p.distincts[sce.lc.GetDistinctHash()]
-	// fmt.Printf("Processing %s::%s\n", p, dp)
 
 	loadState := dp.loadState.get()
 
@@ -298,7 +296,6 @@ func (l *loader) processComplete(lc LoaderContext, dp *DistinctPackage) {
 func (l *loader) processDirectory(lc LoaderContext, dp *DistinctPackage) {
 	if lc.IsUnsafe(dp) {
 		l.Log.Debugf("*** Loading `%s`, replacing with types.Unsafe\n", dp)
-		// dp := p.distincts[lc.GetDistinctHash()]
 		dp.typesPkg = types.Unsafe
 
 		l.caravan.Insert(dp)
@@ -492,7 +489,6 @@ func (l *loader) processFile(lc LoaderContext, dp *DistinctPackage, fname, fpath
 }
 
 func (l *loader) processPackages(lc LoaderContext, dp *DistinctPackage, importPaths []string, testing bool) {
-	// dp := p.distincts[lc.GetDistinctHash()]
 	loadState := dp.loadState.get()
 	l.Log.Debugf(" PP: %s: %d: started\n", dp, loadState)
 
@@ -537,7 +533,6 @@ func (l *loader) processPackages(lc LoaderContext, dp *DistinctPackage, importPa
 			continue
 		}
 		targetDp := n.Element.(*DistinctPackage)
-		// targetDp := targetP.distincts[lc.GetDistinctHash()]
 
 		targetDp.m.Lock()
 		for !targetDp.CheckReady(loadState) {
