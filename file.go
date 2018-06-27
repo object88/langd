@@ -7,8 +7,9 @@ import (
 
 // File is an AST file and any errors that types.Config.Check discovers
 type File struct {
-	file *ast.File
-	errs []FileError
+	file    *ast.File
+	checked bool
+	errs    []FileError
 }
 
 // FileError is a translation of the types.Error struct

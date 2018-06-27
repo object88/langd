@@ -134,7 +134,6 @@ func (l *loader) Close() error {
 func (l *loader) EnsurePackage(absPath string) (*Package, bool) {
 	p, ok := l.packages[absPath]
 	if !ok {
-		fmt.Printf("EnsurePackage: Creating new package for %s\n", absPath)
 		p = NewPackage(absPath)
 		l.packages[absPath] = p
 	}
@@ -150,11 +149,6 @@ func (l *loader) Errors(lc LoaderContext, handleErrs func(file string, errs []Fi
 			return true
 		}
 		for fname, f := range dp.files {
-			if len(f.errs) != 0 {
-				handleErrs(filepath.Join(dp.Package.AbsPath, fname), f.errs)
-			}
-		}
-		for fname, f := range dp.testFiles {
 			if len(f.errs) != 0 {
 				handleErrs(filepath.Join(dp.Package.AbsPath, fname), f.errs)
 			}
@@ -226,10 +220,11 @@ func (l *loader) processStateChange(sce *stateChangeEvent) {
 		dp.c.Broadcast()
 		l.stateChange <- sce
 	case unloaded:
-		haveGo := l.processGoFiles(sce.lc, dp)
-		haveCgo := l.processCgoFiles(sce.lc, dp)
-		if (haveGo || haveCgo) && dp.buildPkg != nil {
-			imports := importPathMapToArray(dp.importPaths)
+		importPaths := map[string]bool{}
+		haveGo := l.processGoFiles(sce.lc, dp, importPaths)
+		haveCgo := l.processCgoFiles(sce.lc, dp, importPaths)
+		if haveGo || haveCgo {
+			imports := importPathMapToArray(importPaths)
 			l.processPackages(sce.lc, dp, imports, false)
 			l.processComplete(sce.lc, dp)
 		}
@@ -238,9 +233,10 @@ func (l *loader) processStateChange(sce *stateChangeEvent) {
 		dp.c.Broadcast()
 		l.stateChange <- sce
 	case loadedGo:
-		haveTestGo := l.processTestGoFiles(sce.lc, dp)
-		if haveTestGo && dp.buildPkg != nil {
-			imports := importPathMapToArray(dp.testImportPaths)
+		importPaths := map[string]bool{}
+		haveTestGo := l.processTestGoFiles(sce.lc, dp, importPaths)
+		if haveTestGo {
+			imports := importPathMapToArray(importPaths)
 			l.processPackages(sce.lc, dp, imports, true)
 			l.processComplete(sce.lc, dp)
 		}
@@ -256,16 +252,10 @@ func (l *loader) processStateChange(sce *stateChangeEvent) {
 		dp.c.Broadcast()
 		l.stateChange <- sce
 	case done:
-		fmt.Printf("Completed %s\n", dp.Package.AbsPath)
-		dp.m.Lock()
-		for lc := range dp.Package.loaderContexts {
-			complete := lc.AreAllPackagesComplete()
-			if complete {
-				l.Log.Debugf("All packages are loaded\n")
-				lc.Signal()
-			}
+		if sce.lc.AreAllPackagesComplete() {
+			l.Log.Debugf("All packages are loaded\n")
+			sce.lc.Signal()
 		}
-		dp.m.Unlock()
 	}
 }
 
@@ -286,9 +276,8 @@ func (l *loader) processComplete(lc LoaderContext, dp *DistinctPackage) {
 	}
 
 	err := lc.CheckPackage(dp)
-
 	if err != nil {
-		l.Log.Debugf("Error while checking %s:\n\t%s\n\n", dp.Package.AbsPath, err.Error())
+		l.Log.Debugf(" PC: %s: Error while checking %s:\n\t%s\n\n", dp, dp.Package.AbsPath, err.Error())
 	}
 }
 
@@ -303,12 +292,8 @@ func (l *loader) processDirectory(lc LoaderContext, dp *DistinctPackage) {
 	}
 }
 
-func (l *loader) processGoFiles(lc LoaderContext, dp *DistinctPackage) bool {
-	if lc.IsUnsafe(dp) {
-		return true
-	}
-
-	if dp.buildPkg == nil {
+func (l *loader) processGoFiles(lc LoaderContext, dp *DistinctPackage, importPaths map[string]bool) bool {
+	if lc.IsUnsafe(dp) || dp.buildPkg == nil {
 		return false
 	}
 
@@ -319,18 +304,14 @@ func (l *loader) processGoFiles(lc LoaderContext, dp *DistinctPackage) bool {
 
 	for _, fname := range fnames {
 		fpath := filepath.Join(dp.Package.AbsPath, fname)
-		l.processFile(lc, dp, fname, fpath, fpath, dp.importPaths)
+		l.processFile(lc, dp, fname, fpath, fpath, importPaths)
 	}
 
 	return true
 }
 
-func (l *loader) processCgoFiles(lc LoaderContext, dp *DistinctPackage) bool {
-	if lc.IsUnsafe(dp) {
-		return true
-	}
-
-	if dp.buildPkg == nil {
+func (l *loader) processCgoFiles(lc LoaderContext, dp *DistinctPackage, importPaths map[string]bool) bool {
+	if lc.IsUnsafe(dp) || dp.buildPkg == nil {
 		return false
 	}
 
@@ -410,14 +391,14 @@ func (l *loader) processCgoFiles(lc LoaderContext, dp *DistinctPackage) bool {
 
 	for i, fpath := range files {
 		fname := filepath.Base(fpath)
-		l.processFile(lc, dp, fname, fpath, displayFiles[i], dp.importPaths)
+		l.processFile(lc, dp, fname, fpath, displayFiles[i], importPaths)
 	}
 	l.Log.Debugf("CGO: %s: Done processing\n", dp)
 
 	return true
 }
 
-func (l *loader) processTestGoFiles(lc LoaderContext, dp *DistinctPackage) bool {
+func (l *loader) processTestGoFiles(lc LoaderContext, dp *DistinctPackage, importPaths map[string]bool) bool {
 	if lc.IsUnsafe(dp) || dp.buildPkg == nil {
 		return false
 	}
@@ -441,7 +422,7 @@ func (l *loader) processTestGoFiles(lc LoaderContext, dp *DistinctPackage) bool 
 	l.Log.Debugf("TFG: %s: processing %d test Go files\n", dp, len(fnames))
 	for _, fname := range fnames {
 		fpath := filepath.Join(dp.Package.AbsPath, fname)
-		l.processFile(lc, dp, fname, fpath, fpath, dp.testImportPaths)
+		l.processFile(lc, dp, fname, fpath, fpath, importPaths)
 	}
 
 	l.Log.Debugf("TFG: %s: processing complete\n", dp)
@@ -480,8 +461,7 @@ func (l *loader) processFile(lc LoaderContext, dp *DistinctPackage, fname, fpath
 	dp.Package.fileHashes[fname] = hash
 	dp.Package.m.Unlock()
 
-	files := dp.currentFiles()
-	files[fname] = &File{
+	dp.files[fname] = &File{
 		errs: []FileError{},
 		file: astf,
 	}

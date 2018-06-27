@@ -542,24 +542,24 @@ func (w *Workspace) xyz(x ast.Node, dpkg *DistinctPackage) (types.Object, *Disti
 }
 
 func (w *Workspace) processSelectorExpr(v *ast.SelectorExpr, dpkg *DistinctPackage) (types.Object, *DistinctPackage, error) {
-	fmt.Printf("Have SelectorExpr\n")
+	fmt.Printf("Workspace.processSelectorExpr: Have SelectorExpr\n")
 	switch vX := v.X.(type) {
 	case *ast.Ident:
 		vXObj := dpkg.checker.ObjectOf(vX)
 		if vXObj == nil {
-			return nil, nil, fmt.Errorf("v.X (%s) not in ObjectOf", vX.Name)
+			return nil, nil, fmt.Errorf("Workspace.processSelectorExpr: v.X (%s) not in ObjectOf", vX.Name)
 		}
-		fmt.Printf("checker.ObjectOf(v.X): %#v\n", vXObj)
+		fmt.Printf("Workspace.processSelectorExpr: checker.ObjectOf(v.X): %#v\n", vXObj)
 		switch v1 := vXObj.(type) {
 		case *types.PkgName:
-			fmt.Printf("Have PkgName %s, type %s\n", v1.Name(), v1.Type())
+			fmt.Printf("Workspace.processSelectorExpr: Have PkgName %s, type %s\n", v1.Name(), v1.Type())
 			absPath := v1.Imported().Path()
 
 			dpkg1, err := w.LoaderContext.FindDistinctPackage(absPath)
 			if err != nil {
-				return nil, nil, errors.Wrapf(err, "Failed to find distinct package mentioned in %s", v1)
+				return nil, nil, errors.Wrapf(err, "Workspace.processSelectorExpr: Failed to find distinct package mentioned in %s", v1)
 			}
-			fmt.Printf("From pkg %#v\n", dpkg1)
+			fmt.Printf("Workspace.processSelectorExpr: From pkg %#v\n", dpkg1)
 
 			oooo := dpkg1.typesPkg.Scope().Lookup(v.Sel.Name)
 			if oooo != nil {
@@ -567,19 +567,22 @@ func (w *Workspace) processSelectorExpr(v *ast.SelectorExpr, dpkg *DistinctPacka
 			}
 
 		case *types.Var:
-			fmt.Printf("Have Var %s, type %s\n\tv1: %#v\n\tv1.Sel: %#v\n", v1.Name(), v1.Type(), v1, v.Sel)
+			fmt.Printf("Workspace.processSelectorExpr: Have Var %s, type %s\n\tv1: %#v\n\tv1.Sel: %#v\n", v1.Name(), v1.Type(), v1, v.Sel)
 			vSelObj := dpkg.checker.ObjectOf(v.Sel)
 			dpkg1, err := w.LoaderContext.FindDistinctPackage(vSelObj.Pkg().Path())
 			if err != nil {
-				return nil, nil, errors.Wrapf(err, "Unknown package referenced in types.Var %s", v1)
+				return nil, nil, errors.Wrapf(err, "Workspace.processSelectorExpr: Unknown package referenced in types.Var %s", v1)
 			}
 			return vSelObj, dpkg1, nil
 		}
 	case *ast.SelectorExpr:
 		vSelObj := dpkg.checker.ObjectOf(v.Sel)
+		if vSelObj == nil {
+			return nil, nil, errors.Errorf("Workspace.processSelectorExpr: Failed to find object for ast.SelectorExpr %s", v.Sel)
+		}
 		dpkg1, err := w.LoaderContext.FindDistinctPackage(vSelObj.Pkg().Path())
 		if err != nil {
-			return nil, nil, errors.Wrapf(err, "Unknown package referenced in ast.SelectorExpr %s", v.Sel)
+			return nil, nil, errors.Wrapf(err, "Workspace.processSelectorExpr: Unknown package referenced in ast.SelectorExpr %s", v.Sel)
 		}
 		return vSelObj, dpkg1, nil
 	}

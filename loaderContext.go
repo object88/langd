@@ -22,7 +22,6 @@ import (
 // building and type-checking
 type LoaderContext interface {
 	fmt.Stringer
-	types.ImporterFrom
 
 	AreAllPackagesComplete() bool
 	CalculateDistinctPackageHash(absPath string) collections.Hash
@@ -54,7 +53,6 @@ type loaderContext struct {
 
 	loader Loader
 
-	checkerMu  sync.Mutex
 	config     *types.Config
 	context    *build.Context
 	startDir   string
@@ -128,7 +126,7 @@ func NewLoaderContext(loader Loader, startDir, goos, goarch, goroot string, opti
 
 	lc.config = &types.Config{
 		Error:    lc.HandleTypeCheckerError,
-		Importer: lc,
+		Importer: &loaderContextImporter{lc: lc},
 	}
 	lc.hash = calculateHashFromStrings(append([]string{goarch, goos}, lc.Tags...)...)
 	lc.unsafePath = filepath.Join(lc.context.GOROOT, "src", "unsafe")
@@ -200,21 +198,19 @@ func (lc *loaderContext) AreAllPackagesComplete() bool {
 		}
 		loadState := dp.loadState.get()
 		if loadState != done {
-			fmt.Printf("loaderContext.AreAllPackagesComplete (%s): distinct package for %s is not yet complete\n", lc, dp)
 			complete = false
 			break
 		}
 	}
 
-	fmt.Printf("loaderContext.AreAllPackagesComplete (%s): found to be complete? %t\n", lc, complete)
 	lc.m.Unlock()
 	return complete
 }
 
 func (lc *loaderContext) CheckPackage(dp *DistinctPackage) error {
-	lc.checkerMu.Lock()
+	lc.m.Lock()
 	err := dp.check()
-	lc.checkerMu.Unlock()
+	lc.m.Unlock()
 	return err
 }
 
@@ -264,17 +260,10 @@ func (lc *loaderContext) FindImportPath(dp *DistinctPackage, importPath string) 
 }
 
 func (lc *loaderContext) ImportBuildPackage(dp *DistinctPackage) {
-	buildPkg, err := lc.context.Import(".", dp.Package.AbsPath, 0)
+	err := dp.GenerateBuildPackage(lc.context)
 	if err != nil {
-		if _, ok := err.(*build.NoGoError); ok {
-			// There isn't any Go code here.
-			return
-		}
-		lc.Log.Debugf("ImportBuildPackage: %s: proc error:\n\t%s\n", dp, err.Error())
-		return
+		lc.Log.Debugf("ImportBuildPackage: %s\n", err.Error())
 	}
-
-	dp.buildPkg = buildPkg
 }
 
 func (lc *loaderContext) IsAllowed(absPath string) bool {
@@ -329,53 +318,15 @@ func (lc *loaderContext) String() string {
 	return fmt.Sprintf("%s %s", lc.startDir, lc.GetTags())
 }
 
-// Import is the implementation of types.Importer
-func (lc *loaderContext) Import(path string) (*types.Package, error) {
-	dp, err := lc.locatePackages(path)
-	if err != nil {
-		return nil, err
-	}
-	if dp == nil {
-		return nil, fmt.Errorf("Path parsed, but does not contain package %s", path)
-	}
-
-	return dp.typesPkg, nil
-}
-
-// ImportFrom is the implementation of types.ImporterFrom
-func (lc *loaderContext) ImportFrom(path, srcDir string, mode types.ImportMode) (*types.Package, error) {
-	absPath, err := lc.findImportPath(path, srcDir)
-	if err != nil {
-		msg := fmt.Sprintf("Failed to locate import path for %s, %s", path, srcDir)
-		return nil, errors.Wrap(err, msg)
-	}
-
-	dp, err := lc.locatePackages(absPath)
-	if err != nil {
-		msg := fmt.Sprintf("Failed to locate package %s\n\tfrom %s, %s", absPath, path, srcDir)
-		return nil, errors.Wrap(err, msg)
-	}
-
-	if dp.typesPkg == nil {
-		return nil, fmt.Errorf("Got nil in packages map")
-	}
-
-	return dp.typesPkg, nil
-}
-
 // HandleTypeCheckerError is invoked from the types.Checker when it encounters
 // errors
 func (lc *loaderContext) HandleTypeCheckerError(e error) {
 	if terror, ok := e.(types.Error); ok {
 		position := terror.Fset.Position(terror.Pos)
 		absPath := filepath.Dir(position.Filename)
-		phash := calculateHashFromString(absPath)
-		dhash := lc.GetDistinctHash()
-		chash := combineHashes(phash, dhash)
-		node, ok := lc.loader.Caravan().Find(chash)
-
-		if !ok {
-			lc.Log.Debugf("ERROR: (missing) No package for %s\n", absPath)
+		dp, err := lc.FindDistinctPackage(absPath)
+		if err != nil {
+			lc.Log.Debugf("ERROR: (missing) No package for %s\n\t%s\n", absPath, err.Error())
 			return
 		}
 
@@ -385,10 +336,8 @@ func (lc *loaderContext) HandleTypeCheckerError(e error) {
 			Message:  terror.Msg,
 			Warning:  terror.Soft,
 		}
-		dp := node.Element.(*DistinctPackage)
 
-		files := dp.currentFiles()
-		f, ok := files[baseFilename]
+		f, ok := dp.files[baseFilename]
 		if !ok {
 			lc.Log.Debugf("ERROR: (missing file) %s\n", position.Filename)
 		} else {
@@ -407,17 +356,4 @@ func (lc *loaderContext) findImportPath(path, src string) (string, error) {
 		return "", errors.Wrap(err, msg)
 	}
 	return buildPkg.Dir, nil
-}
-
-func (lc *loaderContext) locatePackages(path string) (*DistinctPackage, error) {
-	dhash := lc.GetDistinctHash()
-	phash := calculateHashFromString(path)
-	chash := combineHashes(phash, dhash)
-	n, ok := lc.loader.Caravan().Find(chash)
-	if !ok {
-		return nil, fmt.Errorf("Failed to import %s", path)
-	}
-
-	dp := n.Element.(*DistinctPackage)
-	return dp, nil
 }

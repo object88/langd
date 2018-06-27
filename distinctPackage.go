@@ -8,6 +8,7 @@ import (
 	"sync"
 
 	"github.com/object88/langd/collections"
+	"github.com/pkg/errors"
 )
 
 // DistinctPackage contains the os/arch specific package AST
@@ -17,16 +18,12 @@ type DistinctPackage struct {
 	lc        LoaderContext
 	loadState loadState
 
-	files           map[string]*File
-	importPaths     map[string]bool
-	testFiles       map[string]*File
-	testImportPaths map[string]bool
-
 	m sync.Mutex
 	c *sync.Cond
 
 	buildPkg *build.Package
 	checker  *types.Checker
+	files    map[string]*File
 	typesPkg *types.Package
 }
 
@@ -34,11 +31,10 @@ type DistinctPackage struct {
 func NewDistinctPackage(lc LoaderContext, p *Package) *DistinctPackage {
 	hash := lc.CalculateDistinctPackageHash(p.AbsPath)
 	dp := &DistinctPackage{
-		Package:         p,
-		hash:            hash,
-		lc:              lc,
-		importPaths:     map[string]bool{},
-		testImportPaths: map[string]bool{},
+		Package: p,
+		files:   map[string]*File{},
+		hash:    hash,
+		lc:      lc,
 	}
 	dp.c = sync.NewCond(&dp.m)
 
@@ -48,12 +44,12 @@ func NewDistinctPackage(lc LoaderContext, p *Package) *DistinctPackage {
 func (dp *DistinctPackage) check() error {
 	if dp.checker == nil {
 		info := &types.Info{
-			Defs:       map[*ast.Ident]types.Object{},
-			Implicits:  map[ast.Node]types.Object{},
-			Scopes:     map[ast.Node]*types.Scope{},
+			Defs: map[*ast.Ident]types.Object{},
+			// Implicits:  map[ast.Node]types.Object{},
+			// Scopes:     map[ast.Node]*types.Scope{},
 			Selections: map[*ast.SelectorExpr]*types.Selection{},
-			Types:      map[ast.Expr]types.TypeAndValue{},
-			Uses:       map[*ast.Ident]types.Object{},
+			// Types:      map[ast.Expr]types.TypeAndValue{},
+			Uses: map[*ast.Ident]types.Object{},
 		}
 
 		dp.typesPkg = types.NewPackage(dp.Package.AbsPath, dp.buildPkg.Name)
@@ -61,37 +57,45 @@ func (dp *DistinctPackage) check() error {
 	}
 
 	// Loop over files and clear previous errors; all will be rechecked.
-	files := dp.currentFiles()
-	astFiles := make([]*ast.File, len(files))
-	i := 0
-	for _, v := range files {
+	astFiles := []*ast.File{}
+	for _, v := range dp.files {
 		f := v
-		f.errs = []FileError{}
-		astFiles[i] = f.file
-		i++
+		if !f.checked {
+			f.errs = []FileError{}
+			astFiles = append(astFiles, f.file)
+		}
+	}
+
+	if len(astFiles) == 0 {
+		return nil
 	}
 
 	dp.m.Lock()
 	err := dp.checker.Files(astFiles)
 	dp.m.Unlock()
-	return err
+
+	for _, v := range dp.files {
+		v.checked = true
+	}
+
+	if err != nil {
+		return errors.Wrapf(err, "DistinctPackage.check (%s): Checker failed", dp)
+	}
+
+	return nil
 }
 
-func (dp *DistinctPackage) currentFiles() map[string]*File {
-	loadState := dp.loadState.get()
-	switch loadState {
-	case unloaded:
-		if dp.files == nil {
-			dp.files = map[string]*File{}
+func (dp *DistinctPackage) GenerateBuildPackage(context *build.Context) error {
+	buildPkg, err := context.Import(".", dp.Package.AbsPath, 0)
+	if err != nil {
+		if _, ok := err.(*build.NoGoError); ok {
+			// There isn't any Go code here.
+			return nil
 		}
-		return dp.files
-	case loadedGo:
-		if dp.testFiles == nil {
-			dp.testFiles = map[string]*File{}
-		}
-		return dp.testFiles
+		return errors.Wrapf(err, "GenerateBuildPackage (%s): error while importing with build.Context", dp)
 	}
-	// fmt.Printf("DistinctPackage has loadState %d; no files.\n", loadState)
+
+	dp.buildPkg = buildPkg
 	return nil
 }
 
