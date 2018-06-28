@@ -6,6 +6,7 @@ import (
 	"go/token"
 	"io/ioutil"
 	"os"
+	"path/filepath"
 	"runtime"
 	"testing"
 
@@ -47,11 +48,11 @@ func Test_Workspace_Hugo(t *testing.T) {
 		t.Fatalf("Failed to load directory '%s':\n\t%s\n", path, err.Error())
 	}
 
-	fmt.Printf("Load directory started; blocking...\n")
+	t.Log("Load directory started; blocking...\n")
 
 	lc.Wait()
 
-	fmt.Printf("Load directory done\n")
+	t.Log("Load directory done\n")
 
 	errCount := 0
 	var buf bytes.Buffer
@@ -71,39 +72,26 @@ func Test_Workspace_Hugo(t *testing.T) {
 		t.Fatal(buf.String())
 	}
 
-	byteContents, err := ioutil.ReadFile("/Users/bropa18/work/src/github.com/gohugoio/hugo/vendor/github.com/olekukonko/tablewriter/csv.go")
+	csvPath, _ := filepath.Abs(filepath.Join(path, "vendor/github.com/olekukonko/tablewriter/csv.go"))
+	tablePath, _ := filepath.Abs(filepath.Join(path, "vendor/github.com/olekukonko/tablewriter/table.go"))
+	processingStatePath, _ := filepath.Abs(filepath.Join(path, "helpers/processing_stats.go"))
+
+	byteContents, err := ioutil.ReadFile(csvPath)
 	if err != nil {
 		t.Fatal(err)
 	}
 	contents := string(byteContents)
-	w.OpenFile("/Users/bropa18/work/src/github.com/gohugoio/hugo/vendor/github.com/olekukonko/tablewriter/csv.go", contents)
+	w.OpenFile(csvPath, contents)
 
-	declPosition := &token.Position{
-		Filename: "/Users/bropa18/work/src/github.com/gohugoio/hugo/vendor/github.com/olekukonko/tablewriter/table.go",
-		Line:     85,
-		Column:   6,
-	}
-
-	p := &token.Position{
-		Filename: "/Users/bropa18/work/src/github.com/gohugoio/hugo/vendor/github.com/olekukonko/tablewriter/csv.go",
-		Line:     33,
-		Column:   7,
-	}
+	declPosition := &token.Position{Filename: tablePath, Line: 85, Column: 6}
+	p := &token.Position{Filename: csvPath, Line: 33, Column: 7}
 
 	testDeclaration(t, w, p, declPosition)
 
 	testReferences(t, w, p, []*token.Position{
 		declPosition,
 		p,
-		{
-			Filename: "/Users/bropa18/work/src/github.com/gohugoio/hugo/helpers/processing_stats.go",
-			Line:     74,
-			Column:   23,
-		},
-		{
-			Filename: "/Users/bropa18/work/src/github.com/gohugoio/hugo/helpers/processing_stats.go",
-			Line:     109,
-			Column:   23,
-		},
+		{Filename: processingStatePath, Line: 74, Column: 23},
+		{Filename: processingStatePath, Line: 109, Column: 23},
 	})
 }
