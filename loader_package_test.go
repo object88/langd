@@ -25,7 +25,7 @@ func Test_Load_Own_Package(t *testing.T) {
 		lc.context = fc
 	})
 
-	err := loader.LoadDirectory(lc, "/go/src/bar")
+	err := lc.LoadDirectory("/go/src/bar")
 	if err != nil {
 		t.Fatalf("Error while loading: %s", err.Error())
 	}

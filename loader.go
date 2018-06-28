@@ -117,25 +117,6 @@ func (l *Loader) ensurePackage(absPath string) (*Package, bool) {
 	return p, !ok
 }
 
-// LoadDirectory adds the contents of a directory to the Loader
-func (l *Loader) LoadDirectory(lc *LoaderContext, path string) error {
-	fmt.Printf("loader::LoadDirectory: entered\n")
-	if !lc.IsDir(path) {
-		return fmt.Errorf("Argument '%s' is not a directory", path)
-	}
-
-	absPath, err := filepath.Abs(path)
-	if err != nil {
-		return fmt.Errorf("Could not get absolute path for '%s'", absPath)
-	}
-
-	fmt.Printf("loader::LoadDirectory: reading dir '%s'\n", absPath)
-	l.readDir(lc, absPath)
-
-	fmt.Printf("loader::LoadDirectory: done\n")
-	return nil
-}
-
 func (l *Loader) readDir(lc *LoaderContext, absPath string) {
 	if !lc.isAllowed(absPath) {
 		l.Log.Verbosef("readDir: directory '%s' is not allowed\n", absPath)

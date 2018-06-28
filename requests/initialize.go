@@ -74,7 +74,7 @@ func (h *Handler) readRoot(root string) {
 	}
 
 	fmt.Printf("About to load %s\n", base)
-	h.workspace.Loader.LoadDirectory(h.workspace.LoaderContext, base)
+	h.workspace.LoaderContext.LoadDirectory(base)
 
 	// NOTE: We are not doing anything with this, so... BLOCKED.
 	fmt.Printf("Waiting...\n")

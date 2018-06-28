@@ -38,7 +38,7 @@ func Test_Loader_Load_Tests(t *testing.T) {
 		lc.context = buildutil.FakeContext(packages)
 	})
 
-	err := loader.LoadDirectory(lc, "/go/src/bar")
+	err := lc.LoadDirectory("/go/src/bar")
 	if err != nil {
 		t.Fatalf("(1) Error while loading: %s", err.Error())
 	}

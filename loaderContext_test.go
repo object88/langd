@@ -30,12 +30,12 @@ func Test_LoadContext_Same_Package_Same_Env(t *testing.T) {
 		lc.context = buildutil.FakeContext(packages)
 	})
 
-	err := loader.LoadDirectory(lc1, "/go/src/bar")
+	err := lc1.LoadDirectory("/go/src/bar")
 	if err != nil {
 		t.Fatalf("(1) Error while loading: %s", err.Error())
 	}
 
-	err = loader.LoadDirectory(lc2, "/go/src/bar")
+	err = lc2.LoadDirectory("/go/src/bar")
 	if err != nil {
 		t.Fatalf("(2) Error while loading: %s", err.Error())
 	}
@@ -128,7 +128,7 @@ func Test_LoadContext_Same_Package_Different_Env(t *testing.T) {
 			})
 			lcs[ii] = lc
 
-			err := loader.LoadDirectory(lc, "/go/src/bar")
+			err := lc.LoadDirectory("/go/src/bar")
 			if err != nil {
 				t.Fatalf("Error while loading: %s", err.Error())
 			}

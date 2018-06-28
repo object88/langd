@@ -43,7 +43,7 @@ func Test_Workspace_Hugo(t *testing.T) {
 	w := CreateWorkspace(l, logger)
 	w.AssignLoaderContext(lc)
 
-	err := l.LoadDirectory(lc, path)
+	err := lc.LoadDirectory(path)
 	if err != nil {
 		t.Fatalf("Failed to load directory '%s':\n\t%s\n", path, err.Error())
 	}

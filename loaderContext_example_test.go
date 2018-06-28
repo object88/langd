@@ -40,7 +40,7 @@ func Test_Scale(t *testing.T) {
 	w := CreateWorkspace(l, logger)
 	w.AssignLoaderContext(lc)
 
-	err := l.LoadDirectory(lc, path)
+	err := lc.LoadDirectory(path)
 	if err != nil {
 		t.Fatalf("Failed to load directory '%s':\n\t%s\n", path, err.Error())
 	}
@@ -85,7 +85,7 @@ func Benchmark_Scale(b *testing.B) {
 		w := CreateWorkspace(l, logger)
 		w.AssignLoaderContext(lc)
 
-		l.LoadDirectory(lc, path)
+		lc.LoadDirectory(path)
 		lc.Wait()
 	}
 

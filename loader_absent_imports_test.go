@@ -31,7 +31,7 @@ func Test_Load_Missing_Imports(t *testing.T) {
 		lc.Log.SetLevel(log.Debug)
 	})
 
-	loader.LoadDirectory(lc, "/go/src/foo")
+	lc.LoadDirectory("/go/src/foo")
 	lc.Wait()
 
 	errCount := 0

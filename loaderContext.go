@@ -252,6 +252,23 @@ func (lc *LoaderContext) FindImportPath(dp *DistinctPackage, importPath string) 
 	return targetPath, nil
 }
 
+// LoadDirectory adds the contents of a directory to the Loader
+func (lc *LoaderContext) LoadDirectory(path string) error {
+	if !lc.IsDir(path) {
+		return fmt.Errorf("Argument '%s' is not a directory", path)
+	}
+
+	absPath, err := filepath.Abs(path)
+	if err != nil {
+		return fmt.Errorf("Could not get absolute path for '%s'", absPath)
+	}
+
+	lc.Log.Verbosef("LoaderContext.LoadDirectory: reading dir '%s'\n", absPath)
+	lc.loader.readDir(lc, absPath)
+
+	return nil
+}
+
 func (lc *LoaderContext) isAllowed(absPath string) bool {
 	for _, g := range lc.filteredPaths {
 		if g.Match(absPath) {

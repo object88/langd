@@ -60,7 +60,7 @@ func Test_Load_AliasedImports(t *testing.T) {
 	lc := NewLoaderContext(loader, "/go/src/foo", runtime.GOOS, runtime.GOARCH, "/go", func(lc *LoaderContext) {
 		lc.context = fc
 	})
-	loader.LoadDirectory(lc, "/go/src/foo")
+	lc.LoadDirectory("/go/src/foo")
 	lc.Wait()
 
 	errCount := 0
