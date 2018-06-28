@@ -60,7 +60,7 @@ func (rh *initializedHandler) work() error {
 	s.Set(goString, (*result)[0])
 	s.Set(langdString, (*result)[1])
 
-	startDir := rh.h.workspace.LoaderContext.GetStartDir()
+	startDir := rh.h.workspace.LoaderContext.StartDir
 	rh.h.ConfigureLoaderContext(startDir, s)
 
 	return nil

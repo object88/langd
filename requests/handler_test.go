@@ -100,13 +100,6 @@ func (mc *MockConn) ReplyWithError(ctx context.Context, id jsonrpc2.ID, respErr 
 	return nil
 }
 
-type MockLoader struct {
-}
-
-func NewMockLoader() langd.Loader {
-	return nil
-}
-
 func Test_Handler_Uninited_Init(t *testing.T) {
 	conn, h, def := setupHandler()
 	defer def()

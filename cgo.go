@@ -5,10 +5,13 @@ import (
 	"go/build"
 	"os"
 	"os/exec"
+	"regexp"
 	"strings"
 
 	"github.com/pkg/errors"
 )
+
+var cgoRe = regexp.MustCompile(`[/\\:]`)
 
 // Return the flags to use when invoking the C or C++ compilers, or cgo.
 func cflags(p *build.Package, def bool) (cppflags, cflags, cxxflags, ldflags []string) {

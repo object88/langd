@@ -15,11 +15,11 @@ import (
 	"golang.org/x/tools/go/buildutil"
 )
 
-func workspaceSetup(t *testing.T, startingPath string, packages map[string]map[string]string, expectFailure bool) (*Workspace, LoaderContext, func()) {
+func workspaceSetup(t *testing.T, startingPath string, packages map[string]map[string]string, expectFailure bool) (*Workspace, *LoaderContext, func()) {
 	fc := buildutil.FakeContext(packages)
 	loader := NewLoader()
-	lc := NewLoaderContext(loader, startingPath, runtime.GOOS, runtime.GOARCH, "/go", func(lc LoaderContext) {
-		lc.(*loaderContext).context = fc
+	lc := NewLoaderContext(loader, startingPath, runtime.GOOS, runtime.GOARCH, "/go", func(lc *LoaderContext) {
+		lc.context = fc
 	})
 	w := CreateWorkspace(loader, log.CreateLog(os.Stdout))
 	w.AssignLoaderContext(lc)

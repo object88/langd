@@ -52,7 +52,7 @@ func Test_Workspace_Modify_File(t *testing.T) {
 
 	lc.Wait()
 
-	rope, _ := w.Loader.OpenedFiles().Get("/go/src/foo/foo.go")
+	rope, _ := w.Loader.openedFiles.Get("/go/src/foo/foo.go")
 	ropeString := rope.String()
 
 	if strings.Contains(ropeString, "foof") {
@@ -105,7 +105,7 @@ func Test_Workspace_Modify_Cross_File(t *testing.T) {
 
 	lc.Wait()
 
-	rope, _ := w.Loader.OpenedFiles().Get("/go/src/foo/foo2.go")
+	rope, _ := w.Loader.openedFiles.Get("/go/src/foo/foo2.go")
 	fmt.Printf("foo2.go:\n%s\n", rope.String())
 
 	errCount := 0

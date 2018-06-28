@@ -42,7 +42,7 @@ func (w *Workspace) locateReferences(obj types.Object, dp *DistinctPackage) []*r
 	}
 
 	if obj.Exported() {
-		n, ok := w.Loader.Caravan().Find(dp.Hash())
+		n, ok := w.Loader.caravan.Find(dp.Hash())
 		if !ok {
 			// Should never get here.
 			panic("Shit.")

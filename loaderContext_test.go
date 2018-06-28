@@ -1,6 +1,7 @@
 package langd
 
 import (
+	"fmt"
 	"sync"
 	"testing"
 	"time"
@@ -22,12 +23,12 @@ func Test_LoadContext_Same_Package_Same_Env(t *testing.T) {
 	loader := NewLoader()
 	defer loader.Close()
 
-	lc1 := NewLoaderContext(loader, "/go/src/bar", "darwin", "x86", "/go", func(lc LoaderContext) {
-		lc.(*loaderContext).context = buildutil.FakeContext(packages)
+	lc1 := NewLoaderContext(loader, "/go/src/bar", "darwin", "x86", "/go", func(lc *LoaderContext) {
+		lc.context = buildutil.FakeContext(packages)
 	})
 
-	lc2 := NewLoaderContext(loader, "/go/src/bar", "linux", "arm", "/go", func(lc LoaderContext) {
-		lc.(*loaderContext).context = buildutil.FakeContext(packages)
+	lc2 := NewLoaderContext(loader, "/go/src/bar", "linux", "arm", "/go", func(lc *LoaderContext) {
+		lc.context = buildutil.FakeContext(packages)
 	})
 
 	err := loader.LoadDirectory(lc1, "/go/src/bar")
@@ -62,24 +63,29 @@ func Test_LoadContext_Same_Package_Same_Env(t *testing.T) {
 	}
 
 	packageCount := 0
-	loader.Caravan().Iter(func(hash collections.Hash, node *collections.Node) bool {
+	loader.caravan.Iter(func(hash collections.Hash, node *collections.Node) bool {
 		packageCount++
 		return true
 	})
 
-	if packageCount != 1 {
+	if packageCount != 2 {
 		t.Errorf("Expected to find 1 package; found %d\n", packageCount)
 	}
 
-	phash := calculateHashFromString("/go/src/bar")
-	n, ok := loader.Caravan().Find(phash)
-	if !ok {
-		t.Errorf("Failed to find package '%s' with hash %d", "/go/src/bar", phash)
+	failed := false
+	for _, lc := range []*LoaderContext{lc1, lc2} {
+		_, err := lc.FindDistinctPackage("/go/src/bar")
+		if err != nil {
+			failed = true
+			t.Errorf("Failed to find package '%s'", "/go/src/bar")
+		}
 	}
-	p := n.Element.(*Package)
 
-	if 2 != len(p.distincts) {
-		t.Errorf("Expected to find 2 distinct packages; found %d", len(p.distincts))
+	if failed {
+		loader.caravan.Iter(func(hash collections.Hash, n *collections.Node) bool {
+			fmt.Printf("Have hash 0x%x: %s\n", hash, n.Element.(*DistinctPackage))
+			return true
+		})
 	}
 }
 
@@ -112,14 +118,14 @@ func Test_LoadContext_Same_Package_Different_Env(t *testing.T) {
 	wg := sync.WaitGroup{}
 	wg.Add(2)
 
-	lcs := make([]LoaderContext, 2)
+	lcs := make([]*LoaderContext, 2)
 
 	for i := 0; i < 2; i++ {
 		ii := i
 		env := envs[i]
 		go func() {
-			lc := NewLoaderContext(loader, "/go/src/bar", env[0], env[1], "/go", func(lc LoaderContext) {
-				lc.(*loaderContext).context = buildutil.FakeContext(packages)
+			lc := NewLoaderContext(loader, "/go/src/bar", env[0], env[1], "/go", func(lc *LoaderContext) {
+				lc.context = buildutil.FakeContext(packages)
 			})
 			lcs[ii] = lc
 
@@ -156,34 +162,35 @@ func Test_LoadContext_Same_Package_Different_Env(t *testing.T) {
 	}
 
 	packageCount := 0
-	loader.Caravan().Iter(func(hash collections.Hash, node *collections.Node) bool {
+	loader.caravan.Iter(func(hash collections.Hash, node *collections.Node) bool {
 		packageCount++
 		return true
 	})
 
-	if packageCount != 1 {
+	if packageCount != 2 {
 		t.Errorf("Expected to find 1 packages; found %d\n", packageCount)
 	}
 
-	phash := calculateHashFromString("/go/src/bar")
-	n, ok := loader.Caravan().Find(phash)
-	if !ok {
-		t.Errorf("Failed to find package '%s' with hash %d", "/go/src/bar", phash)
-	}
-	p := n.Element.(*Package)
-
-	if 2 != len(p.distincts) {
-		t.Errorf("Expected to find 2 distinct packages; found %d", len(p.distincts))
-	}
-
-	for _, dp := range p.distincts {
-		if len(dp.files) != 2 {
-			t.Errorf("Package '%s' / %s has the wrong number of files; expected 2, got %d", p, dp, len(dp.files))
+	for _, lc := range lcs {
+		_, err := lc.FindDistinctPackage("/go/src/bar")
+		if err != nil {
+			t.Errorf("Failed to find package '%s'", "/go/src/bar")
 		}
 	}
+	// dp := n.Element.(*DistinctPackage)
+
+	// if 2 != len(p.distincts) {
+	// 	t.Errorf("Expected to find 2 distinct packages; found %d", len(p.distincts))
+	// }
+
+	// for _, dp := range p.distincts {
+	// 	if len(dp.files) != 2 {
+	// 		t.Errorf("Package %s has the wrong number of files; expected 2, got %d", dp, len(dp.files))
+	// 	}
+	// }
 
 	// for i := 0; i < 2; i++ {
-	// 	loader.Caravan().Iter(func(hash collections.Hash, node *collections.Node) bool {
+	// 	loader.caravan.Iter(func(hash collections.Hash, node *collections.Node) bool {
 	// 		p := node.Element.(*Package)
 	// 		dp := p.distincts[lcs[i].GetDistinctHash()]
 	// 		if len(dp.files) != 2 {

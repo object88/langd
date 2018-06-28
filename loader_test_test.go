@@ -34,8 +34,8 @@ func Test_Loader_Load_Tests(t *testing.T) {
 	loader := NewLoader()
 	defer loader.Close()
 
-	lc := NewLoaderContext(loader, "/go/src/bar", "darwin", "x86", "/go", func(lc LoaderContext) {
-		lc.(*loaderContext).context = buildutil.FakeContext(packages)
+	lc := NewLoaderContext(loader, "/go/src/bar", "darwin", "x86", "/go", func(lc *LoaderContext) {
+		lc.context = buildutil.FakeContext(packages)
 	})
 
 	err := loader.LoadDirectory(lc, "/go/src/bar")

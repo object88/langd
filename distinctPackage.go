@@ -15,7 +15,7 @@ import (
 type DistinctPackage struct {
 	Package   *Package
 	hash      collections.Hash
-	lc        LoaderContext
+	lc        *LoaderContext
 	loadState loadState
 
 	m sync.Mutex
@@ -28,8 +28,8 @@ type DistinctPackage struct {
 }
 
 // NewDistinctPackage returns a new instance of DistinctPackage
-func NewDistinctPackage(lc LoaderContext, p *Package) *DistinctPackage {
-	hash := lc.CalculateDistinctPackageHash(p.AbsPath)
+func NewDistinctPackage(lc *LoaderContext, p *Package) *DistinctPackage {
+	hash := lc.calculateDistinctPackageHash(p.AbsPath)
 	dp := &DistinctPackage{
 		Package: p,
 		files:   map[string]*File{},
@@ -53,7 +53,7 @@ func (dp *DistinctPackage) check() error {
 		}
 
 		dp.typesPkg = types.NewPackage(dp.Package.AbsPath, dp.buildPkg.Name)
-		dp.checker = types.NewChecker(dp.lc.GetConfig(), dp.Package.Fset, dp.typesPkg, info)
+		dp.checker = types.NewChecker(dp.lc.config, dp.Package.Fset, dp.typesPkg, info)
 	}
 
 	// Loop over files and clear previous errors; all will be rechecked.
@@ -85,14 +85,14 @@ func (dp *DistinctPackage) check() error {
 	return nil
 }
 
-func (dp *DistinctPackage) GenerateBuildPackage(context *build.Context) error {
-	buildPkg, err := context.Import(".", dp.Package.AbsPath, 0)
+func (dp *DistinctPackage) generateBuildPackage() error {
+	buildPkg, err := dp.lc.context.Import(".", dp.Package.AbsPath, 0)
 	if err != nil {
 		if _, ok := err.(*build.NoGoError); ok {
 			// There isn't any Go code here.
 			return nil
 		}
-		return errors.Wrapf(err, "GenerateBuildPackage (%s): error while importing with build.Context", dp)
+		return errors.Wrapf(err, "generateBuildPackage (%s): error while importing with build.Context", dp)
 	}
 
 	dp.buildPkg = buildPkg

@@ -71,7 +71,7 @@ type replyHandler interface {
 }
 
 // NewHandler creates a new Handler.
-func NewHandler(load *health.Load, loader langd.Loader) *Handler {
+func NewHandler(load *health.Load, loader *langd.Loader) *Handler {
 	// Hopefully these queues are sufficiently deep.  Otherwise, the handler
 	// will start blocking.
 	l := log.Stdout()

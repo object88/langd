@@ -21,8 +21,8 @@ func Test_Load_Own_Package(t *testing.T) {
 	fc := buildutil.FakeContext(packages)
 	loader := NewLoader()
 	defer loader.Close()
-	lc := NewLoaderContext(loader, "/go/src/bar", runtime.GOOS, runtime.GOARCH, "/go", func(lc LoaderContext) {
-		lc.(*loaderContext).context = fc
+	lc := NewLoaderContext(loader, "/go/src/bar", runtime.GOOS, runtime.GOARCH, "/go", func(lc *LoaderContext) {
+		lc.context = fc
 	})
 
 	err := loader.LoadDirectory(lc, "/go/src/bar")

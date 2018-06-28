@@ -16,8 +16,8 @@ import (
 
 // Workspace is a mass of code
 type Workspace struct {
-	Loader        Loader
-	LoaderContext LoaderContext
+	Loader        *Loader
+	LoaderContext *LoaderContext
 
 	log *log.Log
 
@@ -25,7 +25,7 @@ type Workspace struct {
 }
 
 // CreateWorkspace returns a new instance of the Workspace struct
-func CreateWorkspace(loader Loader, log *log.Log) *Workspace {
+func CreateWorkspace(loader *Loader, log *log.Log) *Workspace {
 	return &Workspace{
 		Loader:   loader,
 		log:      log,
@@ -35,14 +35,14 @@ func CreateWorkspace(loader Loader, log *log.Log) *Workspace {
 
 // AssignLoaderContext attaches the new loader context to the workspace.  The
 // workspace should start to reload the packages.
-func (w *Workspace) AssignLoaderContext(lc LoaderContext) {
+func (w *Workspace) AssignLoaderContext(lc *LoaderContext) {
 	w.LoaderContext = lc
 	// TODO: reload packages
 }
 
 // ChangeFile applies changes to an opened file
 func (w *Workspace) ChangeFile(absFilepath string, startLine, startCharacter, endLine, endCharacter int, text string) error {
-	buf, err := w.Loader.OpenedFiles().Get(absFilepath)
+	buf, err := w.Loader.openedFiles.Get(absFilepath)
 	if err != nil {
 		return err
 	}
@@ -74,7 +74,7 @@ func (w *Workspace) ChangeFile(absFilepath string, startLine, startCharacter, en
 
 // CloseFile will take a file out of the OpenedFiles struct and reparse
 func (w *Workspace) CloseFile(absPath string) error {
-	if err := w.Loader.OpenedFiles().Close(absPath); err != nil {
+	if err := w.Loader.openedFiles.Close(absPath); err != nil {
 		w.log.Warnf(err.Error())
 	}
 
@@ -408,7 +408,7 @@ func (w *Workspace) LocateReferences(p *token.Position) []token.Position {
 func (w *Workspace) OpenFile(absFilepath, text string) error {
 	hash := calculateHashFromString(text)
 
-	if err := w.Loader.OpenedFiles().EnsureOpened(absFilepath, text); err != nil {
+	if err := w.Loader.openedFiles.EnsureOpened(absFilepath, text); err != nil {
 		return errors.Wrap(err, "From OpenFile")
 	}
 
@@ -432,7 +432,7 @@ func (w *Workspace) OpenFile(absFilepath, text string) error {
 
 // ReplaceFile replaces the entire contents of an opened file
 func (w *Workspace) ReplaceFile(absFilepath, text string) error {
-	if err := w.Loader.OpenedFiles().Replace(absFilepath, text); err != nil {
+	if err := w.Loader.openedFiles.Replace(absFilepath, text); err != nil {
 		return err
 	}
 

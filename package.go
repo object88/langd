@@ -17,7 +17,7 @@ type Package struct {
 
 	m sync.Mutex
 
-	loaderContexts map[LoaderContext]bool
+	loaderContexts map[*LoaderContext]bool
 }
 
 // NewPackage creates a new instance of a Package struct
@@ -27,7 +27,7 @@ func NewPackage(absPath string) *Package {
 		hash:           calculateHashFromString(absPath),
 		Fset:           token.NewFileSet(),
 		fileHashes:     map[string]collections.Hash{},
-		loaderContexts: map[LoaderContext]bool{},
+		loaderContexts: map[*LoaderContext]bool{},
 	}
 
 	return p

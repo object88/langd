@@ -57,8 +57,8 @@ func Test_Load_AliasedImports(t *testing.T) {
 	fc := buildutil.FakeContext(packages)
 	loader := NewLoader()
 	defer loader.Close()
-	lc := NewLoaderContext(loader, "/go/src/foo", runtime.GOOS, runtime.GOARCH, "/go", func(lc LoaderContext) {
-		lc.(*loaderContext).context = fc
+	lc := NewLoaderContext(loader, "/go/src/foo", runtime.GOOS, runtime.GOARCH, "/go", func(lc *LoaderContext) {
+		lc.context = fc
 	})
 	loader.LoadDirectory(lc, "/go/src/foo")
 	lc.Wait()

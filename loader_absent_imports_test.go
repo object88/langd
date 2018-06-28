@@ -26,9 +26,9 @@ func Test_Load_Missing_Imports(t *testing.T) {
 	fc := buildutil.FakeContext(packages)
 	loader := NewLoader()
 	defer loader.Close()
-	lc := NewLoaderContext(loader, "/go/src/foo", runtime.GOOS, runtime.GOARCH, "/go", func(lc LoaderContext) {
-		lc.(*loaderContext).context = fc
-		lc.(*loaderContext).Log.SetLevel(log.Debug)
+	lc := NewLoaderContext(loader, "/go/src/foo", runtime.GOOS, runtime.GOARCH, "/go", func(lc *LoaderContext) {
+		lc.context = fc
+		lc.Log.SetLevel(log.Debug)
 	})
 
 	loader.LoadDirectory(lc, "/go/src/foo")
