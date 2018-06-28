@@ -18,13 +18,6 @@ import (
 	"github.com/pkg/errors"
 )
 
-// 	FindDistinctPackage(absPath string) (*DistinctPackage, error)
-// 	GetTags() string
-
-// 	IsDir(absPath string) bool
-// 	OpenFile(abdFilepath string) io.ReadCloser
-// 	ReadDir(absPath string) ([]os.FileInfo, error)
-
 // LoaderContext is the workspace-specific configuration and context for
 // building and type-checking
 type LoaderContext struct {
