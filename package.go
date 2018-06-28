@@ -9,7 +9,6 @@ import (
 
 // Package is the contents of a package
 type Package struct {
-	hash    collections.Hash
 	AbsPath string
 
 	fileHashes map[string]collections.Hash
@@ -24,18 +23,12 @@ type Package struct {
 func NewPackage(absPath string) *Package {
 	p := &Package{
 		AbsPath:        absPath,
-		hash:           calculateHashFromString(absPath),
 		Fset:           token.NewFileSet(),
 		fileHashes:     map[string]collections.Hash{},
 		loaderContexts: map[*LoaderContext]bool{},
 	}
 
 	return p
-}
-
-// Hash returns the collection hash for the given Package
-func (p *Package) Hash() collections.Hash {
-	return p.hash
 }
 
 // Invalidate resets the checker state for all distinct packages
