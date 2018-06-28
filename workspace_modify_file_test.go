@@ -1,7 +1,6 @@
 package langd
 
 import (
-	"fmt"
 	"go/token"
 	"strings"
 	"testing"
@@ -104,9 +103,6 @@ func Test_Workspace_Modify_Cross_File(t *testing.T) {
 	}
 
 	lc.Wait()
-
-	rope, _ := w.Loader.openedFiles.Get("/go/src/foo/foo2.go")
-	fmt.Printf("foo2.go:\n%s\n", rope.String())
 
 	errCount := 0
 	w.Loader.Errors(lc, func(file string, errs []FileError) {
