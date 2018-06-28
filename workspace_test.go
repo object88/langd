@@ -38,7 +38,7 @@ func workspaceSetup(t *testing.T, startingPath string, packages map[string]map[s
 
 	if expectFailure {
 		errCount := 0
-		w.Loader.Errors(lc, func(file string, errs []FileError) {
+		w.LoaderContext.Errors(func(file string, errs []FileError) {
 			errCount += len(errs)
 		})
 		if errCount == 0 {
@@ -47,7 +47,7 @@ func workspaceSetup(t *testing.T, startingPath string, packages map[string]map[s
 	} else {
 		errCount := 0
 		var buf bytes.Buffer
-		w.Loader.Errors(lc, func(file string, errs []FileError) {
+		w.LoaderContext.Errors(func(file string, errs []FileError) {
 			buf.WriteString(fmt.Sprintf("Loading error in %s:\n", file))
 			for k, err := range errs {
 				buf.WriteString(fmt.Sprintf("\t%02d: %s:%d %s\n", k, err.Filename, err.Line, err.Message))

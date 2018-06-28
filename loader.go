@@ -117,23 +117,6 @@ func (l *Loader) ensurePackage(absPath string) (*Package, bool) {
 	return p, !ok
 }
 
-// Errors exposes problems with code found during compilation on a file-by-file
-// basis.
-func (l *Loader) Errors(lc *LoaderContext, handleErrs func(file string, errs []FileError)) {
-	l.caravan.Iter(func(key collections.Hash, node *collections.Node) bool {
-		dp := node.Element.(*DistinctPackage)
-		if dp.lc != lc {
-			return true
-		}
-		for fname, f := range dp.files {
-			if len(f.errs) != 0 {
-				handleErrs(filepath.Join(dp.Package.AbsPath, fname), f.errs)
-			}
-		}
-		return true
-	})
-}
-
 // LoadDirectory adds the contents of a directory to the Loader
 func (l *Loader) LoadDirectory(lc *LoaderContext, path string) error {
 	fmt.Printf("loader::LoadDirectory: entered\n")

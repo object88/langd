@@ -64,7 +64,7 @@ func Test_Load_AliasedImports(t *testing.T) {
 	lc.Wait()
 
 	errCount := 0
-	loader.Errors(lc, func(file string, errs []FileError) {
+	lc.Errors(func(file string, errs []FileError) {
 		if errCount == 0 {
 			t.Errorf("Loading error in %s:\n", file)
 		}

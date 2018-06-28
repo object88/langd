@@ -56,7 +56,7 @@ func Test_Workspace_Hugo(t *testing.T) {
 
 	errCount := 0
 	var buf bytes.Buffer
-	l.Errors(lc, func(file string, errs []FileError) {
+	lc.Errors(func(file string, errs []FileError) {
 		if len(errs) == 0 {
 			return
 		}

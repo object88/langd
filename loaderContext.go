@@ -111,6 +111,33 @@ func NewLoaderContext(loader *Loader, startDir, goos, goarch, goroot string, opt
 	return lc
 }
 
+// Errors exposes problems with code found during compilation on a file-by-file
+// basis.
+func (lc *LoaderContext) Errors(handleErrs func(file string, errs []FileError)) {
+	for hash := range lc.distinctPackageHashSet {
+		n, ok := lc.loader.caravan.Find(hash)
+		if !ok {
+			// TODO: This is probably a poor way of handling this problem.  The error
+			// will bubble up to the user, who will have no idea what the hash means.
+			errs := []FileError{
+				FileError{
+					Message: fmt.Sprintf("Failed to find node in caravan with hash 0x%x", hash),
+					Warning: false,
+				},
+			}
+			handleErrs("", errs)
+			continue
+		}
+
+		dp := n.Element.(*DistinctPackage)
+		for fname, f := range dp.files {
+			if len(f.errs) != 0 {
+				handleErrs(filepath.Join(dp.Package.AbsPath, fname), f.errs)
+			}
+		}
+	}
+}
+
 func (lc *LoaderContext) calculateDistinctPackageHash(absPath string) collections.Hash {
 	phash := calculateHashFromString(absPath)
 	chash := combineHashes(phash, lc.hash)

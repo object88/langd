@@ -105,7 +105,7 @@ func Test_Workspace_Modify_Cross_File(t *testing.T) {
 	lc.Wait()
 
 	errCount := 0
-	w.Loader.Errors(lc, func(file string, errs []FileError) {
+	w.LoaderContext.Errors(func(file string, errs []FileError) {
 		for _, err := range errs {
 			t.Error(err.Message)
 		}

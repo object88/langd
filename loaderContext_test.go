@@ -54,8 +54,8 @@ func Test_LoadContext_Same_Package_Same_Env(t *testing.T) {
 		errCount++
 	}
 
-	loader.Errors(lc1, fn)
-	loader.Errors(lc2, fn)
+	lc1.Errors(fn)
+	lc2.Errors(fn)
 
 	if errCount != 0 {
 		t.Fatalf("Found %d errors", errCount)
@@ -145,7 +145,7 @@ func Test_LoadContext_Same_Package_Different_Env(t *testing.T) {
 
 	errCount := 0
 	for i := 0; i < 2; i++ {
-		loader.Errors(lcs[i], func(file string, errs []FileError) {
+		lcs[i].Errors(func(file string, errs []FileError) {
 			if errCount == 0 {
 				t.Errorf("Loading error in %s:\n", file)
 			}

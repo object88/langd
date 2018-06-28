@@ -35,7 +35,7 @@ func Test_Load_Missing_Imports(t *testing.T) {
 	lc.Wait()
 
 	errCount := 0
-	loader.Errors(lc, func(file string, errs []FileError) {
+	lc.Errors(func(file string, errs []FileError) {
 		t.Logf("Got %d errors in %s\n", len(errs), file)
 		for _, v := range errs {
 			t.Logf("\t%s\n", v.String())

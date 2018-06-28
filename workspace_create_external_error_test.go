@@ -32,7 +32,7 @@ func Test_Workspace_Change_Creates_Error(t *testing.T) {
 	lc.Wait()
 
 	errCount := 0
-	w.Loader.Errors(lc, func(file string, errs []FileError) {
+	w.LoaderContext.Errors(func(file string, errs []FileError) {
 		errCount += len(errs)
 	})
 
@@ -82,7 +82,7 @@ func Test_Workspace_Change_Creates_Error_Indirect(t *testing.T) {
 	lc.Wait()
 
 	errCount := 0
-	w.Loader.Errors(lc, func(file string, errs []FileError) {
+	w.LoaderContext.Errors(func(file string, errs []FileError) {
 		errCount += len(errs)
 	})
 

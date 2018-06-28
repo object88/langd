@@ -56,7 +56,7 @@ func Test_Loader_Load_Tests(t *testing.T) {
 		errCount++
 	}
 
-	loader.Errors(lc, fn)
+	lc.Errors(fn)
 
 	if errCount != 0 {
 		t.Fatalf("Found %d errors", errCount)

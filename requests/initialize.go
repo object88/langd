@@ -85,7 +85,7 @@ func (h *Handler) readRoot(root string) {
 	h.startProcessingQueue()
 
 	// Send off some errors.
-	h.workspace.Loader.Errors(h.workspace.LoaderContext, h.publishErrors)
+	h.workspace.LoaderContext.Errors(h.publishErrors)
 }
 
 func (h *Handler) publishErrors(file string, errs []langd.FileError) {
