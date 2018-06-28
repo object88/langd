@@ -40,7 +40,7 @@ func (rh *didOpenHandler) preprocess(params *json.RawMessage) error {
 	rh.fpath = fpath
 	rh.text = typedParams.TextDocument.Text
 
-	fmt.Printf("didOpen: Preprocessed %s\n", fpath)
+	rh.h.workspace.Loader.Log.Debugf("didOpen: Preprocessed %s\n", fpath)
 	return nil
 }
 
@@ -49,7 +49,7 @@ func (rh *didOpenHandler) work() error {
 		return fmt.Errorf("FAILED: Workspace doesn't exist on handler")
 	}
 
-	fmt.Printf("didOpen: working %s\n", rh.fpath)
+	rh.h.workspace.Loader.Log.Debugf("didOpen: working %s\n", rh.fpath)
 
 	return rh.h.workspace.OpenFile(rh.fpath, rh.text)
 }
