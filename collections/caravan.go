@@ -226,7 +226,7 @@ func checkLoop(fromHash Hash, n *Node, checkedNodes map[Hash]bool) error {
 // c := NewCaravan()
 // // ...
 // caravan.Iter(func(hash Hash, node *Node) bool {
-// 	 p := node.Element.(*Package)
+// 	 p := node.Element.(*DistinctPackage)
 // 	 // Do something with `p`
 // 	 return true
 // })
