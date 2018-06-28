@@ -1,7 +1,6 @@
 package langd
 
 import (
-	"fmt"
 	"sync"
 	"testing"
 	"time"
@@ -83,7 +82,7 @@ func Test_LoadContext_Same_Package_Same_Env(t *testing.T) {
 
 	if failed {
 		loader.caravan.Iter(func(hash collections.Hash, n *collections.Node) bool {
-			fmt.Printf("Have hash 0x%x: %s\n", hash, n.Element.(*DistinctPackage))
+			t.Errorf("Have hash 0x%x: %s\n", hash, n.Element.(*DistinctPackage))
 			return true
 		})
 	}
