@@ -25,20 +25,16 @@ func workspaceSetup(t *testing.T, startingPath string, packages map[string]map[s
 	w.AssignLoaderContext(lc)
 	w.log.SetLevel(log.Verbose)
 
-	// t.Logf("About to load directory '%s'\n", startingPath)
-	fmt.Printf("About to load directory '%s'\n", startingPath)
+	t.Logf("About to load directory '%s'\n", startingPath)
 	err := loader.LoadDirectory(lc, startingPath)
 	if err != nil {
 		t.Fatalf("Error while loading directory '%s': %s", startingPath, err.Error())
 	}
-	// t.Logf("Finished loading directory\n")
-	fmt.Printf("Finished loading directory\n")
+	t.Logf("Finished loading directory\n")
 
-	// t.Logf("Waiting for complete\n")
-	fmt.Printf("Waiting for complete\n")
+	t.Logf("Waiting for complete\n")
 	lc.Wait()
-	// t.Logf("Complete\n")
-	fmt.Printf("Complete\n")
+	t.Logf("Complete\n")
 
 	if expectFailure {
 		errCount := 0
