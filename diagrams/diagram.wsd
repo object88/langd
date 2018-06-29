@@ -6,7 +6,7 @@ interface types.ImporterFrom
 class Handler
 note right: Per user connection
 
-class Loader << singleton >> {
+class LoaderEngine << singleton >> {
 	- LoadDirectory(lc LoaderContext)
 }
 
@@ -25,6 +25,7 @@ class Package {
 
 class Workspace {
 	- loaderContext : LoaderContext
+	- loaderEngine : LoaderEngine
 	- startDir : string
 	- goroot : string
 	- os : string
@@ -34,13 +35,13 @@ class Workspace {
 
 Workspace "1" o-- "1" Handler
 LoaderContext "1" o-- "1" Workspace
-Loader "1" o-- "many" Workspace
+LoaderEngine "1" o-- "many" Workspace
 types.Config "1" o-- "1" LoaderContext
 types.Checker "1" o-- "1" Package
 types.Package "1" o-- "1" Package
 build.Package "1" o-- "1" Package
 Package "many" o-- "1" Caravan
-Caravan "1" o-- "1" Loader
+Caravan "1" o-- "1" LoaderEngine
 build.Context "1" o-- "1" LoaderContext
 
 @enduml

@@ -38,7 +38,7 @@ Once internal initialization is complete, the server is in the `initialized` sta
 
 The `initialize` request points to a filesystem path, which will be the root of the workspace.  That path and every directory under it will be scanned for Go code.  Additionally, and imported packages are loaded, down to the standard library.
 
-During the loading process, the loader keeps a map of discovered packages.  Each time that a package is encountered, the map be checked, and if the entry is missing, a goroutine will be started to load the AST.
+During the loading process, the loader engine keeps a map of discovered distinct packages; a distinct package is a set of package files differentiated by OS, architecture, or other build flags.  Each time that a distinct package is encountered, the map be checked, and if the entry is missing, a goroutine will be started to load the AST.
 
 As each package is loaded (and all dependencies are loaded), that package is fed to `config.Check` to build the map of uses, definitions, etc.
 
