@@ -4,7 +4,6 @@ import (
 	"runtime"
 	"testing"
 
-	"github.com/object88/langd/log"
 	"golang.org/x/tools/go/buildutil"
 )
 
@@ -21,20 +20,19 @@ func Test_Load_Own_Package(t *testing.T) {
 
 	fc := buildutil.FakeContext(packages)
 	loader := NewLoader()
-	loader.Log.SetLevel(log.Debug)
-	lc := NewLoaderContext(loader, runtime.GOOS, runtime.GOARCH, "/go", func(lc *LoaderContext) {
+	defer loader.Close()
+	lc := NewLoaderContext(loader, "/go/src/bar", runtime.GOOS, runtime.GOARCH, "/go", func(lc *LoaderContext) {
 		lc.context = fc
 	})
 
-	done := loader.Start()
-	err := loader.LoadDirectory(lc, "/go/src/bar")
+	err := lc.LoadDirectory("/go/src/bar")
 	if err != nil {
 		t.Fatalf("Error while loading: %s", err.Error())
 	}
-	<-done
+	lc.Wait()
 
 	errCount := 0
-	loader.Errors(func(file string, errs []FileError) {
+	lc.Errors(func(file string, errs []FileError) {
 		if errCount == 0 {
 			t.Errorf("Loading error in %s:\n", file)
 		}

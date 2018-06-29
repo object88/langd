@@ -19,7 +19,8 @@ func Test_Workspace_Hover_Local_Const(t *testing.T) {
 		},
 	}
 
-	w := workspaceSetup(t, "/go/src/foo", packages, false)
+	w, _, closer := workspaceSetup(t, "/go/src/foo", packages, false)
+	defer closer()
 
 	p := &token.Position{
 		Filename: "/go/src/foo/foo.go",
@@ -174,7 +175,8 @@ func Test_Workspace_Hover_Package_Func(t *testing.T) {
 				},
 			}
 
-			w := workspaceSetup(t, "/go/src/bar", packages, false)
+			w, _, closer := workspaceSetup(t, "/go/src/bar", packages, false)
+			defer closer()
 
 			p := &token.Position{
 				Filename: "/go/src/bar/bar.go",
@@ -237,7 +239,8 @@ func Test_Workspace_Hover_Struct_Pointer_Receiver_Func(t *testing.T) {
 				},
 			}
 
-			w := workspaceSetup(t, "/go/src/bar", packages, false)
+			w, _, closer := workspaceSetup(t, "/go/src/bar", packages, false)
+			defer closer()
 
 			p := &token.Position{
 				Filename: "/go/src/bar/bar.go",
@@ -300,7 +303,8 @@ func Test_Workspace_Hover_Struct_Value_Receiver_Func(t *testing.T) {
 				},
 			}
 
-			w := workspaceSetup(t, "/go/src/bar", packages, false)
+			w, _, closer := workspaceSetup(t, "/go/src/bar", packages, false)
+			defer closer()
 
 			p := &token.Position{
 				Filename: "/go/src/bar/bar.go",
@@ -332,7 +336,8 @@ func Test_Workspace_Hover_Local_Var_Basic(t *testing.T) {
 		},
 	}
 
-	w := workspaceSetup(t, "/go/src/foo", packages, false)
+	w, _, closer := workspaceSetup(t, "/go/src/foo", packages, false)
+	defer closer()
 
 	p := &token.Position{
 		Filename: "/go/src/foo/foo.go",
@@ -364,7 +369,8 @@ func Test_Workspace_Hover_Local_Var_Struct_Empty(t *testing.T) {
 		},
 	}
 
-	w := workspaceSetup(t, "/go/src/foo", packages, false)
+	w, _, closer := workspaceSetup(t, "/go/src/foo", packages, false)
+	defer closer()
 
 	p := &token.Position{
 		Filename: "/go/src/foo/foo.go",
@@ -399,7 +405,8 @@ func Test_Workspace_Hover_Local_Var_Struct_With_Fields(t *testing.T) {
 		},
 	}
 
-	w := workspaceSetup(t, "/go/src/foo", packages, false)
+	w, _, closer := workspaceSetup(t, "/go/src/foo", packages, false)
+	defer closer()
 
 	p := &token.Position{
 		Filename: "/go/src/foo/foo.go",
@@ -438,7 +445,8 @@ func Test_Workspace_Hover_Local_Var_Struct_Embedded(t *testing.T) {
 		},
 	}
 
-	w := workspaceSetup(t, "/go/src/foo", packages, false)
+	w, _, closer := workspaceSetup(t, "/go/src/foo", packages, false)
+	defer closer()
 
 	p := &token.Position{
 		Filename: "/go/src/foo/foo.go",

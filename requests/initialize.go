@@ -7,6 +7,7 @@ import (
 	"strings"
 
 	"github.com/object88/langd"
+	"github.com/spf13/viper"
 )
 
 const (
@@ -26,6 +27,8 @@ func (h *Handler) processInit(p *json.RawMessage) (interface{}, error) {
 
 	h.hFunc = h.initedHandler
 	h.rootURI = rootURI
+
+	h.ConfigureLoaderContext(rootURI, viper.New())
 
 	go h.readRoot(rootURI)
 
@@ -70,44 +73,45 @@ func (h *Handler) readRoot(root string) {
 		fmt.Printf("Failed to deliver message to client: %s\n", err.Error())
 	}
 
-	done := h.workspace.Loader.Start()
-
 	fmt.Printf("About to load %s\n", base)
-	h.workspace.Loader.LoadDirectory(h.workspace.LoaderContext, base)
+	h.workspace.LoaderContext.LoadDirectory(base)
 
 	// NOTE: We are not doing anything with this, so... BLOCKED.
 	fmt.Printf("Waiting...\n")
-	<-done
+
+	h.workspace.LoaderContext.Wait()
 
 	// Start a routine to process requests
 	h.startProcessingQueue()
 
 	// Send off some errors.
-	h.workspace.Loader.Errors(func(file string, errs []langd.FileError) {
-		params := &PublishDiagnosticsParams{
-			URI:         DocumentURI("file://" + file),
-			Diagnostics: make([]Diagnostic, len(errs)),
+	h.workspace.LoaderContext.Errors(h.publishErrors)
+}
+
+func (h *Handler) publishErrors(file string, errs []langd.FileError) {
+	params := &PublishDiagnosticsParams{
+		URI:         DocumentURI("file://" + file),
+		Diagnostics: make([]Diagnostic, len(errs)),
+	}
+	for k, e := range errs {
+		s := ErrorDiagnosticSeverity
+		if e.Warning {
+			s = WarningDiagnosticSeverity
 		}
-		for k, e := range errs {
-			s := ErrorDiagnosticSeverity
-			if e.Warning {
-				s = WarningDiagnosticSeverity
-			}
-			params.Diagnostics[k] = Diagnostic{
-				Range: Range{
-					Start: Position{
-						Line:      e.Line - 1,
-						Character: e.Column,
-					},
-					End: Position{
-						Line:      e.Line - 1,
-						Character: e.Column,
-					},
+		params.Diagnostics[k] = Diagnostic{
+			Range: Range{
+				Start: Position{
+					Line:      e.Line - 1,
+					Character: e.Column,
 				},
-				Severity: &s,
-				Message:  e.Message,
-			}
+				End: Position{
+					Line:      e.Line - 1,
+					Character: e.Column,
+				},
+			},
+			Severity: &s,
+			Message:  e.Message,
 		}
-		publishDiagnostics(context.Background(), h.conn, params)
-	})
+	}
+	publishDiagnostics(context.Background(), h.conn, params)
 }

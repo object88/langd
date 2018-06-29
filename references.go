@@ -9,13 +9,11 @@ import (
 )
 
 type ref struct {
-	pkg *Package
+	dp  *DistinctPackage
 	pos token.Pos
 }
 
-// func (w *Workspace) locateReferences(ident *ast.Ident, pkg *Package) []*ref {
-func (w *Workspace) locateReferences(obj types.Object, pkg *Package) []*ref {
-	// obj := pkg.checker.ObjectOf(ident)
+func (w *Workspace) locateReferences(obj types.Object, dp *DistinctPackage) []*ref {
 	if obj == nil {
 		fmt.Printf("No obj provided\n")
 		// Special case
@@ -34,24 +32,23 @@ func (w *Workspace) locateReferences(obj types.Object, pkg *Package) []*ref {
 
 	// Start off with in-package references, shall we?
 	var refs []*ref
-	for id, use := range pkg.checker.Uses {
+	for id, use := range dp.checker.Uses {
 		if sameObj(obj, use) {
 			refs = append(refs, &ref{
-				pkg: pkg,
+				dp:  dp,
 				pos: id.Pos(),
 			})
 		}
 	}
 
 	if obj.Exported() {
-		key := w.LoaderContext.BuildKey(pkg.AbsPath)
-		n, ok := w.Loader.caravan.Find(key)
+		n, ok := w.Loader.caravan.Find(dp.Hash())
 		if !ok {
 			// Should never get here.
 			panic("Shit.")
 		}
-		asc := flattenAscendants(n)
-		ascRefs := checkAscendants(asc, obj)
+		asc := flattenAscendants(false, n)
+		ascRefs := w.checkAscendants(asc, obj)
 		for _, r := range ascRefs {
 			refs = append(refs, r)
 		}
@@ -61,14 +58,14 @@ func (w *Workspace) locateReferences(obj types.Object, pkg *Package) []*ref {
 	return refs
 }
 
-func checkAscendants(ascendants map[string]*Package, obj types.Object) []*ref {
+func (w *Workspace) checkAscendants(ascendants map[string]*DistinctPackage, obj types.Object) []*ref {
 	refs := []*ref{}
 
-	for _, pkg := range ascendants {
-		for id, use := range pkg.checker.Uses {
+	for _, dp := range ascendants {
+		for id, use := range dp.checker.Uses {
 			if sameObj(obj, use) {
 				refs = append(refs, &ref{
-					pkg: pkg,
+					dp:  dp,
 					pos: id.Pos(),
 				})
 			}
@@ -77,21 +74,27 @@ func checkAscendants(ascendants map[string]*Package, obj types.Object) []*ref {
 	return refs
 }
 
-func flattenAscendants(n *collections.Node) map[string]*Package {
-	asc := map[string]*Package{}
+func flattenAscendants(includeNodes bool, nodes ...*collections.Node) map[string]*DistinctPackage {
+	asc := map[string]*DistinctPackage{}
 
 	var f func(n *collections.Node)
 	f = func(n *collections.Node) {
 		for _, n1 := range n.Ascendants {
-			p := n1.Element.(*Package)
-			if _, ok := asc[p.AbsPath]; !ok {
-				asc[p.AbsPath] = p
+			dp := n1.Element.(*DistinctPackage)
+			if _, ok := asc[dp.Package.AbsPath]; !ok {
+				asc[dp.Package.AbsPath] = dp
 				f(n1)
 			}
 		}
 	}
 
-	f(n)
+	for _, n := range nodes {
+		if includeNodes {
+			dp := n.Element.(*DistinctPackage)
+			asc[dp.Package.AbsPath] = dp
+		}
+		f(n)
+	}
 
 	return asc
 }

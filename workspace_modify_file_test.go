@@ -1,7 +1,6 @@
 package langd
 
 import (
-	"fmt"
 	"go/token"
 	"strings"
 	"testing"
@@ -21,15 +20,14 @@ func Test_Workspace_Modify_File(t *testing.T) {
 		},
 	}
 
-	w := workspaceSetup(t, "/go/src/foo", packages, false)
-
-	done := w.Loader.Start()
+	w, lc, closer := workspaceSetup(t, "/go/src/foo", packages, false)
+	defer closer()
 
 	if err := w.OpenFile("/go/src/foo/foo.go", src1); err != nil {
 		t.Fatalf("Error while opening file: %s", err.Error())
 	}
 
-	<-done
+	lc.Wait()
 
 	declPosition := &token.Position{
 		Filename: "/go/src/foo/foo.go",
@@ -51,7 +49,9 @@ func Test_Workspace_Modify_File(t *testing.T) {
 		t.Errorf(err.Error())
 	}
 
-	rope := w.Loader.openedFiles["/go/src/foo/foo.go"]
+	lc.Wait()
+
+	rope, _ := w.Loader.openedFiles.Get("/go/src/foo/foo.go")
 	ropeString := rope.String()
 
 	if strings.Contains(ropeString, "foof") {
@@ -61,7 +61,7 @@ func Test_Workspace_Modify_File(t *testing.T) {
 		t.Errorf("Changed file does not contain foos:\n%s\n", ropeString)
 	}
 
-	<-done
+	lc.Wait()
 
 	pos, err = w.LocateDeclaration(usagePosition)
 	if err != nil {
@@ -88,27 +88,24 @@ func Test_Workspace_Modify_Cross_File(t *testing.T) {
 		},
 	}
 
-	w := workspaceSetup(t, "/go/src/foo", packages, true)
-
-	done := w.Loader.Start()
+	w, lc, closer := workspaceSetup(t, "/go/src/foo", packages, true)
+	defer closer()
 
 	if err := w.OpenFile("/go/src/foo/foo2.go", src2); err != nil {
 		t.Fatalf("Error while opening file: %s", err.Error())
 	}
 
-	<-done
+	lc.Wait()
 
 	// Change the definition to reflect what was used in
 	if err := w.ChangeFile("/go/src/foo/foo2.go", 1, 5, 1, 11, "ival"); err != nil {
 		t.Errorf(err.Error())
 	}
 
-	<-done
-
-	fmt.Printf("foo2.go:\n%s\n", w.Loader.openedFiles["/go/src/foo/foo2.go"].String())
+	lc.Wait()
 
 	errCount := 0
-	w.Loader.Errors(func(file string, errs []FileError) {
+	w.LoaderContext.Errors(func(file string, errs []FileError) {
 		for _, err := range errs {
 			t.Error(err.Message)
 		}

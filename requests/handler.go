@@ -74,22 +74,19 @@ type replyHandler interface {
 func NewHandler(load *health.Load, loader *langd.Loader) *Handler {
 	// Hopefully these queues are sufficiently deep.  Otherwise, the handler
 	// will start blocking.
-	lc := langd.NewLoaderContext(loader, runtime.GOOS, runtime.GOARCH, runtime.GOROOT(), func(lc *langd.LoaderContext) {
-		lc.Log = loader.Log
-	})
-	loader.Log.SetLevel(log.Verbose)
+	l := log.Stdout()
 
 	outgoingQueue := make(chan int, 256)
 	h := &Handler{
 		incomingQueue: make(chan int, 1024),
 		load:          load,
-		log:           loader.Log,
+		log:           l,
 		outgoingQueue: outgoingQueue,
 		rm:            map[int]requestHandler{},
 		rq:            newRequestMap(getIniterFuncs()),
 		sq:            sigqueue.CreateSigqueue(outgoingQueue),
 
-		workspace: langd.CreateWorkspace(loader, lc, loader.Log),
+		workspace: langd.CreateWorkspace(loader, l),
 	}
 
 	h.hFunc = h.uninitedHandler
@@ -97,9 +94,9 @@ func NewHandler(load *health.Load, loader *langd.Loader) *Handler {
 	return h
 }
 
-// ConfigureLoader will instantiate the loader if its not present, and provide
+// ConfigureLoaderContext will instantiate the loader if its not present, and provide
 // the GOROOT specified by the settings
-func (h *Handler) ConfigureLoader(settings *viper.Viper) {
+func (h *Handler) ConfigureLoaderContext(startDir string, settings *viper.Viper) {
 	root := settings.GetString("go.goroot")
 	if root == "" {
 		root = runtime.GOROOT()
@@ -112,9 +109,7 @@ func (h *Handler) ConfigureLoader(settings *viper.Viper) {
 	if goos == "" {
 		goos = runtime.GOOS
 	}
-	loaderContext := langd.NewLoaderContext(h.workspace.Loader, goos, goarch, root, func(lc *langd.LoaderContext) {
-		lc.Log = h.log
-	})
+	loaderContext := langd.NewLoaderContext(h.workspace.Loader, startDir, goos, goarch, root)
 
 	h.workspace.AssignLoaderContext(loaderContext)
 }
@@ -194,6 +189,10 @@ func (h *Handler) initedHandler(ctx context.Context, req *jsonrpc2.Request) {
 	}
 
 	rh := f(ctx, h, req)
+	if rh == nil {
+		h.log.Errorf("Initer method did not return a handler\n")
+		return
+	}
 	h.rm[rh.ID()] = rh
 
 	// NOTE: This should probably be removed after all handlers have been

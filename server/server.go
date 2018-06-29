@@ -45,7 +45,9 @@ func InitializeService() error {
 		loader: langd.NewLoader(),
 	}
 
-	s.loader.Log = l
+	// s.loader.Start()
+
+	// s.loader.Log = l
 
 	grpcLis, err := net.Listen("tcp", grpcPort)
 	if err != nil {

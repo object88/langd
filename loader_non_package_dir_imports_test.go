@@ -29,15 +29,15 @@ func Test_Load_PackageWithDifferentDir(t *testing.T) {
 
 	fc := buildutil.FakeContext(packages)
 	loader := NewLoader()
-	lc := NewLoaderContext(loader, runtime.GOOS, runtime.GOARCH, "/go", func(lc *LoaderContext) {
+	defer loader.Close()
+	lc := NewLoaderContext(loader, "/go/src/foo", runtime.GOOS, runtime.GOARCH, "/go", func(lc *LoaderContext) {
 		lc.context = fc
 	})
-	done := loader.Start()
-	loader.LoadDirectory(lc, "/go/src/foo")
-	<-done
+	lc.LoadDirectory("/go/src/foo")
+	lc.Wait()
 
 	errCount := 0
-	loader.Errors(func(file string, errs []FileError) {
+	lc.Errors(func(file string, errs []FileError) {
 		if errCount == 0 {
 			t.Errorf("Loading error in %s:\n", file)
 		}

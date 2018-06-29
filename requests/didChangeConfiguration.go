@@ -46,12 +46,8 @@ func (rh *didChangeConfigurationHandler) preprocess(params *json.RawMessage) err
 }
 
 func (rh *didChangeConfigurationHandler) work() error {
-
-	// rh.h.workspace.AssignSettings(rh.settings)
-
-	// rh.h.InitLoader("")
-
-	rh.h.ConfigureLoader(rh.settings)
+	startDir := rh.h.workspace.LoaderContext.StartDir
+	rh.h.ConfigureLoaderContext(startDir, rh.settings)
 
 	return nil
 }

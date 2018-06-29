@@ -10,9 +10,8 @@ import (
 	"testing"
 
 	"github.com/object88/langd"
-	"github.com/sourcegraph/jsonrpc2"
-
 	"github.com/object88/langd/health"
+	"github.com/sourcegraph/jsonrpc2"
 )
 
 func Test_Handler_Created(t *testing.T) {
@@ -60,6 +59,13 @@ func (mc *MockConn) DumpCalls() string {
 	return sb.String()
 }
 
+func (mc *MockConn) ResetCalls() {
+	for name := range mc.calls {
+		mc.calls[name] = 0
+	}
+	mc.totalCalls = 0
+}
+
 func (mc *MockConn) TrackCall() {
 	pc, _, _, _ := runtime.Caller(1)
 	fn := runtime.FuncForPC(pc)
@@ -98,12 +104,18 @@ func Test_Handler_Uninited_Init(t *testing.T) {
 	conn, h, def := setupHandler()
 	defer def()
 
-	initParams := InitializeParams{}
-	req := makeRequest(t, "initialize", 0, initParams)
+	initParams := InitializeParams{
+		RootURI: DocumentURI("foo"),
+	}
+	req := makeRequest(t, "initialize", 0, initParams, true)
 	h.Handle(context.Background(), nil, req)
 
 	if conn.calls["Reply"] != 1 {
 		t.Errorf("Incorrect number of calls to Reply; expected 1, got %d\n%s", conn.calls["Reply"], conn.DumpCalls())
+	}
+
+	if h.rootURI != "foo" {
+		t.Errorf("Incorrect RootURI property: expected 'foo', got '%s'", h.rootURI)
 	}
 }
 
@@ -111,7 +123,7 @@ func Test_Handler_Uninited_ExitNotification(t *testing.T) {
 	conn, h, def := setupHandler()
 	defer def()
 
-	req := makeRequest(t, "exit", 0, nil)
+	req := makeRequest(t, "exit", 0, nil, true)
 	h.Handle(context.Background(), nil, req)
 
 	if conn.totalCalls != 0 {
@@ -123,12 +135,51 @@ func Test_Handler_Uninited_InvalidRequest(t *testing.T) {
 	conn, h, def := setupHandler()
 	defer def()
 
-	req := makeRequest(t, "textDocument/didOpen", 0, nil)
+	referencesParam := &referencesHandler{}
+	req := makeRequest(t, referencesMethod, 0, referencesParam, false)
 	h.Handle(context.Background(), nil, req)
 
 	if conn.calls["ReplyWithError"] != 1 {
 		t.Errorf("Incorrect number of calls to ReplyWithError; expected 1, got %d\n%s", conn.calls["ReplyWithError"], conn.DumpCalls())
 	}
+}
+
+func Test_Handler_Inited_TextDocument_didOpen(t *testing.T) {
+	conn, h, def := setupHandler()
+	defer def()
+
+	initHandler(t, h, conn)
+
+	req := makeRequest(t, didOpenNotification, h.NextCid(), DidOpenTextDocumentParams{}, true)
+
+	cid := h.ccount
+	h.Handle(context.Background(), nil, req)
+
+	rh := h.rm[cid]
+	if rh == nil {
+		t.Errorf("RequestHandler is nil")
+	}
+
+	// Checking too soon; must be able to wait until we know that the request is processed.
+	rhID := <-h.incomingQueue
+
+	if rhID != cid {
+		t.Errorf("Bad ID %d from incoming queue", rhID)
+	}
+
+	// if conn.calls["Reply"] != 1 {
+	// 	t.Errorf("Incorrect number of calls to Reply; expected 1, got %d\n%s", conn.calls["Reply"], conn.DumpCalls())
+	// }
+}
+
+func Test_Handler_Timing(t *testing.T) {
+	conn, h, def := setupHandler()
+	defer def()
+
+	initHandler(t, h, conn)
+
+	h.startProcessingQueue()
+
 }
 
 func setupHandler() (*MockConn, *Handler, func()) {
@@ -144,15 +195,25 @@ func setupHandler() (*MockConn, *Handler, func()) {
 	}
 }
 
+func initHandler(t *testing.T, h *Handler, conn *MockConn) {
+	initParams := InitializeParams{
+		RootURI: DocumentURI("foo"),
+	}
+	req := makeRequest(t, initializeMethod, h.NextCid(), initParams, false)
+	h.Handle(context.Background(), nil, req)
+
+	conn.ResetCalls()
+}
+
 func makeID(id int) jsonrpc2.ID {
 	return jsonrpc2.ID{
-		Num:      0,
+		Num:      uint64(id),
 		Str:      "",
 		IsString: false,
 	}
 }
 
-func makeRequest(t *testing.T, meth string, id int, params interface{}) *jsonrpc2.Request {
+func makeRequest(t *testing.T, meth string, id int, params interface{}, isNotif bool) *jsonrpc2.Request {
 	bytes, err := json.Marshal(params)
 	if err != nil {
 		t.Errorf("Failed to marshal InitializeParams: %s", err.Error())
@@ -163,7 +224,7 @@ func makeRequest(t *testing.T, meth string, id int, params interface{}) *jsonrpc
 		Method: meth,
 		Params: &p,
 		ID:     makeID(id),
-		Notif:  false,
+		Notif:  isNotif,
 		Meta:   nil,
 	}
 

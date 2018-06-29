@@ -15,25 +15,30 @@ import (
 	"golang.org/x/tools/go/buildutil"
 )
 
-func workspaceSetup(t *testing.T, startingPath string, packages map[string]map[string]string, expectFailure bool) *Workspace {
+func workspaceSetup(t *testing.T, startingPath string, packages map[string]map[string]string, expectFailure bool) (*Workspace, *LoaderContext, func()) {
 	fc := buildutil.FakeContext(packages)
 	loader := NewLoader()
-	lc := NewLoaderContext(loader, runtime.GOOS, runtime.GOARCH, "/go", func(lc *LoaderContext) {
+	lc := NewLoaderContext(loader, startingPath, runtime.GOOS, runtime.GOARCH, "/go", func(lc *LoaderContext) {
 		lc.context = fc
 	})
-	w := CreateWorkspace(loader, lc, log.CreateLog(os.Stdout))
+	w := CreateWorkspace(loader, log.CreateLog(os.Stdout))
+	w.AssignLoaderContext(lc)
 	w.log.SetLevel(log.Verbose)
 
-	done := loader.Start()
-	err := loader.LoadDirectory(lc, startingPath)
+	t.Logf("About to load directory '%s'\n", startingPath)
+	err := lc.LoadDirectory(startingPath)
 	if err != nil {
 		t.Fatalf("Error while loading directory '%s': %s", startingPath, err.Error())
 	}
-	<-done
+	t.Logf("Finished loading directory\n")
+
+	t.Logf("Waiting for complete\n")
+	lc.Wait()
+	t.Logf("Complete\n")
 
 	if expectFailure {
 		errCount := 0
-		w.Loader.Errors(func(file string, errs []FileError) {
+		w.LoaderContext.Errors(func(file string, errs []FileError) {
 			errCount += len(errs)
 		})
 		if errCount == 0 {
@@ -42,7 +47,7 @@ func workspaceSetup(t *testing.T, startingPath string, packages map[string]map[s
 	} else {
 		errCount := 0
 		var buf bytes.Buffer
-		w.Loader.Errors(func(file string, errs []FileError) {
+		w.LoaderContext.Errors(func(file string, errs []FileError) {
 			buf.WriteString(fmt.Sprintf("Loading error in %s:\n", file))
 			for k, err := range errs {
 				buf.WriteString(fmt.Sprintf("\t%02d: %s:%d %s\n", k, err.Filename, err.Line, err.Message))
@@ -56,7 +61,7 @@ func workspaceSetup(t *testing.T, startingPath string, packages map[string]map[s
 		}
 	}
 
-	return w
+	return w, lc, func() { loader.Close() }
 }
 
 func testDeclaration(t *testing.T, w *Workspace, usagePosition, expectedDeclPosition *token.Position) {
