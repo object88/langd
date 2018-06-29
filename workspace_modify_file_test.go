@@ -51,7 +51,7 @@ func Test_Workspace_Modify_File(t *testing.T) {
 
 	lc.Wait()
 
-	rope, _ := w.Loader.openedFiles.Get("/go/src/foo/foo.go")
+	rope, _ := w.LoaderEngine.openedFiles.Get("/go/src/foo/foo.go")
 	ropeString := rope.String()
 
 	if strings.Contains(ropeString, "foof") {

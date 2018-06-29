@@ -16,7 +16,7 @@ import (
 
 // Workspace is a mass of code
 type Workspace struct {
-	Loader        *Loader
+	LoaderEngine  *LoaderEngine
 	LoaderContext *LoaderContext
 
 	log *log.Log
@@ -25,11 +25,11 @@ type Workspace struct {
 }
 
 // CreateWorkspace returns a new instance of the Workspace struct
-func CreateWorkspace(loader *Loader, log *log.Log) *Workspace {
+func CreateWorkspace(le *LoaderEngine, log *log.Log) *Workspace {
 	return &Workspace{
-		Loader:   loader,
-		log:      log,
-		settings: viper.New(),
+		LoaderEngine: le,
+		log:          log,
+		settings:     viper.New(),
 	}
 }
 
@@ -42,7 +42,7 @@ func (w *Workspace) AssignLoaderContext(lc *LoaderContext) {
 
 // ChangeFile applies changes to an opened file
 func (w *Workspace) ChangeFile(absFilepath string, startLine, startCharacter, endLine, endCharacter int, text string) error {
-	buf, err := w.Loader.openedFiles.Get(absFilepath)
+	buf, err := w.LoaderEngine.openedFiles.Get(absFilepath)
 	if err != nil {
 		return err
 	}
@@ -67,14 +67,14 @@ func (w *Workspace) ChangeFile(absFilepath string, startLine, startCharacter, en
 		return errors.Wrap(err, "ChangeFile: failed to alter the file buffer")
 	}
 
-	w.Loader.InvalidatePackage(filepath.Dir(absFilepath))
+	w.LoaderEngine.InvalidatePackage(filepath.Dir(absFilepath))
 
 	return nil
 }
 
 // CloseFile will take a file out of the OpenedFiles struct and reparse
 func (w *Workspace) CloseFile(absPath string) error {
-	if err := w.Loader.openedFiles.Close(absPath); err != nil {
+	if err := w.LoaderEngine.openedFiles.Close(absPath); err != nil {
 		w.log.Warnf(err.Error())
 	}
 
@@ -408,7 +408,7 @@ func (w *Workspace) LocateReferences(p *token.Position) []token.Position {
 func (w *Workspace) OpenFile(absFilepath, text string) error {
 	hash := calculateHashFromString(text)
 
-	if err := w.Loader.openedFiles.EnsureOpened(absFilepath, text); err != nil {
+	if err := w.LoaderEngine.openedFiles.EnsureOpened(absFilepath, text); err != nil {
 		return errors.Wrap(err, "From OpenFile")
 	}
 
@@ -423,7 +423,7 @@ func (w *Workspace) OpenFile(absFilepath, text string) error {
 		return nil
 	}
 
-	w.Loader.InvalidatePackage(absPath)
+	w.LoaderEngine.InvalidatePackage(absPath)
 
 	w.log.Debugf("Shadowed file '%s'\n", absFilepath)
 
@@ -432,12 +432,12 @@ func (w *Workspace) OpenFile(absFilepath, text string) error {
 
 // ReplaceFile replaces the entire contents of an opened file
 func (w *Workspace) ReplaceFile(absFilepath, text string) error {
-	if err := w.Loader.openedFiles.Replace(absFilepath, text); err != nil {
+	if err := w.LoaderEngine.openedFiles.Replace(absFilepath, text); err != nil {
 		return err
 	}
 
 	absPath := filepath.Dir(absFilepath)
-	w.Loader.InvalidatePackage(absPath)
+	w.LoaderEngine.InvalidatePackage(absPath)
 
 	return nil
 }

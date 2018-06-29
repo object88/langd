@@ -34,7 +34,7 @@ func Test_Scale(t *testing.T) {
 
 	logger := log.Stdout()
 	logger.SetLevel(log.Debug)
-	l := NewLoader()
+	l := NewLoaderEngine()
 	defer l.Close()
 	lc := NewLoaderContext(l, path, "darwin", "amd64", runtime.GOROOT())
 	w := CreateWorkspace(l, logger)
@@ -79,7 +79,7 @@ func Benchmark_Scale(b *testing.B) {
 	path := "../langd-example"
 
 	for n := 0; n < b.N; n++ {
-		l := NewLoader()
+		l := NewLoaderEngine()
 		defer l.Close()
 		lc := NewLoaderContext(l, path, "darwin", "amd64", runtime.GOROOT())
 		w := CreateWorkspace(l, logger)

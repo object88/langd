@@ -29,7 +29,7 @@ type LoaderContext struct {
 
 	Log *log.Log
 
-	loader *Loader
+	le *LoaderEngine
 
 	config     *types.Config
 	context    *build.Context
@@ -46,7 +46,7 @@ type LoaderContext struct {
 type LoaderContextOption func(lc *LoaderContext)
 
 // NewLoaderContext creates a new LoaderContext
-func NewLoaderContext(loader *Loader, startDir, goos, goarch, goroot string, options ...LoaderContextOption) *LoaderContext {
+func NewLoaderContext(le *LoaderEngine, startDir, goos, goarch, goroot string, options ...LoaderContextOption) *LoaderContext {
 	globs := make([]glob.Glob, 2)
 	globs[0] = glob.MustCompile(filepath.Join("**", ".*"))
 	globs[1] = glob.MustCompile(filepath.Join("**", "testdata"))
@@ -60,9 +60,9 @@ func NewLoaderContext(loader *Loader, startDir, goos, goarch, goroot string, opt
 	}
 
 	lc := &LoaderContext{
-		StartDir:               startDir,
-		filteredPaths:          globs,
-		loader:                 loader,
+		StartDir:      startDir,
+		filteredPaths: globs,
+		le:            le,
 		distinctPackageHashSet: map[collections.Hash]bool{},
 	}
 
@@ -115,7 +115,7 @@ func NewLoaderContext(loader *Loader, startDir, goos, goarch, goroot string, opt
 // basis.
 func (lc *LoaderContext) Errors(handleErrs func(file string, errs []FileError)) {
 	for hash := range lc.distinctPackageHashSet {
-		n, ok := lc.loader.caravan.Find(hash)
+		n, ok := lc.le.caravan.Find(hash)
 		if !ok {
 			// TODO: This is probably a poor way of handling this problem.  The error
 			// will bubble up to the user, who will have no idea what the hash means.
@@ -174,7 +174,7 @@ func (lc *LoaderContext) areAllPackagesComplete() bool {
 
 	complete := true
 
-	caravan := lc.loader.caravan
+	caravan := lc.le.caravan
 	for chash := range lc.distinctPackageHashSet {
 		n, ok := caravan.Find(chash)
 		if !ok {
@@ -208,10 +208,10 @@ func (lc *LoaderContext) checkPackage(dp *DistinctPackage) error {
 
 func (lc *LoaderContext) ensureDistinctPackage(absPath string) (*DistinctPackage, bool) {
 	chash := lc.calculateDistinctPackageHash(absPath)
-	n, created := lc.loader.caravan.Ensure(chash, func() collections.Hasher {
+	n, created := lc.le.caravan.Ensure(chash, func() collections.Hasher {
 		lc.Log.Debugf("ensureDistinctPackage: miss on hash 0x%x; creating package for '%s'.\n", chash, absPath)
 
-		p, _ := lc.loader.ensurePackage(absPath)
+		p, _ := lc.le.ensurePackage(absPath)
 		return NewDistinctPackage(lc, p)
 	})
 	dp := n.Element.(*DistinctPackage)
@@ -230,7 +230,7 @@ func (lc *LoaderContext) ensureDistinctPackage(absPath string) (*DistinctPackage
 // FindDistinctPackage will locate the distinct package at the provided path
 func (lc *LoaderContext) FindDistinctPackage(absPath string) (*DistinctPackage, error) {
 	chash := lc.calculateDistinctPackageHash(absPath)
-	n, ok := lc.loader.caravan.Find(chash)
+	n, ok := lc.le.caravan.Find(chash)
 	if !ok {
 		return nil, errors.Errorf("Loader does not have an entry for %s with tags %s", absPath, lc.GetTags())
 	}
@@ -264,7 +264,7 @@ func (lc *LoaderContext) LoadDirectory(path string) error {
 	}
 
 	lc.Log.Verbosef("LoaderContext.LoadDirectory: reading dir '%s'\n", absPath)
-	lc.loader.readDir(lc, absPath)
+	lc.le.readDir(lc, absPath)
 
 	return nil
 }

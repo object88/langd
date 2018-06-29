@@ -71,7 +71,7 @@ type replyHandler interface {
 }
 
 // NewHandler creates a new Handler.
-func NewHandler(load *health.Load, loader *langd.Loader) *Handler {
+func NewHandler(load *health.Load, le *langd.LoaderEngine) *Handler {
 	// Hopefully these queues are sufficiently deep.  Otherwise, the handler
 	// will start blocking.
 	l := log.Stdout()
@@ -86,7 +86,7 @@ func NewHandler(load *health.Load, loader *langd.Loader) *Handler {
 		rq:            newRequestMap(getIniterFuncs()),
 		sq:            sigqueue.CreateSigqueue(outgoingQueue),
 
-		workspace: langd.CreateWorkspace(loader, l),
+		workspace: langd.CreateWorkspace(le, l),
 	}
 
 	h.hFunc = h.uninitedHandler
@@ -109,7 +109,7 @@ func (h *Handler) ConfigureLoaderContext(startDir string, settings *viper.Viper)
 	if goos == "" {
 		goos = runtime.GOOS
 	}
-	loaderContext := langd.NewLoaderContext(h.workspace.Loader, startDir, goos, goarch, root)
+	loaderContext := langd.NewLoaderContext(h.workspace.LoaderEngine, startDir, goos, goarch, root)
 
 	h.workspace.AssignLoaderContext(loaderContext)
 }

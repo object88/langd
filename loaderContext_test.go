@@ -18,14 +18,14 @@ func Test_LoadContext_Same_Package_Same_Env(t *testing.T) {
 		},
 	}
 
-	loader := NewLoader()
-	defer loader.Close()
+	le := NewLoaderEngine()
+	defer le.Close()
 
-	lc1 := NewLoaderContext(loader, "/go/src/bar", "darwin", "x86", "/go", func(lc *LoaderContext) {
+	lc1 := NewLoaderContext(le, "/go/src/bar", "darwin", "x86", "/go", func(lc *LoaderContext) {
 		lc.context = buildutil.FakeContext(packages)
 	})
 
-	lc2 := NewLoaderContext(loader, "/go/src/bar", "linux", "arm", "/go", func(lc *LoaderContext) {
+	lc2 := NewLoaderContext(le, "/go/src/bar", "linux", "arm", "/go", func(lc *LoaderContext) {
 		lc.context = buildutil.FakeContext(packages)
 	})
 
@@ -61,7 +61,7 @@ func Test_LoadContext_Same_Package_Same_Env(t *testing.T) {
 	}
 
 	packageCount := 0
-	loader.caravan.Iter(func(hash collections.Hash, node *collections.Node) bool {
+	le.caravan.Iter(func(hash collections.Hash, node *collections.Node) bool {
 		packageCount++
 		return true
 	})
@@ -80,7 +80,7 @@ func Test_LoadContext_Same_Package_Same_Env(t *testing.T) {
 	}
 
 	if failed {
-		loader.caravan.Iter(func(hash collections.Hash, n *collections.Node) bool {
+		le.caravan.Iter(func(hash collections.Hash, n *collections.Node) bool {
 			t.Errorf("Have hash 0x%x: %s\n", hash, n.Element.(*DistinctPackage))
 			return true
 		})
@@ -105,8 +105,8 @@ func Test_LoadContext_Same_Package_Different_Env(t *testing.T) {
 		},
 	}
 
-	loader := NewLoader()
-	defer loader.Close()
+	le := NewLoaderEngine()
+	defer le.Close()
 
 	envs := [][]string{
 		[]string{"darwin", "amd"},
@@ -122,7 +122,7 @@ func Test_LoadContext_Same_Package_Different_Env(t *testing.T) {
 		ii := i
 		env := envs[i]
 		go func() {
-			lc := NewLoaderContext(loader, "/go/src/bar", env[0], env[1], "/go", func(lc *LoaderContext) {
+			lc := NewLoaderContext(le, "/go/src/bar", env[0], env[1], "/go", func(lc *LoaderContext) {
 				lc.context = buildutil.FakeContext(packages)
 			})
 			lcs[ii] = lc
@@ -157,7 +157,7 @@ func Test_LoadContext_Same_Package_Different_Env(t *testing.T) {
 	}
 
 	packageCount := 0
-	loader.caravan.Iter(func(hash collections.Hash, node *collections.Node) bool {
+	le.caravan.Iter(func(hash collections.Hash, node *collections.Node) bool {
 		packageCount++
 		return true
 	})
@@ -185,7 +185,7 @@ func Test_LoadContext_Same_Package_Different_Env(t *testing.T) {
 	// }
 
 	// for i := 0; i < 2; i++ {
-	// 	loader.caravan.Iter(func(hash collections.Hash, node *collections.Node) bool {
+	// 	le.caravan.Iter(func(hash collections.Hash, node *collections.Node) bool {
 	// 		p := node.Element.(*Package)
 	// 		dp := p.distincts[lcs[i].GetDistinctHash()]
 	// 		if len(dp.files) != 2 {

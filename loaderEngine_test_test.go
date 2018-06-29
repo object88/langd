@@ -31,10 +31,10 @@ func Test_Loader_Load_Tests(t *testing.T) {
 		},
 	}
 
-	loader := NewLoader()
-	defer loader.Close()
+	le := NewLoaderEngine()
+	defer le.Close()
 
-	lc := NewLoaderContext(loader, "/go/src/bar", "darwin", "x86", "/go", func(lc *LoaderContext) {
+	lc := NewLoaderContext(le, "/go/src/bar", "darwin", "x86", "/go", func(lc *LoaderContext) {
 		lc.context = buildutil.FakeContext(packages)
 	})
 

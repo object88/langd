@@ -43,8 +43,8 @@ func Test_LoaderContext_Shared_Package(t *testing.T) {
 		},
 	}
 
-	loader := NewLoader()
-	defer loader.Close()
+	le := NewLoaderEngine()
+	defer le.Close()
 
 	wg := sync.WaitGroup{}
 	wg.Add(2)
@@ -59,7 +59,7 @@ func Test_LoaderContext_Shared_Package(t *testing.T) {
 	for i := 0; i < 2; i++ {
 		ii := i
 		go func() {
-			lc := NewLoaderContext(loader, paths[ii], runtime.GOOS, runtime.GOARCH, "/go", func(lc *LoaderContext) {
+			lc := NewLoaderContext(le, paths[ii], runtime.GOOS, runtime.GOARCH, "/go", func(lc *LoaderContext) {
 				lc.context = buildutil.FakeContext(packages)
 			})
 			lcs[ii] = lc
@@ -99,7 +99,7 @@ func Test_LoaderContext_Shared_Package(t *testing.T) {
 		"/go/src/bar": 0,
 		"/go/src/baz": 0,
 	}
-	loader.caravan.Iter(func(_ collections.Hash, node *collections.Node) bool {
+	le.caravan.Iter(func(_ collections.Hash, node *collections.Node) bool {
 		dp := node.Element.(*DistinctPackage)
 		if _, ok := pkgs[dp.Package.AbsPath]; !ok {
 			t.Errorf("Found errant package '%s'", dp.Package.AbsPath)

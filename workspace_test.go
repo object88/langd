@@ -17,11 +17,11 @@ import (
 
 func workspaceSetup(t *testing.T, startingPath string, packages map[string]map[string]string, expectFailure bool) (*Workspace, *LoaderContext, func()) {
 	fc := buildutil.FakeContext(packages)
-	loader := NewLoader()
-	lc := NewLoaderContext(loader, startingPath, runtime.GOOS, runtime.GOARCH, "/go", func(lc *LoaderContext) {
+	le := NewLoaderEngine()
+	lc := NewLoaderContext(le, startingPath, runtime.GOOS, runtime.GOARCH, "/go", func(lc *LoaderContext) {
 		lc.context = fc
 	})
-	w := CreateWorkspace(loader, log.CreateLog(os.Stdout))
+	w := CreateWorkspace(le, log.CreateLog(os.Stdout))
 	w.AssignLoaderContext(lc)
 	w.log.SetLevel(log.Verbose)
 
@@ -61,7 +61,7 @@ func workspaceSetup(t *testing.T, startingPath string, packages map[string]map[s
 		}
 	}
 
-	return w, lc, func() { loader.Close() }
+	return w, lc, func() { le.Close() }
 }
 
 func testDeclaration(t *testing.T, w *Workspace, usagePosition, expectedDeclPosition *token.Position) {

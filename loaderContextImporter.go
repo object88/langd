@@ -48,7 +48,7 @@ func (lci *loaderContextImporter) ImportFrom(path, srcDir string, mode types.Imp
 func (lci *loaderContextImporter) locatePackages(path string) (*DistinctPackage, error) {
 	phash := calculateHashFromString(path)
 	chash := combineHashes(phash, lci.lc.hash)
-	n, ok := lci.lc.loader.caravan.Find(chash)
+	n, ok := lci.lc.le.caravan.Find(chash)
 	if !ok {
 		return nil, fmt.Errorf("Failed to import %s", path)
 	}
