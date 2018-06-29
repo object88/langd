@@ -3,7 +3,6 @@ package langd
 import (
 	"sync"
 	"testing"
-	"time"
 
 	"github.com/object88/langd/collections"
 	"golang.org/x/tools/go/buildutil"
@@ -134,9 +133,6 @@ func Test_LoadContext_Same_Package_Different_Env(t *testing.T) {
 			}
 
 			lc.Wait()
-
-			time.Sleep(100 * time.Millisecond)
-
 			wg.Done()
 		}()
 	}
