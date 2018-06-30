@@ -5,9 +5,9 @@ import (
 	"go/build"
 	"go/types"
 	"io"
-	"io/ioutil"
 	"os"
 	"path/filepath"
+	"sort"
 	"strings"
 	"sync"
 	"unicode/utf8"
@@ -16,6 +16,7 @@ import (
 	"github.com/object88/langd/collections"
 	"github.com/object88/langd/log"
 	"github.com/pkg/errors"
+	"github.com/spf13/afero"
 )
 
 // Loader is the workspace-specific configuration and context for
@@ -30,6 +31,8 @@ type Loader struct {
 	Log *log.Log
 
 	le *LoaderEngine
+
+	fs afero.Fs
 
 	config     *types.Config
 	context    *build.Context
@@ -61,45 +64,54 @@ func NewLoader(le *LoaderEngine, startDir, goos, goarch, goroot string, options 
 
 	l := &Loader{
 		StartDir:      startDir,
+		context:       &build.Default,
 		filteredPaths: globs,
+		fs:            afero.NewReadOnlyFs(afero.NewOsFs()),
 		le:            le,
 		distinctPackageHashSet: map[collections.Hash]bool{},
 	}
 
 	l.c = sync.NewCond(&l.m)
 
-	for _, opt := range options {
-		opt(l)
-	}
-
-	if l.context == nil {
-		l.context = &build.Default
-	}
-
 	l.context.GOARCH = goarch
 	l.context.GOOS = goos
 	l.context.GOROOT = goroot
 
-	if l.context.IsDir == nil {
-		l.context.IsDir = func(path string) bool {
-			fi, err := os.Stat(path)
-			return err == nil && fi.IsDir()
-		}
+	for _, opt := range options {
+		opt(l)
 	}
-	if l.context.OpenFile == nil {
-		l.context.OpenFile = func(path string) (io.ReadCloser, error) {
-			f, err := os.Open(path)
-			if err != nil {
-				return nil, err
-			}
-			return f, nil
-		}
+
+	// if l.context.IsDir == nil {
+	l.context.IsDir = func(path string) bool {
+		fi, err := l.fs.Stat(path)
+		return err == nil && fi.IsDir()
 	}
-	if l.context.ReadDir == nil {
-		l.context.ReadDir = func(dir string) ([]os.FileInfo, error) {
-			return ioutil.ReadDir(dir)
+	// }
+	// if l.context.OpenFile == nil {
+	l.context.OpenFile = func(path string) (io.ReadCloser, error) {
+		f, err := l.fs.Open(path)
+		if err != nil {
+			return nil, err
 		}
+		return f, nil
 	}
+	// }
+	// if l.context.ReadDir == nil {
+	l.context.ReadDir = func(dir string) ([]os.FileInfo, error) {
+		f, err := l.fs.Open(dir)
+		if err != nil {
+			return nil, err
+		}
+		list, err := f.Readdir(-1)
+		f.Close()
+		if err != nil {
+			return nil, err
+		}
+		sort.Slice(list, func(i, j int) bool { return list[i].Name() < list[j].Name() })
+
+		return list, nil
+	}
+	// }
 
 	l.config = &types.Config{
 		Error:    l.HandleTypeCheckerError,

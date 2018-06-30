@@ -1,40 +1,59 @@
 package langd
 
 import (
+	"os"
+	"path/filepath"
+	"runtime"
 	"sync"
 	"testing"
 
+	"github.com/google/uuid"
 	"github.com/object88/langd/collections"
-	"golang.org/x/tools/go/buildutil"
+	"github.com/spf13/afero"
 )
+
+func createOverlay(files map[string]string) (string, afero.Fs) {
+	fs := afero.NewMemMapFs()
+	rootPath := filepath.Join(string(os.PathSeparator), uuid.New().String(), "go", "src")
+
+	for path, contents := range files {
+		completePath := filepath.Join(rootPath, path)
+
+		fs.MkdirAll(filepath.Dir(completePath), 0644)
+		fh, _ := fs.Create(completePath)
+		fh.WriteString(contents)
+		fh.Close()
+	}
+
+	return rootPath, fs
+}
 
 func Test_LoadContext_Same_Package_Same_Env(t *testing.T) {
 	src := `package bar
 	var BarVal int = 0`
 
-	packages := map[string]map[string]string{
-		"bar": map[string]string{
-			"bar.go": src,
-		},
-	}
+	rootPath, overlayFs := createOverlay(map[string]string{
+		filepath.Join("bar", "bar.go"): src,
+	})
+	barPath := filepath.Join(rootPath, "bar")
 
 	le := NewLoaderEngine()
 	defer le.Close()
 
-	l1 := NewLoader(le, "/go/src/bar", "darwin", "x86", "/go", func(l *Loader) {
-		l.context = buildutil.FakeContext(packages)
+	l1 := NewLoader(le, barPath, "darwin", "x86", runtime.GOROOT(), func(l *Loader) {
+		l.fs = afero.NewCopyOnWriteFs(l.fs, overlayFs)
 	})
 
-	l2 := NewLoader(le, "/go/src/bar", "linux", "arm", "/go", func(l *Loader) {
-		l.context = buildutil.FakeContext(packages)
+	l2 := NewLoader(le, barPath, "linux", "arm", runtime.GOROOT(), func(l *Loader) {
+		l.fs = afero.NewCopyOnWriteFs(l.fs, overlayFs)
 	})
 
-	err := l1.LoadDirectory("/go/src/bar")
+	err := l1.LoadDirectory(barPath)
 	if err != nil {
 		t.Fatalf("(1) Error while loading: %s", err.Error())
 	}
 
-	err = l2.LoadDirectory("/go/src/bar")
+	err = l2.LoadDirectory(barPath)
 	if err != nil {
 		t.Fatalf("(2) Error while loading: %s", err.Error())
 	}
@@ -72,10 +91,10 @@ func Test_LoadContext_Same_Package_Same_Env(t *testing.T) {
 
 	failed := false
 	for _, l := range []*Loader{l1, l2} {
-		_, err := l.FindDistinctPackage("/go/src/bar")
+		_, err := l.FindDistinctPackage(barPath)
 		if err != nil {
 			failed = true
-			t.Errorf("Failed to find package '%s'", "/go/src/bar")
+			t.Errorf("Failed to find package '%s'", barPath)
 		}
 	}
 
@@ -97,13 +116,12 @@ func Test_LoadContext_Same_Package_Different_Env(t *testing.T) {
 	srcLinux := `package bar
 	type BarType int64`
 
-	packages := map[string]map[string]string{
-		"bar": map[string]string{
-			"bar.go":        src,
-			"bar_darwin.go": srcDarwin,
-			"bar_linux.go":  srcLinux,
-		},
-	}
+	rootPath, overlayFs := createOverlay(map[string]string{
+		filepath.Join("bar", "bar.go"):        src,
+		filepath.Join("bar", "bar_darwin.go"): srcDarwin,
+		filepath.Join("bar", "bar_linux.go"):  srcLinux,
+	})
+	barPath := filepath.Join(rootPath, "bar")
 
 	le := NewLoaderEngine()
 	defer le.Close()
@@ -122,12 +140,12 @@ func Test_LoadContext_Same_Package_Different_Env(t *testing.T) {
 		ii := i
 		env := envs[i]
 		go func() {
-			l := NewLoader(le, "/go/src/bar", env[0], env[1], "/go", func(l *Loader) {
-				l.context = buildutil.FakeContext(packages)
+			l := NewLoader(le, barPath, env[0], env[1], runtime.GOROOT(), func(l *Loader) {
+				l.fs = afero.NewCopyOnWriteFs(l.fs, overlayFs)
 			})
 			ls[ii] = l
 
-			err := l.LoadDirectory("/go/src/bar")
+			err := l.LoadDirectory(barPath)
 			if err != nil {
 				t.Fatalf("Error while loading: %s", err.Error())
 			}
@@ -167,9 +185,9 @@ func Test_LoadContext_Same_Package_Different_Env(t *testing.T) {
 	}
 
 	for _, l := range ls {
-		_, err := l.FindDistinctPackage("/go/src/bar")
+		_, err := l.FindDistinctPackage(barPath)
 		if err != nil {
-			t.Errorf("Failed to find package '%s'", "/go/src/bar")
+			t.Errorf("Failed to find package '%s'", barPath)
 		}
 	}
 	// dp := n.Element.(*DistinctPackage)

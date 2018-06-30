@@ -1,12 +1,13 @@
 package langd
 
 import (
+	"path/filepath"
 	"runtime"
 	"sync"
 	"testing"
 
 	"github.com/object88/langd/collections"
-	"golang.org/x/tools/go/buildutil"
+	"github.com/spf13/afero"
 )
 
 // Test_LoaderContext_Shared_Package is checked to make sure that a distinct
@@ -31,17 +32,11 @@ func Test_LoaderContext_Shared_Package(t *testing.T) {
 		return foo.FooVal
 	}`
 
-	packages := map[string]map[string]string{
-		"foo": map[string]string{
-			"foo.go": srcFoo,
-		},
-		"bar": map[string]string{
-			"bar.go": srcBar,
-		},
-		"baz": map[string]string{
-			"baz.go": srcBaz,
-		},
-	}
+	rootPath, overlayFs := createOverlay(map[string]string{
+		filepath.Join("foo", "foo.go"): srcFoo,
+		filepath.Join("bar", "bar.go"): srcBar,
+		filepath.Join("baz", "baz.go"): srcBaz,
+	})
 
 	le := NewLoaderEngine()
 	defer le.Close()
@@ -50,8 +45,8 @@ func Test_LoaderContext_Shared_Package(t *testing.T) {
 	wg.Add(2)
 
 	paths := []string{
-		"/go/src/bar",
-		"/go/src/baz",
+		filepath.Join(rootPath, "bar"),
+		filepath.Join(rootPath, "baz"),
 	}
 
 	ls := make([]*Loader, 2)
@@ -59,8 +54,8 @@ func Test_LoaderContext_Shared_Package(t *testing.T) {
 	for i := 0; i < 2; i++ {
 		ii := i
 		go func() {
-			l := NewLoader(le, paths[ii], runtime.GOOS, runtime.GOARCH, "/go", func(l *Loader) {
-				l.context = buildutil.FakeContext(packages)
+			l := NewLoader(le, paths[ii], runtime.GOOS, runtime.GOARCH, runtime.GOROOT(), func(l *Loader) {
+				l.fs = afero.NewCopyOnWriteFs(l.fs, overlayFs)
 			})
 			ls[ii] = l
 
@@ -95,9 +90,9 @@ func Test_LoaderContext_Shared_Package(t *testing.T) {
 
 	count := 0
 	pkgs := map[string]int{
-		"/go/src/foo": 0,
-		"/go/src/bar": 0,
-		"/go/src/baz": 0,
+		filepath.Join(rootPath, "foo"): 0,
+		filepath.Join(rootPath, "bar"): 0,
+		filepath.Join(rootPath, "baz"): 0,
 	}
 	le.caravan.Iter(func(_ collections.Hash, node *collections.Node) bool {
 		dp := node.Element.(*DistinctPackage)
