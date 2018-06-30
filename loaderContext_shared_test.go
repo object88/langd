@@ -54,22 +54,22 @@ func Test_LoaderContext_Shared_Package(t *testing.T) {
 		"/go/src/baz",
 	}
 
-	lcs := make([]*LoaderContext, 2)
+	ls := make([]*Loader, 2)
 
 	for i := 0; i < 2; i++ {
 		ii := i
 		go func() {
-			lc := NewLoaderContext(le, paths[ii], runtime.GOOS, runtime.GOARCH, "/go", func(lc *LoaderContext) {
-				lc.context = buildutil.FakeContext(packages)
+			l := NewLoader(le, paths[ii], runtime.GOOS, runtime.GOARCH, "/go", func(l *Loader) {
+				l.context = buildutil.FakeContext(packages)
 			})
-			lcs[ii] = lc
+			ls[ii] = l
 
-			err := lc.LoadDirectory(paths[ii])
+			err := l.LoadDirectory(paths[ii])
 			if err != nil {
 				t.Fatalf("Error while loading: %s", err.Error())
 			}
 
-			lc.Wait()
+			l.Wait()
 			wg.Done()
 		}()
 	}
@@ -78,7 +78,7 @@ func Test_LoaderContext_Shared_Package(t *testing.T) {
 
 	errCount := 0
 	for i := 0; i < 2; i++ {
-		lcs[i].Errors(func(file string, errs []FileError) {
+		ls[i].Errors(func(file string, errs []FileError) {
 			if errCount == 0 {
 				t.Errorf("Loading error in %s:\n", file)
 			}

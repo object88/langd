@@ -22,17 +22,17 @@ func Test_Workspace_Change_Creates_Error(t *testing.T) {
 		},
 	}
 
-	w, lc, closer := workspaceSetup(t, "/go/src/bar", packages, false)
+	w, l, closer := workspaceSetup(t, "/go/src/bar", packages, false)
 	defer closer()
 
 	w.OpenFile("/go/src/foo/foo.go", src1)
-	lc.Wait()
+	l.Wait()
 
 	w.ChangeFile("/go/src/foo/foo.go", 1, 5, 1, 9, "FOOF")
-	lc.Wait()
+	l.Wait()
 
 	errCount := 0
-	w.LoaderContext.Errors(func(file string, errs []FileError) {
+	w.Loader.Errors(func(file string, errs []FileError) {
 		errCount += len(errs)
 	})
 
@@ -72,17 +72,17 @@ func Test_Workspace_Change_Creates_Error_Indirect(t *testing.T) {
 		},
 	}
 
-	w, lc, closer := workspaceSetup(t, "/go/src/baz", packages, false)
+	w, l, closer := workspaceSetup(t, "/go/src/baz", packages, false)
 	defer closer()
 
 	w.OpenFile("/go/src/foo/foo.go", src1)
-	lc.Wait()
+	l.Wait()
 
 	w.ChangeFile("/go/src/foo/foo.go", 2, 15, 2, 18, "Inc")
-	lc.Wait()
+	l.Wait()
 
 	errCount := 0
-	w.LoaderContext.Errors(func(file string, errs []FileError) {
+	w.Loader.Errors(func(file string, errs []FileError) {
 		errCount += len(errs)
 	})
 

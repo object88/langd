@@ -21,26 +21,26 @@ func Test_LoadContext_Same_Package_Same_Env(t *testing.T) {
 	le := NewLoaderEngine()
 	defer le.Close()
 
-	lc1 := NewLoaderContext(le, "/go/src/bar", "darwin", "x86", "/go", func(lc *LoaderContext) {
-		lc.context = buildutil.FakeContext(packages)
+	l1 := NewLoader(le, "/go/src/bar", "darwin", "x86", "/go", func(l *Loader) {
+		l.context = buildutil.FakeContext(packages)
 	})
 
-	lc2 := NewLoaderContext(le, "/go/src/bar", "linux", "arm", "/go", func(lc *LoaderContext) {
-		lc.context = buildutil.FakeContext(packages)
+	l2 := NewLoader(le, "/go/src/bar", "linux", "arm", "/go", func(l *Loader) {
+		l.context = buildutil.FakeContext(packages)
 	})
 
-	err := lc1.LoadDirectory("/go/src/bar")
+	err := l1.LoadDirectory("/go/src/bar")
 	if err != nil {
 		t.Fatalf("(1) Error while loading: %s", err.Error())
 	}
 
-	err = lc2.LoadDirectory("/go/src/bar")
+	err = l2.LoadDirectory("/go/src/bar")
 	if err != nil {
 		t.Fatalf("(2) Error while loading: %s", err.Error())
 	}
 
-	lc1.Wait()
-	lc2.Wait()
+	l1.Wait()
+	l2.Wait()
 
 	errCount := 0
 	fn := func(file string, errs []FileError) {
@@ -53,8 +53,8 @@ func Test_LoadContext_Same_Package_Same_Env(t *testing.T) {
 		errCount++
 	}
 
-	lc1.Errors(fn)
-	lc2.Errors(fn)
+	l1.Errors(fn)
+	l2.Errors(fn)
 
 	if errCount != 0 {
 		t.Fatalf("Found %d errors", errCount)
@@ -71,8 +71,8 @@ func Test_LoadContext_Same_Package_Same_Env(t *testing.T) {
 	}
 
 	failed := false
-	for _, lc := range []*LoaderContext{lc1, lc2} {
-		_, err := lc.FindDistinctPackage("/go/src/bar")
+	for _, l := range []*Loader{l1, l2} {
+		_, err := l.FindDistinctPackage("/go/src/bar")
 		if err != nil {
 			failed = true
 			t.Errorf("Failed to find package '%s'", "/go/src/bar")
@@ -116,23 +116,23 @@ func Test_LoadContext_Same_Package_Different_Env(t *testing.T) {
 	wg := sync.WaitGroup{}
 	wg.Add(2)
 
-	lcs := make([]*LoaderContext, 2)
+	ls := make([]*Loader, 2)
 
 	for i := 0; i < 2; i++ {
 		ii := i
 		env := envs[i]
 		go func() {
-			lc := NewLoaderContext(le, "/go/src/bar", env[0], env[1], "/go", func(lc *LoaderContext) {
-				lc.context = buildutil.FakeContext(packages)
+			l := NewLoader(le, "/go/src/bar", env[0], env[1], "/go", func(l *Loader) {
+				l.context = buildutil.FakeContext(packages)
 			})
-			lcs[ii] = lc
+			ls[ii] = l
 
-			err := lc.LoadDirectory("/go/src/bar")
+			err := l.LoadDirectory("/go/src/bar")
 			if err != nil {
 				t.Fatalf("Error while loading: %s", err.Error())
 			}
 
-			lc.Wait()
+			l.Wait()
 			wg.Done()
 		}()
 	}
@@ -141,7 +141,7 @@ func Test_LoadContext_Same_Package_Different_Env(t *testing.T) {
 
 	errCount := 0
 	for i := 0; i < 2; i++ {
-		lcs[i].Errors(func(file string, errs []FileError) {
+		ls[i].Errors(func(file string, errs []FileError) {
 			if errCount == 0 {
 				t.Errorf("Loading error in %s:\n", file)
 			}
@@ -166,8 +166,8 @@ func Test_LoadContext_Same_Package_Different_Env(t *testing.T) {
 		t.Errorf("Expected to find 1 packages; found %d\n", packageCount)
 	}
 
-	for _, lc := range lcs {
-		_, err := lc.FindDistinctPackage("/go/src/bar")
+	for _, l := range ls {
+		_, err := l.FindDistinctPackage("/go/src/bar")
 		if err != nil {
 			t.Errorf("Failed to find package '%s'", "/go/src/bar")
 		}

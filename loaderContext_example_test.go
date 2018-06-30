@@ -34,24 +34,24 @@ func Test_Scale(t *testing.T) {
 
 	logger := log.Stdout()
 	logger.SetLevel(log.Debug)
-	l := NewLoaderEngine()
-	defer l.Close()
-	lc := NewLoaderContext(l, path, "darwin", "amd64", runtime.GOROOT())
-	w := CreateWorkspace(l, logger)
-	w.AssignLoaderContext(lc)
+	le := NewLoaderEngine()
+	defer le.Close()
+	l := NewLoader(le, path, "darwin", "amd64", runtime.GOROOT())
+	w := CreateWorkspace(le, logger)
+	w.AssignLoader(l)
 
-	err := lc.LoadDirectory(path)
+	err := l.LoadDirectory(path)
 	if err != nil {
 		t.Fatalf("Failed to load directory '%s':\n\t%s\n", path, err.Error())
 	}
 
 	fmt.Printf("Load directory started; blocking...\n")
 
-	lc.Wait()
+	l.Wait()
 
 	errCount := 0
 	var buf bytes.Buffer
-	lc.Errors(func(file string, errs []FileError) {
+	l.Errors(func(file string, errs []FileError) {
 		if len(errs) == 0 {
 			return
 		}
@@ -79,14 +79,14 @@ func Benchmark_Scale(b *testing.B) {
 	path := "../langd-example"
 
 	for n := 0; n < b.N; n++ {
-		l := NewLoaderEngine()
-		defer l.Close()
-		lc := NewLoaderContext(l, path, "darwin", "amd64", runtime.GOROOT())
-		w := CreateWorkspace(l, logger)
-		w.AssignLoaderContext(lc)
+		le := NewLoaderEngine()
+		defer le.Close()
+		l := NewLoader(le, path, "darwin", "amd64", runtime.GOROOT())
+		w := CreateWorkspace(le, logger)
+		w.AssignLoader(l)
 
-		lc.LoadDirectory(path)
-		lc.Wait()
+		l.LoadDirectory(path)
+		l.Wait()
 	}
 
 }

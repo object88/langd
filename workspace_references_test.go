@@ -1108,14 +1108,14 @@ func Test_Workspace_References_Complex_Lookup(t *testing.T) {
 func testReferences(t *testing.T, w *Workspace, startPosition *token.Position, referencePositions []*token.Position) {
 	// Ensure that the file at for startPosition is open.  We will use our
 	// override of the build.Context to get the file contents
-	rc := w.LoaderContext.OpenFile(startPosition.Filename)
+	rc := w.Loader.OpenFile(startPosition.Filename)
 	b, err := ioutil.ReadAll(rc)
 	if err != nil {
 		t.Fatalf("Failed while attempting to read pseudo-file %s\n\t%s", startPosition.Filename, err.Error())
 	}
 	w.OpenFile(startPosition.Filename, string(b))
 
-	w.LoaderContext.Wait()
+	w.Loader.Wait()
 
 	actual := w.LocateReferences(startPosition)
 	if nil == actual {

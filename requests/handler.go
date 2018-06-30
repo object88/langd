@@ -109,9 +109,9 @@ func (h *Handler) ConfigureLoaderContext(startDir string, settings *viper.Viper)
 	if goos == "" {
 		goos = runtime.GOOS
 	}
-	loaderContext := langd.NewLoaderContext(h.workspace.LoaderEngine, startDir, goos, goarch, root)
+	loader := langd.NewLoader(h.workspace.LoaderEngine, startDir, goos, goarch, root)
 
-	h.workspace.AssignLoaderContext(loaderContext)
+	h.workspace.AssignLoader(loader)
 }
 
 // NextCid returns the next call id

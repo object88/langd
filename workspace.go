@@ -16,8 +16,8 @@ import (
 
 // Workspace is a mass of code
 type Workspace struct {
-	LoaderEngine  *LoaderEngine
-	LoaderContext *LoaderContext
+	LoaderEngine *LoaderEngine
+	Loader       *Loader
 
 	log *log.Log
 
@@ -33,10 +33,10 @@ func CreateWorkspace(le *LoaderEngine, log *log.Log) *Workspace {
 	}
 }
 
-// AssignLoaderContext attaches the new loader context to the workspace.  The
+// AssignLoader attaches the new loader context to the workspace.  The
 // workspace should start to reload the packages.
-func (w *Workspace) AssignLoaderContext(lc *LoaderContext) {
-	w.LoaderContext = lc
+func (w *Workspace) AssignLoader(l *Loader) {
+	w.Loader = l
 	// TODO: reload packages
 }
 
@@ -257,7 +257,7 @@ func (w *Workspace) getVarType(sb *strings.Builder, v *types.Var) {
 		case *types.Basic:
 			sb.WriteString(getBasicType(t))
 		case *types.Named:
-			dpkg, err := w.LoaderContext.FindDistinctPackage(t.Obj().Pkg().Path())
+			dpkg, err := w.Loader.FindDistinctPackage(t.Obj().Pkg().Path())
 			if err != nil {
 				sb.WriteString("error")
 			} else {
@@ -321,7 +321,7 @@ func getConstType(o *types.Const) string {
 func (w *Workspace) LocateIdent(p *token.Position) (*ast.Ident, error) {
 	absPath := filepath.Dir(p.Filename)
 
-	dpkg, err := w.LoaderContext.FindDistinctPackage(absPath)
+	dpkg, err := w.Loader.FindDistinctPackage(absPath)
 	if err != nil {
 		return nil, errors.Wrapf(err, "No package loaded for '%s'", p.Filename)
 	}
@@ -413,7 +413,7 @@ func (w *Workspace) OpenFile(absFilepath, text string) error {
 	}
 
 	absPath := filepath.Dir(absFilepath)
-	dp, err := w.LoaderContext.FindDistinctPackage(absPath)
+	dp, err := w.Loader.FindDistinctPackage(absPath)
 	if err != nil {
 		return errors.Wrapf(err, "Failed to find package for %s", absPath)
 	}
@@ -445,7 +445,7 @@ func (w *Workspace) ReplaceFile(absFilepath, text string) error {
 func (w *Workspace) locateDeclaration(p *token.Position) (types.Object, *DistinctPackage, error) {
 	absPath := filepath.Dir(p.Filename)
 
-	dpkg, err := w.LoaderContext.FindDistinctPackage(absPath)
+	dpkg, err := w.Loader.FindDistinctPackage(absPath)
 	if err != nil {
 		return nil, nil, errors.Wrapf(err, "No package loaded for '%s'", p.Filename)
 	}
@@ -555,7 +555,7 @@ func (w *Workspace) processSelectorExpr(v *ast.SelectorExpr, dpkg *DistinctPacka
 			fmt.Printf("Workspace.processSelectorExpr: Have PkgName %s, type %s\n", v1.Name(), v1.Type())
 			absPath := v1.Imported().Path()
 
-			dpkg1, err := w.LoaderContext.FindDistinctPackage(absPath)
+			dpkg1, err := w.Loader.FindDistinctPackage(absPath)
 			if err != nil {
 				return nil, nil, errors.Wrapf(err, "Workspace.processSelectorExpr: Failed to find distinct package mentioned in %s", v1)
 			}
@@ -569,7 +569,7 @@ func (w *Workspace) processSelectorExpr(v *ast.SelectorExpr, dpkg *DistinctPacka
 		case *types.Var:
 			fmt.Printf("Workspace.processSelectorExpr: Have Var %s, type %s\n\tv1: %#v\n\tv1.Sel: %#v\n", v1.Name(), v1.Type(), v1, v.Sel)
 			vSelObj := dpkg.checker.ObjectOf(v.Sel)
-			dpkg1, err := w.LoaderContext.FindDistinctPackage(vSelObj.Pkg().Path())
+			dpkg1, err := w.Loader.FindDistinctPackage(vSelObj.Pkg().Path())
 			if err != nil {
 				return nil, nil, errors.Wrapf(err, "Workspace.processSelectorExpr: Unknown package referenced in types.Var %s", v1)
 			}
@@ -580,7 +580,7 @@ func (w *Workspace) processSelectorExpr(v *ast.SelectorExpr, dpkg *DistinctPacka
 		if vSelObj == nil {
 			return nil, nil, errors.Errorf("Workspace.processSelectorExpr: Failed to find object for ast.SelectorExpr %s", v.Sel)
 		}
-		dpkg1, err := w.LoaderContext.FindDistinctPackage(vSelObj.Pkg().Path())
+		dpkg1, err := w.Loader.FindDistinctPackage(vSelObj.Pkg().Path())
 		if err != nil {
 			return nil, nil, errors.Wrapf(err, "Workspace.processSelectorExpr: Unknown package referenced in ast.SelectorExpr %s", v.Sel)
 		}

@@ -74,18 +74,18 @@ func (h *Handler) readRoot(root string) {
 	}
 
 	fmt.Printf("About to load %s\n", base)
-	h.workspace.LoaderContext.LoadDirectory(base)
+	h.workspace.Loader.LoadDirectory(base)
 
 	// NOTE: We are not doing anything with this, so... BLOCKED.
 	fmt.Printf("Waiting...\n")
 
-	h.workspace.LoaderContext.Wait()
+	h.workspace.Loader.Wait()
 
 	// Start a routine to process requests
 	h.startProcessingQueue()
 
 	// Send off some errors.
-	h.workspace.LoaderContext.Errors(h.publishErrors)
+	h.workspace.Loader.Errors(h.publishErrors)
 }
 
 func (h *Handler) publishErrors(file string, errs []langd.FileError) {

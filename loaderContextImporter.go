@@ -8,7 +8,7 @@ import (
 )
 
 type loaderContextImporter struct {
-	lc *LoaderContext
+	l *Loader
 }
 
 // Import is the implementation of types.Importer
@@ -26,7 +26,7 @@ func (lci *loaderContextImporter) Import(path string) (*types.Package, error) {
 
 // ImportFrom is the implementation of types.ImporterFrom
 func (lci *loaderContextImporter) ImportFrom(path, srcDir string, mode types.ImportMode) (*types.Package, error) {
-	absPath, err := lci.lc.findImportPath(path, srcDir)
+	absPath, err := lci.l.findImportPath(path, srcDir)
 	if err != nil {
 		msg := fmt.Sprintf("Failed to locate import path for %s, %s", path, srcDir)
 		return nil, errors.Wrap(err, msg)
@@ -47,8 +47,8 @@ func (lci *loaderContextImporter) ImportFrom(path, srcDir string, mode types.Imp
 
 func (lci *loaderContextImporter) locatePackages(path string) (*DistinctPackage, error) {
 	phash := calculateHashFromString(path)
-	chash := combineHashes(phash, lci.lc.hash)
-	n, ok := lci.lc.le.caravan.Find(chash)
+	chash := combineHashes(phash, lci.l.hash)
+	n, ok := lci.l.le.caravan.Find(chash)
 	if !ok {
 		return nil, fmt.Errorf("Failed to import %s", path)
 	}

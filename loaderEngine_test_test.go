@@ -34,16 +34,16 @@ func Test_Loader_Load_Tests(t *testing.T) {
 	le := NewLoaderEngine()
 	defer le.Close()
 
-	lc := NewLoaderContext(le, "/go/src/bar", "darwin", "x86", "/go", func(lc *LoaderContext) {
-		lc.context = buildutil.FakeContext(packages)
+	l := NewLoader(le, "/go/src/bar", "darwin", "x86", "/go", func(l *Loader) {
+		l.context = buildutil.FakeContext(packages)
 	})
 
-	err := lc.LoadDirectory("/go/src/bar")
+	err := l.LoadDirectory("/go/src/bar")
 	if err != nil {
 		t.Fatalf("(1) Error while loading: %s", err.Error())
 	}
 
-	lc.Wait()
+	l.Wait()
 
 	errCount := 0
 	fn := func(file string, errs []FileError) {
@@ -56,7 +56,7 @@ func Test_Loader_Load_Tests(t *testing.T) {
 		errCount++
 	}
 
-	lc.Errors(fn)
+	l.Errors(fn)
 
 	if errCount != 0 {
 		t.Fatalf("Found %d errors", errCount)

@@ -37,26 +37,26 @@ func Test_Workspace_Hugo(t *testing.T) {
 
 	logger := log.Stdout()
 	logger.SetLevel(log.Debug)
-	l := NewLoaderEngine()
-	defer l.Close()
-	lc := NewLoaderContext(l, path, runtime.GOOS, runtime.GOARCH, runtime.GOROOT())
-	w := CreateWorkspace(l, logger)
-	w.AssignLoaderContext(lc)
+	le := NewLoaderEngine()
+	defer le.Close()
+	l := NewLoader(le, path, runtime.GOOS, runtime.GOARCH, runtime.GOROOT())
+	w := CreateWorkspace(le, logger)
+	w.AssignLoader(l)
 
-	err := lc.LoadDirectory(path)
+	err := l.LoadDirectory(path)
 	if err != nil {
 		t.Fatalf("Failed to load directory '%s':\n\t%s\n", path, err.Error())
 	}
 
 	t.Log("Load directory started; blocking...\n")
 
-	lc.Wait()
+	l.Wait()
 
 	t.Log("Load directory done\n")
 
 	errCount := 0
 	var buf bytes.Buffer
-	lc.Errors(func(file string, errs []FileError) {
+	l.Errors(func(file string, errs []FileError) {
 		if len(errs) == 0 {
 			return
 		}
