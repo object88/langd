@@ -2,6 +2,7 @@ package langd
 
 import (
 	"go/token"
+	"path/filepath"
 	"strings"
 	"testing"
 )
@@ -14,44 +15,36 @@ func Test_Workspace_Modify_File(t *testing.T) {
 		return ival
 	}`
 
-	packages := map[string]map[string]string{
-		"foo": map[string]string{
-			"foo.go": src1,
-		},
-	}
+	rootPath, overlayFs := createOverlay(map[string]string{
+		filepath.Join("foo", "foo.go"): src1,
+	})
+	fooPath := filepath.Join(rootPath, "foo")
+	fooGoPath := filepath.Join(rootPath, "foo", "foo.go")
 
-	w, l, closer := workspaceSetup(t, "/go/src/foo", packages, false)
+	w, closer := workspaceSetup(t, fooPath, overlayFs, false)
 	defer closer()
 
-	if err := w.OpenFile("/go/src/foo/foo.go", src1); err != nil {
+	if err := w.OpenFile(fooGoPath, src1); err != nil {
 		t.Fatalf("Error while opening file: %s", err.Error())
 	}
 
-	l.Wait()
+	w.Loader.Wait()
 
-	declPosition := &token.Position{
-		Filename: "/go/src/foo/foo.go",
-		Line:     2,
-		Column:   6,
-	}
-	usagePosition := &token.Position{
-		Filename: "/go/src/foo/foo.go",
-		Line:     4,
-		Column:   3,
-	}
+	declPosition := &token.Position{Filename: fooGoPath, Line: 2, Column: 6}
+	usagePosition := &token.Position{Filename: fooGoPath, Line: 4, Column: 3}
 	pos, err := w.LocateDeclaration(usagePosition)
 	if err != nil {
 		t.Errorf(err.Error())
 	}
 	testPosition(t, pos, declPosition)
 
-	if err := w.ChangeFile("/go/src/foo/foo.go", 2, 6, 2, 10, "foos"); err != nil {
+	if err := w.ChangeFile(fooGoPath, 2, 6, 2, 10, "foos"); err != nil {
 		t.Errorf(err.Error())
 	}
 
-	l.Wait()
+	w.Loader.Wait()
 
-	rope, _ := w.LoaderEngine.openedFiles.Get("/go/src/foo/foo.go")
+	rope, _ := w.LoaderEngine.openedFiles.Get(fooGoPath)
 	ropeString := rope.String()
 
 	if strings.Contains(ropeString, "foof") {
@@ -61,7 +54,7 @@ func Test_Workspace_Modify_File(t *testing.T) {
 		t.Errorf("Changed file does not contain foos:\n%s\n", ropeString)
 	}
 
-	l.Wait()
+	w.Loader.Wait()
 
 	pos, err = w.LocateDeclaration(usagePosition)
 	if err != nil {
@@ -81,28 +74,29 @@ func Test_Workspace_Modify_Cross_File(t *testing.T) {
 	var intval int = 100
 	`
 
-	packages := map[string]map[string]string{
-		"foo": map[string]string{
-			"foo1.go": src1,
-			"foo2.go": src2,
-		},
-	}
+	rootPath, overlayFs := createOverlay(map[string]string{
+		filepath.Join("foo", "foo1.go"): src1,
+		filepath.Join("foo", "foo2.go"): src2,
+	})
+	fooPath := filepath.Join(rootPath, "foo")
+	foo1GoPath := filepath.Join(rootPath, "foo", "foo1.go")
+	foo2GoPath := filepath.Join(rootPath, "foo", "foo2.go")
 
-	w, l, closer := workspaceSetup(t, "/go/src/foo", packages, true)
+	w, closer := workspaceSetup(t, fooPath, overlayFs, true)
 	defer closer()
 
-	if err := w.OpenFile("/go/src/foo/foo2.go", src2); err != nil {
+	if err := w.OpenFile(foo2GoPath, src2); err != nil {
 		t.Fatalf("Error while opening file: %s", err.Error())
 	}
 
-	l.Wait()
+	w.Loader.Wait()
 
 	// Change the definition to reflect what was used in
-	if err := w.ChangeFile("/go/src/foo/foo2.go", 1, 5, 1, 11, "ival"); err != nil {
+	if err := w.ChangeFile(foo2GoPath, 1, 5, 1, 11, "ival"); err != nil {
 		t.Errorf(err.Error())
 	}
 
-	l.Wait()
+	w.Loader.Wait()
 
 	errCount := 0
 	w.Loader.Errors(func(file string, errs []FileError) {
@@ -115,16 +109,8 @@ func Test_Workspace_Modify_Cross_File(t *testing.T) {
 		t.Errorf("Failed to correct type checker errors; have %d errors", errCount)
 	}
 
-	usagePosition := &token.Position{
-		Filename: "/go/src/foo/foo1.go",
-		Line:     3,
-		Column:   3,
-	}
-	declPosition := &token.Position{
-		Filename: "/go/src/foo/foo2.go",
-		Line:     2,
-		Column:   6,
-	}
+	usagePosition := &token.Position{Filename: foo1GoPath, Line: 3, Column: 3}
+	declPosition := &token.Position{Filename: foo2GoPath, Line: 2, Column: 6}
 	decl, err := w.LocateDeclaration(usagePosition)
 	if err != nil {
 		t.Fatalf("Error while finding declaration: %s", err.Error())

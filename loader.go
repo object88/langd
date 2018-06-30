@@ -72,7 +72,6 @@ func NewLoader(le *LoaderEngine, startDir, goos, goarch, goroot string, options 
 	}
 
 	l.c = sync.NewCond(&l.m)
-
 	l.context.GOARCH = goarch
 	l.context.GOOS = goos
 	l.context.GOROOT = goroot
@@ -81,13 +80,10 @@ func NewLoader(le *LoaderEngine, startDir, goos, goarch, goroot string, options 
 		opt(l)
 	}
 
-	// if l.context.IsDir == nil {
 	l.context.IsDir = func(path string) bool {
 		fi, err := l.fs.Stat(path)
 		return err == nil && fi.IsDir()
 	}
-	// }
-	// if l.context.OpenFile == nil {
 	l.context.OpenFile = func(path string) (io.ReadCloser, error) {
 		f, err := l.fs.Open(path)
 		if err != nil {
@@ -95,8 +91,6 @@ func NewLoader(le *LoaderEngine, startDir, goos, goarch, goroot string, options 
 		}
 		return f, nil
 	}
-	// }
-	// if l.context.ReadDir == nil {
 	l.context.ReadDir = func(dir string) ([]os.FileInfo, error) {
 		f, err := l.fs.Open(dir)
 		if err != nil {
@@ -111,7 +105,6 @@ func NewLoader(le *LoaderEngine, startDir, goos, goarch, goroot string, options 
 
 		return list, nil
 	}
-	// }
 
 	l.config = &types.Config{
 		Error:    l.HandleTypeCheckerError,

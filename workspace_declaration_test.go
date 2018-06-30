@@ -2,6 +2,7 @@ package langd
 
 import (
 	"go/token"
+	"path/filepath"
 	"testing"
 )
 
@@ -39,28 +40,18 @@ func Test_Workspace_Declaration_Imported_Package(t *testing.T) {
 		return foo.MyNumber
 	}`
 
-	packages := map[string]map[string]string{
-		"foo": map[string]string{
-			"foo.go": src1,
-		},
-		"bar": map[string]string{
-			"bar.go": src2,
-		},
-	}
+	rootPath, overlayFs := createOverlay(map[string]string{
+		filepath.Join("foo", "foo.go"): src1,
+		filepath.Join("bar", "bar.go"): src2,
+	})
+	barPath := filepath.Join(rootPath, "bar")
+	barGoPath := filepath.Join(rootPath, "bar", "bar.go")
 
-	w, _, closer := workspaceSetup(t, "/go/src/bar", packages, false)
+	w, closer := workspaceSetup(t, barPath, overlayFs, false)
 	defer closer()
 
-	usagePosition := &token.Position{
-		Filename: "/go/src/bar/bar.go",
-		Line:     4,
-		Column:   10,
-	}
-	declPosition := &token.Position{
-		Filename: "/go/src/bar/bar.go",
-		Line:     2,
-		Column:   9,
-	}
+	usagePosition := &token.Position{Filename: barGoPath, Line: 4, Column: 10}
+	declPosition := &token.Position{Filename: barGoPath, Line: 2, Column: 9}
 	testDeclaration(t, w, usagePosition, declPosition)
 }
 
@@ -73,25 +64,17 @@ func Test_Workspace_Declaration_Package_Const(t *testing.T) {
 		return fooval
 	}`
 
-	packages := map[string]map[string]string{
-		"foo": map[string]string{
-			"foo.go": src1,
-		},
-	}
+	rootPath, overlayFs := createOverlay(map[string]string{
+		filepath.Join("foo", "foo.go"): src1,
+	})
+	fooPath := filepath.Join(rootPath, "foo")
+	fooGoPath := filepath.Join(rootPath, "foo", "foo.go")
 
-	w, _, closer := workspaceSetup(t, "/go/src/foo", packages, false)
+	w, closer := workspaceSetup(t, fooPath, overlayFs, false)
 	defer closer()
 
-	usagePosition := &token.Position{
-		Filename: "/go/src/foo/foo.go",
-		Line:     6,
-		Column:   10,
-	}
-	declPosition := &token.Position{
-		Filename: "/go/src/foo/foo.go",
-		Line:     3,
-		Column:   3,
-	}
+	usagePosition := &token.Position{Filename: fooGoPath, Line: 6, Column: 10}
+	declPosition := &token.Position{Filename: fooGoPath, Line: 3, Column: 3}
 	testDeclaration(t, w, usagePosition, declPosition)
 }
 
@@ -102,25 +85,17 @@ func Test_Workspace_Declaration_Package_Func(t *testing.T) {
 		fooer()
 	}`
 
-	packages := map[string]map[string]string{
-		"foo": map[string]string{
-			"foo.go": src1,
-		},
-	}
+	rootPath, overlayFs := createOverlay(map[string]string{
+		filepath.Join("foo", "foo.go"): src1,
+	})
+	fooPath := filepath.Join(rootPath, "foo")
+	fooGoPath := filepath.Join(rootPath, "foo", "foo.go")
 
-	w, _, closer := workspaceSetup(t, "/go/src/foo", packages, false)
+	w, closer := workspaceSetup(t, fooPath, overlayFs, false)
 	defer closer()
 
-	usagePosition := &token.Position{
-		Filename: "/go/src/foo/foo.go",
-		Line:     4,
-		Column:   3,
-	}
-	declPosition := &token.Position{
-		Filename: "/go/src/foo/foo.go",
-		Line:     2,
-		Column:   7,
-	}
+	usagePosition := &token.Position{Filename: fooGoPath, Line: 4, Column: 3}
+	declPosition := &token.Position{Filename: fooGoPath, Line: 2, Column: 7}
 	testDeclaration(t, w, usagePosition, declPosition)
 }
 
@@ -131,25 +106,17 @@ func Test_Workspace_Declaration_Package_Var(t *testing.T) {
 		return fooval
 	}`
 
-	packages := map[string]map[string]string{
-		"foo": map[string]string{
-			"foo.go": src1,
-		},
-	}
+	rootPath, overlayFs := createOverlay(map[string]string{
+		filepath.Join("foo", "foo.go"): src1,
+	})
+	fooPath := filepath.Join(rootPath, "foo")
+	fooGoPath := filepath.Join(rootPath, "foo", "foo.go")
 
-	w, _, closer := workspaceSetup(t, "/go/src/foo", packages, false)
+	w, closer := workspaceSetup(t, fooPath, overlayFs, false)
 	defer closer()
 
-	usagePosition := &token.Position{
-		Filename: "/go/src/foo/foo.go",
-		Line:     4,
-		Column:   10,
-	}
-	declPosition := &token.Position{
-		Filename: "/go/src/foo/foo.go",
-		Line:     2,
-		Column:   6,
-	}
+	usagePosition := &token.Position{Filename: fooGoPath, Line: 4, Column: 10}
+	declPosition := &token.Position{Filename: fooGoPath, Line: 2, Column: 6}
 	testDeclaration(t, w, usagePosition, declPosition)
 }
 
@@ -163,25 +130,18 @@ func Test_Workspace_Declaration_Package_Var_CrossFiles(t *testing.T) {
 	src2 := `package foo
 	var ival int = 100`
 
-	packages := map[string]map[string]string{
-		"foo": map[string]string{
-			"foo1.go": src1,
-			"foo2.go": src2,
-		},
-	}
+	rootPath, overlayFs := createOverlay(map[string]string{
+		filepath.Join("foo", "foo1.go"): src1,
+		filepath.Join("foo", "foo2.go"): src2,
+	})
+	fooPath := filepath.Join(rootPath, "foo")
+	foo1GoPath := filepath.Join(rootPath, "foo", "foo1.go")
+	foo2GoPath := filepath.Join(rootPath, "foo", "foo2.go")
 
-	w, _, closer := workspaceSetup(t, "/go/src/foo", packages, false)
+	w, closer := workspaceSetup(t, fooPath, overlayFs, false)
 	defer closer()
-	usagePosition := &token.Position{
-		Filename: "/go/src/foo/foo1.go",
-		Line:     3,
-		Column:   3,
-	}
-	declPosition := &token.Position{
-		Filename: "/go/src/foo/foo2.go",
-		Line:     2,
-		Column:   6,
-	}
+	usagePosition := &token.Position{Filename: foo1GoPath, Line: 3, Column: 3}
+	declPosition := &token.Position{Filename: foo2GoPath, Line: 2, Column: 6}
 	testDeclaration(t, w, usagePosition, declPosition)
 }
 
@@ -193,24 +153,16 @@ func Test_Workspace_Declaration_Package_Var_Shadowed(t *testing.T) {
 		return fooval
 	}`
 
-	packages := map[string]map[string]string{
-		"foo": map[string]string{
-			"foo.go": src1,
-		},
-	}
+	rootPath, overlayFs := createOverlay(map[string]string{
+		filepath.Join("foo", "foo.go"): src1,
+	})
+	fooPath := filepath.Join(rootPath, "foo")
+	fooGoPath := filepath.Join(rootPath, "foo", "foo.go")
 
-	w, _, closer := workspaceSetup(t, "/go/src/foo", packages, false)
+	w, closer := workspaceSetup(t, fooPath, overlayFs, false)
 	defer closer()
 
-	declPosition := &token.Position{
-		Filename: "/go/src/foo/foo.go",
-		Line:     4,
-		Column:   3,
-	}
-	usagePosition := &token.Position{
-		Filename: "/go/src/foo/foo.go",
-		Line:     5,
-		Column:   10,
-	}
+	declPosition := &token.Position{Filename: fooGoPath, Line: 4, Column: 3}
+	usagePosition := &token.Position{Filename: fooGoPath, Line: 5, Column: 10}
 	testDeclaration(t, w, usagePosition, declPosition)
 }

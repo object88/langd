@@ -3,6 +3,7 @@ package langd
 import (
 	"go/token"
 	"io/ioutil"
+	"path/filepath"
 	"strings"
 	"testing"
 )
@@ -14,26 +15,18 @@ func Test_Workspace_References_Local_Const(t *testing.T) {
 		return fooVal
 	}`
 
-	packages := map[string]map[string]string{
-		"foo": map[string]string{
-			"foo.go": src1,
-		},
-	}
+	rootPath, overlayFs := createOverlay(map[string]string{
+		filepath.Join("foo", "foo.go"): src1,
+	})
+	fooPath := filepath.Join(rootPath, "foo")
+	fooGoPath := filepath.Join(rootPath, "foo", "foo.go")
 
-	w, _, closer := workspaceSetup(t, "/go/src/foo", packages, false)
+	w, closer := workspaceSetup(t, fooPath, overlayFs, false)
 	defer closer()
 
-	startPosition := &token.Position{
-		Filename: "/go/src/foo/foo.go",
-		Line:     4,
-		Column:   10,
-	}
+	startPosition := &token.Position{Filename: fooGoPath, Line: 4, Column: 10}
 	referencePositions := []*token.Position{
-		&token.Position{
-			Filename: "/go/src/foo/foo.go",
-			Line:     2,
-			Column:   8,
-		},
+		&token.Position{Filename: fooGoPath, Line: 2, Column: 8},
 		startPosition,
 	}
 	testReferences(t, w, startPosition, referencePositions)
@@ -48,27 +41,20 @@ func Test_Workspace_References_Package_Const(t *testing.T) {
 		return fooVal
 	}`
 
-	packages := map[string]map[string]string{
-		"foo": map[string]string{
-			"foo1.go": src1,
-			"foo2.go": src2,
-		},
-	}
+	rootPath, overlayFs := createOverlay(map[string]string{
+		filepath.Join("foo", "foo1.go"): src1,
+		filepath.Join("foo", "foo2.go"): src2,
+	})
+	fooPath := filepath.Join(rootPath, "foo")
+	foo1GoPath := filepath.Join(rootPath, "foo", "foo1.go")
+	foo2GoPath := filepath.Join(rootPath, "foo", "foo2.go")
 
-	w, _, closer := workspaceSetup(t, "/go/src/foo", packages, false)
+	w, closer := workspaceSetup(t, fooPath, overlayFs, false)
 	defer closer()
 
-	startPosition := &token.Position{
-		Filename: "/go/src/foo/foo2.go",
-		Line:     3,
-		Column:   10,
-	}
+	startPosition := &token.Position{Filename: foo2GoPath, Line: 3, Column: 10}
 	referencePositions := []*token.Position{
-		&token.Position{
-			Filename: "/go/src/foo/foo1.go",
-			Line:     2,
-			Column:   8,
-		},
+		&token.Position{Filename: foo1GoPath, Line: 2, Column: 8},
 		startPosition,
 	}
 	testReferences(t, w, startPosition, referencePositions)
@@ -84,29 +70,20 @@ func Test_Workspace_References_Imported_Const(t *testing.T) {
 		return foo.FooVal
 	}`
 
-	packages := map[string]map[string]string{
-		"foo": map[string]string{
-			"foo.go": src1,
-		},
-		"bar": map[string]string{
-			"bar.go": src2,
-		},
-	}
+	rootPath, overlayFs := createOverlay(map[string]string{
+		filepath.Join("foo", "foo.go"): src1,
+		filepath.Join("bar", "bar.go"): src2,
+	})
+	barPath := filepath.Join(rootPath, "bar")
+	fooGoPath := filepath.Join(rootPath, "foo", "foo.go")
+	barGoPath := filepath.Join(rootPath, "bar", "bar.go")
 
-	w, _, closer := workspaceSetup(t, "/go/src/bar", packages, false)
+	w, closer := workspaceSetup(t, barPath, overlayFs, false)
 	defer closer()
 
-	startPosition := &token.Position{
-		Filename: "/go/src/bar/bar.go",
-		Line:     4,
-		Column:   14,
-	}
+	startPosition := &token.Position{Filename: barGoPath, Line: 4, Column: 14}
 	referencePositions := []*token.Position{
-		&token.Position{
-			Filename: "/go/src/foo/foo.go",
-			Line:     2,
-			Column:   8,
-		},
+		&token.Position{Filename: fooGoPath, Line: 2, Column: 8},
 		startPosition,
 	}
 	testReferences(t, w, startPosition, referencePositions)
@@ -120,32 +97,20 @@ func Test_Workspace_References_Local_Var(t *testing.T) {
 		return fooVal
 	}`
 
-	packages := map[string]map[string]string{
-		"foo": map[string]string{
-			"foo.go": src1,
-		},
-	}
+	rootPath, overlayFs := createOverlay(map[string]string{
+		filepath.Join("foo", "foo.go"): src1,
+	})
+	fooPath := filepath.Join(rootPath, "foo")
+	fooGoPath := filepath.Join(rootPath, "foo", "foo.go")
 
-	w, _, closer := workspaceSetup(t, "/go/src/foo", packages, false)
+	w, closer := workspaceSetup(t, fooPath, overlayFs, false)
 	defer closer()
 
-	startPosition := &token.Position{
-		Filename: "/go/src/foo/foo.go",
-		Line:     4,
-		Column:   3,
-	}
+	startPosition := &token.Position{Filename: fooGoPath, Line: 4, Column: 3}
 	referencePositions := []*token.Position{
-		&token.Position{
-			Filename: "/go/src/foo/foo.go",
-			Line:     2,
-			Column:   6,
-		},
+		&token.Position{Filename: fooGoPath, Line: 2, Column: 6},
 		startPosition,
-		&token.Position{
-			Filename: "/go/src/foo/foo.go",
-			Line:     5,
-			Column:   10,
-		},
+		&token.Position{Filename: fooGoPath, Line: 5, Column: 10},
 	}
 	testReferences(t, w, startPosition, referencePositions)
 }
@@ -160,33 +125,22 @@ func Test_Workspace_References_Package_Var(t *testing.T) {
 		return fooVal
 	}`
 
-	packages := map[string]map[string]string{
-		"foo": map[string]string{
-			"foo1.go": src1,
-			"foo2.go": src2,
-		},
-	}
+	rootPath, overlayFs := createOverlay(map[string]string{
+		filepath.Join("foo", "foo1.go"): src1,
+		filepath.Join("foo", "foo2.go"): src2,
+	})
+	fooPath := filepath.Join(rootPath, "foo")
+	foo1GoPath := filepath.Join(rootPath, "foo", "foo1.go")
+	foo2GoPath := filepath.Join(rootPath, "foo", "foo2.go")
 
-	w, _, closer := workspaceSetup(t, "/go/src/foo", packages, false)
+	w, closer := workspaceSetup(t, fooPath, overlayFs, false)
 	defer closer()
 
-	startPosition := &token.Position{
-		Filename: "/go/src/foo/foo2.go",
-		Line:     3,
-		Column:   3,
-	}
+	startPosition := &token.Position{Filename: foo2GoPath, Line: 3, Column: 3}
 	referencePositions := []*token.Position{
-		&token.Position{
-			Filename: "/go/src/foo/foo1.go",
-			Line:     2,
-			Column:   6,
-		},
+		&token.Position{Filename: foo1GoPath, Line: 2, Column: 6},
 		startPosition,
-		&token.Position{
-			Filename: "/go/src/foo/foo2.go",
-			Line:     4,
-			Column:   10,
-		},
+		&token.Position{Filename: foo2GoPath, Line: 4, Column: 10},
 	}
 	testReferences(t, w, startPosition, referencePositions)
 }
@@ -201,29 +155,20 @@ func Test_Workspace_References_Imported_Var(t *testing.T) {
 		return foo.FooVal
 	}`
 
-	packages := map[string]map[string]string{
-		"foo": map[string]string{
-			"foo.go": src1,
-		},
-		"bar": map[string]string{
-			"bar.go": src2,
-		},
-	}
+	rootPath, overlayFs := createOverlay(map[string]string{
+		filepath.Join("foo", "foo.go"): src1,
+		filepath.Join("bar", "bar.go"): src2,
+	})
+	barPath := filepath.Join(rootPath, "bar")
+	fooGoPath := filepath.Join(rootPath, "foo", "foo.go")
+	barGoPath := filepath.Join(rootPath, "bar", "bar.go")
 
-	w, _, closer := workspaceSetup(t, "/go/src/bar", packages, false)
+	w, closer := workspaceSetup(t, barPath, overlayFs, false)
 	defer closer()
 
-	startPosition := &token.Position{
-		Filename: "/go/src/bar/bar.go",
-		Line:     4,
-		Column:   14,
-	}
+	startPosition := &token.Position{Filename: barGoPath, Line: 4, Column: 14}
 	referencePositions := []*token.Position{
-		&token.Position{
-			Filename: "/go/src/foo/foo.go",
-			Line:     2,
-			Column:   6,
-		},
+		&token.Position{Filename: fooGoPath, Line: 2, Column: 6},
 		startPosition,
 	}
 	testReferences(t, w, startPosition, referencePositions)
@@ -239,26 +184,18 @@ func Test_Workspace_References_Local_Struct(t *testing.T) {
 		f.a = "astring"
 	}`
 
-	packages := map[string]map[string]string{
-		"foo": map[string]string{
-			"foo.go": src1,
-		},
-	}
+	rootPath, overlayFs := createOverlay(map[string]string{
+		filepath.Join("foo", "foo.go"): src1,
+	})
+	fooPath := filepath.Join(rootPath, "foo")
+	fooGoPath := filepath.Join(rootPath, "foo", "foo.go")
 
-	w, _, closer := workspaceSetup(t, "/go/src/foo", packages, false)
+	w, closer := workspaceSetup(t, fooPath, overlayFs, false)
 	defer closer()
 
-	startPosition := &token.Position{
-		Filename: "/go/src/foo/foo.go",
-		Line:     6,
-		Column:   8,
-	}
+	startPosition := &token.Position{Filename: fooGoPath, Line: 6, Column: 8}
 	referencePositions := []*token.Position{
-		&token.Position{
-			Filename: "/go/src/foo/foo.go",
-			Line:     2,
-			Column:   7,
-		},
+		&token.Position{Filename: fooGoPath, Line: 2, Column: 7},
 		startPosition,
 	}
 	testReferences(t, w, startPosition, referencePositions)
@@ -276,27 +213,20 @@ func Test_Workspace_References_Package_Struct(t *testing.T) {
 		f.a = "astring"
 	}`
 
-	packages := map[string]map[string]string{
-		"foo": map[string]string{
-			"foo1.go": src1,
-			"foo2.go": src2,
-		},
-	}
+	rootPath, overlayFs := createOverlay(map[string]string{
+		filepath.Join("foo", "foo1.go"): src1,
+		filepath.Join("foo", "foo2.go"): src2,
+	})
+	fooPath := filepath.Join(rootPath, "foo")
+	foo1GoPath := filepath.Join(rootPath, "foo", "foo1.go")
+	foo2GoPath := filepath.Join(rootPath, "foo", "foo2.go")
 
-	w, _, closer := workspaceSetup(t, "/go/src/foo", packages, false)
+	w, closer := workspaceSetup(t, fooPath, overlayFs, false)
 	defer closer()
 
-	startPosition := &token.Position{
-		Filename: "/go/src/foo/foo2.go",
-		Line:     3,
-		Column:   8,
-	}
+	startPosition := &token.Position{Filename: foo2GoPath, Line: 3, Column: 8}
 	referencePositions := []*token.Position{
-		&token.Position{
-			Filename: "/go/src/foo/foo1.go",
-			Line:     2,
-			Column:   7,
-		},
+		&token.Position{Filename: foo1GoPath, Line: 2, Column: 7},
 		startPosition,
 	}
 	testReferences(t, w, startPosition, referencePositions)
@@ -315,29 +245,20 @@ func Test_Workspace_References_Imported_Struct(t *testing.T) {
 		f.A = "astring"
 	}`
 
-	packages := map[string]map[string]string{
-		"foo": map[string]string{
-			"foo.go": src1,
-		},
-		"bar": map[string]string{
-			"bar.go": src2,
-		},
-	}
+	rootPath, overlayFs := createOverlay(map[string]string{
+		filepath.Join("foo", "foo.go"): src1,
+		filepath.Join("bar", "bar.go"): src2,
+	})
+	barPath := filepath.Join(rootPath, "bar")
+	fooGoPath := filepath.Join(rootPath, "foo", "foo.go")
+	barGoPath := filepath.Join(rootPath, "bar", "bar.go")
 
-	w, _, closer := workspaceSetup(t, "/go/src/bar", packages, false)
+	w, closer := workspaceSetup(t, barPath, overlayFs, false)
 	defer closer()
 
-	startPosition := &token.Position{
-		Filename: "/go/src/bar/bar.go",
-		Line:     4,
-		Column:   12,
-	}
+	startPosition := &token.Position{Filename: barGoPath, Line: 4, Column: 12}
 	referencePositions := []*token.Position{
-		&token.Position{
-			Filename: "/go/src/foo/foo.go",
-			Line:     2,
-			Column:   7,
-		},
+		&token.Position{Filename: fooGoPath, Line: 2, Column: 7},
 		startPosition,
 	}
 	testReferences(t, w, startPosition, referencePositions)
@@ -353,26 +274,18 @@ func Test_Workspace_References_Local_Interface(t *testing.T) {
 		return f.myNumber()
 	}`
 
-	packages := map[string]map[string]string{
-		"foo": map[string]string{
-			"foo.go": src1,
-		},
-	}
+	rootPath, overlayFs := createOverlay(map[string]string{
+		filepath.Join("foo", "foo.go"): src1,
+	})
+	fooPath := filepath.Join(rootPath, "foo")
+	fooGoPath := filepath.Join(rootPath, "foo", "foo.go")
 
-	w, _, closer := workspaceSetup(t, "/go/src/foo", packages, false)
+	w, closer := workspaceSetup(t, fooPath, overlayFs, false)
 	defer closer()
 
-	startPosition := &token.Position{
-		Filename: "/go/src/foo/foo.go",
-		Line:     6,
-		Column:   9,
-	}
+	startPosition := &token.Position{Filename: fooGoPath, Line: 6, Column: 9}
 	referencePositions := []*token.Position{
-		&token.Position{
-			Filename: "/go/src/foo/foo.go",
-			Line:     2,
-			Column:   7,
-		},
+		&token.Position{Filename: fooGoPath, Line: 2, Column: 7},
 		startPosition,
 	}
 	testReferences(t, w, startPosition, referencePositions)
@@ -389,27 +302,20 @@ func Test_Workspace_References_Package_Interface(t *testing.T) {
 		return f.myNumber()
 	}`
 
-	packages := map[string]map[string]string{
-		"foo": map[string]string{
-			"foo1.go": src1,
-			"foo2.go": src2,
-		},
-	}
+	rootPath, overlayFs := createOverlay(map[string]string{
+		filepath.Join("foo", "foo1.go"): src1,
+		filepath.Join("foo", "foo2.go"): src2,
+	})
+	fooPath := filepath.Join(rootPath, "foo")
+	foo1GoPath := filepath.Join(rootPath, "foo", "foo1.go")
+	foo2GoPath := filepath.Join(rootPath, "foo", "foo2.go")
 
-	w, _, closer := workspaceSetup(t, "/go/src/foo", packages, false)
+	w, closer := workspaceSetup(t, fooPath, overlayFs, false)
 	defer closer()
 
-	startPosition := &token.Position{
-		Filename: "/go/src/foo/foo2.go",
-		Line:     3,
-		Column:   9,
-	}
+	startPosition := &token.Position{Filename: foo2GoPath, Line: 3, Column: 9}
 	referencePositions := []*token.Position{
-		&token.Position{
-			Filename: "/go/src/foo/foo1.go",
-			Line:     2,
-			Column:   7,
-		},
+		&token.Position{Filename: foo1GoPath, Line: 2, Column: 7},
 		startPosition,
 	}
 	testReferences(t, w, startPosition, referencePositions)
@@ -427,36 +333,27 @@ func Test_Workspace_References_Imported_Interface(t *testing.T) {
 		return f.MyNumber()
 	}`
 
-	packages := map[string]map[string]string{
-		"foo": map[string]string{
-			"foo.go": src1,
-		},
-		"bar": map[string]string{
-			"bar.go": src2,
-		},
-	}
+	rootPath, overlayFs := createOverlay(map[string]string{
+		filepath.Join("foo", "foo.go"): src1,
+		filepath.Join("bar", "bar.go"): src2,
+	})
+	barPath := filepath.Join(rootPath, "bar")
+	fooGoPath := filepath.Join(rootPath, "foo", "foo.go")
+	barGoPath := filepath.Join(rootPath, "bar", "bar.go")
 
-	w, _, closer := workspaceSetup(t, "/go/src/bar", packages, false)
+	w, closer := workspaceSetup(t, barPath, overlayFs, false)
 	defer closer()
 
-	startPosition := &token.Position{
-		Filename: "/go/src/bar/bar.go",
-		Line:     4,
-		Column:   13,
-	}
+	startPosition := &token.Position{Filename: barGoPath, Line: 4, Column: 13}
 	referencePositions := []*token.Position{
-		&token.Position{
-			Filename: "/go/src/foo/foo.go",
-			Line:     2,
-			Column:   7,
-		},
+		&token.Position{Filename: fooGoPath, Line: 2, Column: 7},
 		startPosition,
 	}
 	testReferences(t, w, startPosition, referencePositions)
 }
 
 func Test_Workspace_References_Local_Func(t *testing.T) {
-	src := `package foo
+	src1 := `package foo
 	func getFoo() int {
 		return 0
 	}
@@ -464,26 +361,18 @@ func Test_Workspace_References_Local_Func(t *testing.T) {
 		return getFoo()
 	}`
 
-	packages := map[string]map[string]string{
-		"foo": map[string]string{
-			"foo.go": src,
-		},
-	}
+	rootPath, overlayFs := createOverlay(map[string]string{
+		filepath.Join("foo", "foo.go"): src1,
+	})
+	fooPath := filepath.Join(rootPath, "foo")
+	fooGoPath := filepath.Join(rootPath, "foo", "foo.go")
 
-	w, _, closer := workspaceSetup(t, "/go/src/foo", packages, false)
+	w, closer := workspaceSetup(t, fooPath, overlayFs, false)
 	defer closer()
 
-	startPosition := &token.Position{
-		Filename: "/go/src/foo/foo.go",
-		Line:     6,
-		Column:   10,
-	}
+	startPosition := &token.Position{Filename: fooGoPath, Line: 6, Column: 10}
 	referencePositions := []*token.Position{
-		&token.Position{
-			Filename: "/go/src/foo/foo.go",
-			Line:     2,
-			Column:   7,
-		},
+		&token.Position{Filename: fooGoPath, Line: 2, Column: 7},
 		startPosition,
 	}
 	testReferences(t, w, startPosition, referencePositions)
@@ -500,27 +389,20 @@ func Test_Workspace_References_Package_Func(t *testing.T) {
 		return getFoo()
 	}`
 
-	packages := map[string]map[string]string{
-		"foo": map[string]string{
-			"foo1.go": src1,
-			"foo2.go": src2,
-		},
-	}
+	rootPath, overlayFs := createOverlay(map[string]string{
+		filepath.Join("foo", "foo1.go"): src1,
+		filepath.Join("foo", "foo2.go"): src2,
+	})
+	fooPath := filepath.Join(rootPath, "foo")
+	foo1GoPath := filepath.Join(rootPath, "foo", "foo1.go")
+	foo2GoPath := filepath.Join(rootPath, "foo", "foo2.go")
 
-	w, _, closer := workspaceSetup(t, "/go/src/foo", packages, false)
+	w, closer := workspaceSetup(t, fooPath, overlayFs, false)
 	defer closer()
 
-	startPosition := &token.Position{
-		Filename: "/go/src/foo/foo2.go",
-		Line:     3,
-		Column:   10,
-	}
+	startPosition := &token.Position{Filename: foo2GoPath, Line: 3, Column: 10}
 	referencePositions := []*token.Position{
-		&token.Position{
-			Filename: "/go/src/foo/foo1.go",
-			Line:     2,
-			Column:   7,
-		},
+		&token.Position{Filename: foo1GoPath, Line: 2, Column: 7},
 		startPosition,
 	}
 	testReferences(t, w, startPosition, referencePositions)
@@ -538,36 +420,27 @@ func Test_Workspace_References_Imported_Func(t *testing.T) {
 		return foo.GetFoo()
 	}`
 
-	packages := map[string]map[string]string{
-		"foo": map[string]string{
-			"foo.go": src1,
-		},
-		"bar": map[string]string{
-			"bar.go": src2,
-		},
-	}
+	rootPath, overlayFs := createOverlay(map[string]string{
+		filepath.Join("foo", "foo.go"): src1,
+		filepath.Join("bar", "bar.go"): src2,
+	})
+	barPath := filepath.Join(rootPath, "bar")
+	fooGoPath := filepath.Join(rootPath, "foo", "foo.go")
+	barGoPath := filepath.Join(rootPath, "bar", "bar.go")
 
-	w, _, closer := workspaceSetup(t, "/go/src/bar", packages, false)
+	w, closer := workspaceSetup(t, barPath, overlayFs, false)
 	defer closer()
 
-	startPosition := &token.Position{
-		Filename: "/go/src/bar/bar.go",
-		Line:     4,
-		Column:   14,
-	}
+	startPosition := &token.Position{Filename: barGoPath, Line: 4, Column: 14}
 	referencePositions := []*token.Position{
-		&token.Position{
-			Filename: "/go/src/foo/foo.go",
-			Line:     2,
-			Column:   7,
-		},
+		&token.Position{Filename: fooGoPath, Line: 2, Column: 7},
 		startPosition,
 	}
 	testReferences(t, w, startPosition, referencePositions)
 }
 
 func Test_Workspace_References_Local_Selector_Field(t *testing.T) {
-	src := `package foo
+	src1 := `package foo
 	type fooStruct struct {
 		a int
 	}
@@ -576,26 +449,18 @@ func Test_Workspace_References_Local_Selector_Field(t *testing.T) {
 		return f.a
 	}`
 
-	packages := map[string]map[string]string{
-		"foo": map[string]string{
-			"foo.go": src,
-		},
-	}
+	rootPath, overlayFs := createOverlay(map[string]string{
+		filepath.Join("foo", "foo.go"): src1,
+	})
+	fooPath := filepath.Join(rootPath, "foo")
+	fooGoPath := filepath.Join(rootPath, "foo", "foo.go")
 
-	w, _, closer := workspaceSetup(t, "/go/src/foo", packages, false)
+	w, closer := workspaceSetup(t, fooPath, overlayFs, false)
 	defer closer()
 
-	startPosition := &token.Position{
-		Filename: "/go/src/foo/foo.go",
-		Line:     7,
-		Column:   12,
-	}
+	startPosition := &token.Position{Filename: fooGoPath, Line: 7, Column: 12}
 	referencePositions := []*token.Position{
-		&token.Position{
-			Filename: "/go/src/foo/foo.go",
-			Line:     3,
-			Column:   3,
-		},
+		&token.Position{Filename: fooGoPath, Line: 3, Column: 3},
 		startPosition,
 	}
 	testReferences(t, w, startPosition, referencePositions)
@@ -612,27 +477,20 @@ func Test_Workspace_References_Package_Selector_Field(t *testing.T) {
 		return f.a
 	}`
 
-	packages := map[string]map[string]string{
-		"foo": map[string]string{
-			"foo1.go": src1,
-			"foo2.go": src2,
-		},
-	}
+	rootPath, overlayFs := createOverlay(map[string]string{
+		filepath.Join("foo", "foo1.go"): src1,
+		filepath.Join("foo", "foo2.go"): src2,
+	})
+	fooPath := filepath.Join(rootPath, "foo")
+	foo1GoPath := filepath.Join(rootPath, "foo", "foo1.go")
+	foo2GoPath := filepath.Join(rootPath, "foo", "foo2.go")
 
-	w, _, closer := workspaceSetup(t, "/go/src/foo", packages, false)
+	w, closer := workspaceSetup(t, fooPath, overlayFs, false)
 	defer closer()
 
-	startPosition := &token.Position{
-		Filename: "/go/src/foo/foo2.go",
-		Line:     4,
-		Column:   12,
-	}
+	startPosition := &token.Position{Filename: foo2GoPath, Line: 4, Column: 12}
 	referencePositions := []*token.Position{
-		&token.Position{
-			Filename: "/go/src/foo/foo1.go",
-			Line:     3,
-			Column:   3,
-		},
+		&token.Position{Filename: foo1GoPath, Line: 3, Column: 3},
 		startPosition,
 	}
 	testReferences(t, w, startPosition, referencePositions)
@@ -650,29 +508,20 @@ func Test_Workspace_References_Imported_Selector_Field(t *testing.T) {
 		return f.A
 	}`
 
-	packages := map[string]map[string]string{
-		"foo": map[string]string{
-			"foo.go": src1,
-		},
-		"bar": map[string]string{
-			"bar.go": src2,
-		},
-	}
+	rootPath, overlayFs := createOverlay(map[string]string{
+		filepath.Join("foo", "foo.go"): src1,
+		filepath.Join("bar", "bar.go"): src2,
+	})
+	barPath := filepath.Join(rootPath, "bar")
+	fooGoPath := filepath.Join(rootPath, "foo", "foo.go")
+	barGoPath := filepath.Join(rootPath, "bar", "bar.go")
 
-	w, _, closer := workspaceSetup(t, "/go/src/bar", packages, false)
+	w, closer := workspaceSetup(t, barPath, overlayFs, false)
 	defer closer()
 
-	startPosition := &token.Position{
-		Filename: "/go/src/bar/bar.go",
-		Line:     5,
-		Column:   12,
-	}
+	startPosition := &token.Position{Filename: barGoPath, Line: 5, Column: 12}
 	referencePositions := []*token.Position{
-		&token.Position{
-			Filename: "/go/src/foo/foo.go",
-			Line:     3,
-			Column:   3,
-		},
+		&token.Position{Filename: fooGoPath, Line: 3, Column: 3},
 		startPosition,
 	}
 	testReferences(t, w, startPosition, referencePositions)
@@ -700,39 +549,28 @@ func Test_Workspace_References_Indirect_Imported_Selector_Field(t *testing.T) {
 		return b.F.A
 	}`
 
-	packages := map[string]map[string]string{
-		"foo": map[string]string{
-			"foo.go": src1,
-		},
-		"bar": map[string]string{
-			"bar.go": src2,
-		},
-		"baz": map[string]string{
-			"baz.go": src3,
-		},
-	}
+	rootPath, overlayFs := createOverlay(map[string]string{
+		filepath.Join("foo", "foo.go"): src1,
+		filepath.Join("bar", "bar.go"): src2,
+		filepath.Join("baz", "baz.go"): src3,
+	})
+	bazPath := filepath.Join(rootPath, "baz")
+	bazGoPath := filepath.Join(rootPath, "baz", "baz.go")
+	fooGoPath := filepath.Join(rootPath, "foo", "foo.go")
 
-	w, _, closer := workspaceSetup(t, "/go/src/baz", packages, false)
+	w, closer := workspaceSetup(t, bazPath, overlayFs, false)
 	defer closer()
 
-	startPosition := &token.Position{
-		Filename: "/go/src/baz/baz.go",
-		Line:     5,
-		Column:   14,
-	}
+	startPosition := &token.Position{Filename: bazGoPath, Line: 5, Column: 14}
 	referencePositions := []*token.Position{
-		&token.Position{
-			Filename: "/go/src/foo/foo.go",
-			Line:     3,
-			Column:   3,
-		},
+		&token.Position{Filename: fooGoPath, Line: 3, Column: 3},
 		startPosition,
 	}
 	testReferences(t, w, startPosition, referencePositions)
 }
 
 func Test_Workspace_References_Local_Selector_Method(t *testing.T) {
-	src := `package foo
+	src1 := `package foo
 	type fooStruct struct {}
 	func (f *fooStruct) getFoo() int {
 		return 0
@@ -742,26 +580,18 @@ func Test_Workspace_References_Local_Selector_Method(t *testing.T) {
 		return f.getFoo()
 	}`
 
-	packages := map[string]map[string]string{
-		"foo": map[string]string{
-			"foo.go": src,
-		},
-	}
+	rootPath, overlayFs := createOverlay(map[string]string{
+		filepath.Join("foo", "foo.go"): src1,
+	})
+	fooPath := filepath.Join(rootPath, "foo")
+	fooGoPath := filepath.Join(rootPath, "foo", "foo.go")
 
-	w, _, closer := workspaceSetup(t, "/go/src/foo", packages, false)
+	w, closer := workspaceSetup(t, fooPath, overlayFs, false)
 	defer closer()
 
-	startPosition := &token.Position{
-		Filename: "/go/src/foo/foo.go",
-		Line:     8,
-		Column:   12,
-	}
+	startPosition := &token.Position{Filename: fooGoPath, Line: 8, Column: 12}
 	referencePositions := []*token.Position{
-		&token.Position{
-			Filename: "/go/src/foo/foo.go",
-			Line:     3,
-			Column:   22,
-		},
+		&token.Position{Filename: fooGoPath, Line: 3, Column: 22},
 		startPosition,
 	}
 	testReferences(t, w, startPosition, referencePositions)
@@ -779,27 +609,20 @@ func Test_Workspace_References_Package_Selector_Method(t *testing.T) {
 		return f.getFoo()
 	}`
 
-	packages := map[string]map[string]string{
-		"foo": map[string]string{
-			"foo1.go": src1,
-			"foo2.go": src2,
-		},
-	}
+	rootPath, overlayFs := createOverlay(map[string]string{
+		filepath.Join("foo", "foo1.go"): src1,
+		filepath.Join("foo", "foo2.go"): src2,
+	})
+	fooPath := filepath.Join(rootPath, "foo")
+	foo1GoPath := filepath.Join(rootPath, "foo", "foo1.go")
+	foo2GoPath := filepath.Join(rootPath, "foo", "foo2.go")
 
-	w, _, closer := workspaceSetup(t, "/go/src/foo", packages, false)
+	w, closer := workspaceSetup(t, fooPath, overlayFs, false)
 	defer closer()
 
-	startPosition := &token.Position{
-		Filename: "/go/src/foo/foo2.go",
-		Line:     4,
-		Column:   12,
-	}
+	startPosition := &token.Position{Filename: foo2GoPath, Line: 4, Column: 12}
 	referencePositions := []*token.Position{
-		&token.Position{
-			Filename: "/go/src/foo/foo1.go",
-			Line:     3,
-			Column:   22,
-		},
+		&token.Position{Filename: foo1GoPath, Line: 3, Column: 22},
 		startPosition,
 	}
 	testReferences(t, w, startPosition, referencePositions)
@@ -818,29 +641,20 @@ func Test_Workspace_References_Imported_Selector_Method(t *testing.T) {
 		return f.GetFoo()
 	}`
 
-	packages := map[string]map[string]string{
-		"foo": map[string]string{
-			"foo.go": src1,
-		},
-		"bar": map[string]string{
-			"bar.go": src2,
-		},
-	}
+	rootPath, overlayFs := createOverlay(map[string]string{
+		filepath.Join("foo", "foo.go"): src1,
+		filepath.Join("bar", "bar.go"): src2,
+	})
+	barPath := filepath.Join(rootPath, "bar")
+	fooGoPath := filepath.Join(rootPath, "foo", "foo.go")
+	barGoPath := filepath.Join(rootPath, "bar", "bar.go")
 
-	w, _, closer := workspaceSetup(t, "/go/src/bar", packages, false)
+	w, closer := workspaceSetup(t, barPath, overlayFs, false)
 	defer closer()
 
-	startPosition := &token.Position{
-		Filename: "/go/src/bar/bar.go",
-		Line:     5,
-		Column:   12,
-	}
+	startPosition := &token.Position{Filename: barGoPath, Line: 5, Column: 12}
 	referencePositions := []*token.Position{
-		&token.Position{
-			Filename: "/go/src/foo/foo.go",
-			Line:     3,
-			Column:   22,
-		},
+		&token.Position{Filename: fooGoPath, Line: 3, Column: 22},
 		startPosition,
 	}
 	testReferences(t, w, startPosition, referencePositions)
@@ -869,39 +683,28 @@ func Test_Workspace_References_Indirect_Imported_Selector_Method(t *testing.T) {
 		return b.F.GetFoo()
 	}`
 
-	packages := map[string]map[string]string{
-		"foo": map[string]string{
-			"foo.go": src1,
-		},
-		"bar": map[string]string{
-			"bar.go": src2,
-		},
-		"baz": map[string]string{
-			"baz.go": src3,
-		},
-	}
+	rootPath, overlayFs := createOverlay(map[string]string{
+		filepath.Join("foo", "foo.go"): src1,
+		filepath.Join("bar", "bar.go"): src2,
+		filepath.Join("baz", "baz.go"): src3,
+	})
+	bazPath := filepath.Join(rootPath, "baz")
+	bazGoPath := filepath.Join(rootPath, "baz", "baz.go")
+	fooGoPath := filepath.Join(rootPath, "foo", "foo.go")
 
-	w, _, closer := workspaceSetup(t, "/go/src/baz", packages, false)
+	w, closer := workspaceSetup(t, bazPath, overlayFs, false)
 	defer closer()
 
-	startPosition := &token.Position{
-		Filename: "/go/src/baz/baz.go",
-		Line:     5,
-		Column:   14,
-	}
+	startPosition := &token.Position{Filename: bazGoPath, Line: 5, Column: 14}
 	referencePositions := []*token.Position{
-		&token.Position{
-			Filename: "/go/src/foo/foo.go",
-			Line:     3,
-			Column:   22,
-		},
+		&token.Position{Filename: fooGoPath, Line: 3, Column: 22},
 		startPosition,
 	}
 	testReferences(t, w, startPosition, referencePositions)
 }
 
 func Test_Workspace_References_Local_Selector_Interface_Method(t *testing.T) {
-	src := `package foo
+	src1 := `package foo
 	type fooIface interface {
 		getFoo() int
 	}
@@ -915,26 +718,18 @@ func Test_Workspace_References_Local_Selector_Interface_Method(t *testing.T) {
 		return i.getFoo()
 	}`
 
-	packages := map[string]map[string]string{
-		"foo": map[string]string{
-			"foo.go": src,
-		},
-	}
+	rootPath, overlayFs := createOverlay(map[string]string{
+		filepath.Join("foo", "foo.go"): src1,
+	})
+	fooPath := filepath.Join(rootPath, "foo")
+	fooGoPath := filepath.Join(rootPath, "foo", "foo.go")
 
-	w, _, closer := workspaceSetup(t, "/go/src/foo", packages, false)
+	w, closer := workspaceSetup(t, fooPath, overlayFs, false)
 	defer closer()
 
-	startPosition := &token.Position{
-		Filename: "/go/src/foo/foo.go",
-		Line:     12,
-		Column:   12,
-	}
+	startPosition := &token.Position{Filename: fooGoPath, Line: 12, Column: 12}
 	referencePositions := []*token.Position{
-		&token.Position{
-			Filename: "/go/src/foo/foo.go",
-			Line:     3,
-			Column:   3,
-		},
+		&token.Position{Filename: fooGoPath, Line: 3, Column: 3},
 		startPosition,
 	}
 	testReferences(t, w, startPosition, referencePositions)
@@ -956,27 +751,20 @@ func Test_Workspace_References_Package_Selector_Interface_Method(t *testing.T) {
 		return i.getFoo()
 	}`
 
-	packages := map[string]map[string]string{
-		"foo": map[string]string{
-			"foo1.go": src1,
-			"foo2.go": src2,
-		},
-	}
+	rootPath, overlayFs := createOverlay(map[string]string{
+		filepath.Join("foo", "foo1.go"): src1,
+		filepath.Join("foo", "foo2.go"): src2,
+	})
+	fooPath := filepath.Join(rootPath, "foo")
+	foo1GoPath := filepath.Join(rootPath, "foo", "foo1.go")
+	foo2GoPath := filepath.Join(rootPath, "foo", "foo2.go")
 
-	w, _, closer := workspaceSetup(t, "/go/src/foo", packages, false)
+	w, closer := workspaceSetup(t, fooPath, overlayFs, false)
 	defer closer()
 
-	startPosition := &token.Position{
-		Filename: "/go/src/foo/foo2.go",
-		Line:     5,
-		Column:   12,
-	}
+	startPosition := &token.Position{Filename: foo2GoPath, Line: 5, Column: 12}
 	referencePositions := []*token.Position{
-		&token.Position{
-			Filename: "/go/src/foo/foo1.go",
-			Line:     3,
-			Column:   3,
-		},
+		&token.Position{Filename: foo1GoPath, Line: 3, Column: 3},
 		startPosition,
 	}
 	testReferences(t, w, startPosition, referencePositions)
@@ -999,29 +787,20 @@ func Test_Workspace_References_Imported_Selector_Interface_Method(t *testing.T) 
 		return i.GetFoo()
 	}`
 
-	packages := map[string]map[string]string{
-		"foo": map[string]string{
-			"foo.go": src1,
-		},
-		"bar": map[string]string{
-			"bar.go": src2,
-		},
-	}
+	rootPath, overlayFs := createOverlay(map[string]string{
+		filepath.Join("foo", "foo.go"): src1,
+		filepath.Join("bar", "bar.go"): src2,
+	})
+	barPath := filepath.Join(rootPath, "bar")
+	fooGoPath := filepath.Join(rootPath, "foo", "foo.go")
+	barGoPath := filepath.Join(rootPath, "bar", "bar.go")
 
-	w, _, closer := workspaceSetup(t, "/go/src/bar", packages, false)
+	w, closer := workspaceSetup(t, barPath, overlayFs, false)
 	defer closer()
 
-	startPosition := &token.Position{
-		Filename: "/go/src/bar/bar.go",
-		Line:     6,
-		Column:   12,
-	}
+	startPosition := &token.Position{Filename: barGoPath, Line: 6, Column: 12}
 	referencePositions := []*token.Position{
-		&token.Position{
-			Filename: "/go/src/foo/foo.go",
-			Line:     3,
-			Column:   3,
-		},
+		&token.Position{Filename: fooGoPath, Line: 3, Column: 3},
 		startPosition,
 	}
 	testReferences(t, w, startPosition, referencePositions)
@@ -1059,48 +838,26 @@ func Test_Workspace_References_Complex_Lookup(t *testing.T) {
 		return b.DoBar() * b.F.GetFoo()
 	}`
 
-	packages := map[string]map[string]string{
-		"foo": map[string]string{
-			"foo.go": src1,
-		},
-		"bar": map[string]string{
-			"bar.go": src2,
-		},
-		"baz": map[string]string{
-			"baz.go": src3,
-		},
-	}
+	rootPath, overlayFs := createOverlay(map[string]string{
+		filepath.Join("foo", "foo.go"): src1,
+		filepath.Join("bar", "bar.go"): src2,
+		filepath.Join("baz", "baz.go"): src3,
+	})
+	barGoPath := filepath.Join(rootPath, "bar", "bar.go")
+	bazPath := filepath.Join(rootPath, "baz")
+	bazGoPath := filepath.Join(rootPath, "baz", "baz.go")
+	fooGoPath := filepath.Join(rootPath, "foo", "foo.go")
 
-	w, _, closer := workspaceSetup(t, "/go/src/baz", packages, false)
+	w, closer := workspaceSetup(t, bazPath, overlayFs, false)
 	defer closer()
 
-	startPosition := &token.Position{
-		Filename: "/go/src/baz/baz.go",
-		Line:     5,
-		Column:   14,
-	}
+	startPosition := &token.Position{Filename: bazGoPath, Line: 5, Column: 14}
 	referencePositions := []*token.Position{
-		&token.Position{
-			Filename: "/go/src/foo/foo.go",
-			Line:     5,
-			Column:   22,
-		},
+		&token.Position{Filename: fooGoPath, Line: 5, Column: 22},
 		startPosition,
-		&token.Position{
-			Filename: "/go/src/baz/baz.go",
-			Line:     8,
-			Column:   26,
-		},
-		&token.Position{
-			Filename: "/go/src/bar/bar.go",
-			Line:     12,
-			Column:   14,
-		},
-		&token.Position{
-			Filename: "/go/src/bar/bar.go",
-			Line:     12,
-			Column:   29,
-		},
+		&token.Position{Filename: bazGoPath, Line: 8, Column: 26},
+		&token.Position{Filename: barGoPath, Line: 12, Column: 14},
+		&token.Position{Filename: barGoPath, Line: 12, Column: 29},
 	}
 	testReferences(t, w, startPosition, referencePositions)
 }

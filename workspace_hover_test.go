@@ -3,6 +3,7 @@ package langd
 import (
 	"fmt"
 	"go/token"
+	"path/filepath"
 	"testing"
 )
 
@@ -13,20 +14,16 @@ func Test_Workspace_Hover_Local_Const(t *testing.T) {
 		return fooVal
 	}`
 
-	packages := map[string]map[string]string{
-		"foo": map[string]string{
-			"foo.go": src1,
-		},
-	}
+	rootPath, overlayFs := createOverlay(map[string]string{
+		filepath.Join("foo", "foo.go"): src1,
+	})
+	fooPath := filepath.Join(rootPath, "foo")
+	fooGoPath := filepath.Join(rootPath, "foo", "foo.go")
 
-	w, _, closer := workspaceSetup(t, "/go/src/foo", packages, false)
+	w, closer := workspaceSetup(t, fooPath, overlayFs, false)
 	defer closer()
 
-	p := &token.Position{
-		Filename: "/go/src/foo/foo.go",
-		Line:     4,
-		Column:   10,
-	}
+	p := &token.Position{Filename: fooGoPath, Line: 4, Column: 10}
 	text, err := w.Hover(p)
 	if err != nil {
 		t.Fatal(err)
@@ -166,23 +163,17 @@ func Test_Workspace_Hover_Package_Func(t *testing.T) {
 
 	for _, tc := range tests {
 		t.Run(tc.name, func(t *testing.T) {
-			packages := map[string]map[string]string{
-				"foo": map[string]string{
-					"foo.go": fmt.Sprintf(src1, tc.declFunc),
-				},
-				"bar": map[string]string{
-					"bar.go": fmt.Sprintf(src2, tc.usageArgs),
-				},
-			}
+			rootPath, overlayFs := createOverlay(map[string]string{
+				filepath.Join("foo", "foo.go"): fmt.Sprintf(src1, tc.declFunc),
+				filepath.Join("bar", "bar.go"): fmt.Sprintf(src2, tc.usageArgs),
+			})
+			barPath := filepath.Join(rootPath, "bar")
+			barGoPath := filepath.Join(rootPath, "bar", "bar.go")
 
-			w, _, closer := workspaceSetup(t, "/go/src/bar", packages, false)
+			w, closer := workspaceSetup(t, barPath, overlayFs, false)
 			defer closer()
 
-			p := &token.Position{
-				Filename: "/go/src/bar/bar.go",
-				Line:     4,
-				Column:   7,
-			}
+			p := &token.Position{Filename: barGoPath, Line: 4, Column: 7}
 			text, err := w.Hover(p)
 			if err != nil {
 				t.Fatal(err)
@@ -230,23 +221,17 @@ func Test_Workspace_Hover_Struct_Pointer_Receiver_Func(t *testing.T) {
 
 	for _, tc := range tests {
 		t.Run(tc.name, func(t *testing.T) {
-			packages := map[string]map[string]string{
-				"foo": map[string]string{
-					"foo.go": fmt.Sprintf(src1, tc.receiverName),
-				},
-				"bar": map[string]string{
-					"bar.go": src2,
-				},
-			}
+			rootPath, overlayFs := createOverlay(map[string]string{
+				filepath.Join("foo", "foo.go"): fmt.Sprintf(src1, tc.receiverName),
+				filepath.Join("bar", "bar.go"): src2,
+			})
+			barPath := filepath.Join(rootPath, "bar")
+			barGoPath := filepath.Join(rootPath, "bar", "bar.go")
 
-			w, _, closer := workspaceSetup(t, "/go/src/bar", packages, false)
+			w, closer := workspaceSetup(t, barPath, overlayFs, false)
 			defer closer()
 
-			p := &token.Position{
-				Filename: "/go/src/bar/bar.go",
-				Line:     5,
-				Column:   5,
-			}
+			p := &token.Position{Filename: barGoPath, Line: 5, Column: 5}
 			text, err := w.Hover(p)
 			if err != nil {
 				t.Fatal(err)
@@ -294,23 +279,17 @@ func Test_Workspace_Hover_Struct_Value_Receiver_Func(t *testing.T) {
 
 	for _, tc := range tests {
 		t.Run(tc.name, func(t *testing.T) {
-			packages := map[string]map[string]string{
-				"foo": map[string]string{
-					"foo.go": fmt.Sprintf(src1, tc.receiverName),
-				},
-				"bar": map[string]string{
-					"bar.go": src2,
-				},
-			}
+			rootPath, overlayFs := createOverlay(map[string]string{
+				filepath.Join("foo", "foo.go"): fmt.Sprintf(src1, tc.receiverName),
+				filepath.Join("bar", "bar.go"): src2,
+			})
+			barPath := filepath.Join(rootPath, "bar")
+			barGoPath := filepath.Join(rootPath, "bar", "bar.go")
 
-			w, _, closer := workspaceSetup(t, "/go/src/bar", packages, false)
+			w, closer := workspaceSetup(t, barPath, overlayFs, false)
 			defer closer()
 
-			p := &token.Position{
-				Filename: "/go/src/bar/bar.go",
-				Line:     5,
-				Column:   5,
-			}
+			p := &token.Position{Filename: barGoPath, Line: 5, Column: 5}
 			text, err := w.Hover(p)
 			if err != nil {
 				t.Fatal(err)
@@ -330,20 +309,16 @@ func Test_Workspace_Hover_Local_Var_Basic(t *testing.T) {
 		return ival
 	}`
 
-	packages := map[string]map[string]string{
-		"foo": map[string]string{
-			"foo.go": src1,
-		},
-	}
+	rootPath, overlayFs := createOverlay(map[string]string{
+		filepath.Join("foo", "foo.go"): src1,
+	})
+	fooPath := filepath.Join(rootPath, "foo")
+	fooGoPath := filepath.Join(rootPath, "foo", "foo.go")
 
-	w, _, closer := workspaceSetup(t, "/go/src/foo", packages, false)
+	w, closer := workspaceSetup(t, fooPath, overlayFs, false)
 	defer closer()
 
-	p := &token.Position{
-		Filename: "/go/src/foo/foo.go",
-		Line:     4,
-		Column:   3,
-	}
+	p := &token.Position{Filename: fooGoPath, Line: 4, Column: 3}
 	text, err := w.Hover(p)
 	if err != nil {
 		t.Fatal(err)
@@ -363,20 +338,16 @@ func Test_Workspace_Hover_Local_Var_Struct_Empty(t *testing.T) {
 		return ival
 	}`
 
-	packages := map[string]map[string]string{
-		"foo": map[string]string{
-			"foo.go": src1,
-		},
-	}
+	rootPath, overlayFs := createOverlay(map[string]string{
+		filepath.Join("foo", "foo.go"): src1,
+	})
+	fooPath := filepath.Join(rootPath, "foo")
+	fooGoPath := filepath.Join(rootPath, "foo", "foo.go")
 
-	w, _, closer := workspaceSetup(t, "/go/src/foo", packages, false)
+	w, closer := workspaceSetup(t, fooPath, overlayFs, false)
 	defer closer()
 
-	p := &token.Position{
-		Filename: "/go/src/foo/foo.go",
-		Line:     6,
-		Column:   10,
-	}
+	p := &token.Position{Filename: fooGoPath, Line: 6, Column: 10}
 	text, err := w.Hover(p)
 	if err != nil {
 		t.Fatal(err)
@@ -399,20 +370,16 @@ func Test_Workspace_Hover_Local_Var_Struct_With_Fields(t *testing.T) {
 		return ival
 	}`
 
-	packages := map[string]map[string]string{
-		"foo": map[string]string{
-			"foo.go": src1,
-		},
-	}
+	rootPath, overlayFs := createOverlay(map[string]string{
+		filepath.Join("foo", "foo.go"): src1,
+	})
+	fooPath := filepath.Join(rootPath, "foo")
+	fooGoPath := filepath.Join(rootPath, "foo", "foo.go")
 
-	w, _, closer := workspaceSetup(t, "/go/src/foo", packages, false)
+	w, closer := workspaceSetup(t, fooPath, overlayFs, false)
 	defer closer()
 
-	p := &token.Position{
-		Filename: "/go/src/foo/foo.go",
-		Line:     8,
-		Column:   3,
-	}
+	p := &token.Position{Filename: fooGoPath, Line: 8, Column: 3}
 	text, err := w.Hover(p)
 	if err != nil {
 		t.Fatal(err)
@@ -439,20 +406,16 @@ func Test_Workspace_Hover_Local_Var_Struct_Embedded(t *testing.T) {
 		return ival
 	}`
 
-	packages := map[string]map[string]string{
-		"foo": map[string]string{
-			"foo.go": src1,
-		},
-	}
+	rootPath, overlayFs := createOverlay(map[string]string{
+		filepath.Join("foo", "foo.go"): src1,
+	})
+	fooPath := filepath.Join(rootPath, "foo")
+	fooGoPath := filepath.Join(rootPath, "foo", "foo.go")
 
-	w, _, closer := workspaceSetup(t, "/go/src/foo", packages, false)
+	w, closer := workspaceSetup(t, fooPath, overlayFs, false)
 	defer closer()
 
-	p := &token.Position{
-		Filename: "/go/src/foo/foo.go",
-		Line:     12,
-		Column:   3,
-	}
+	p := &token.Position{Filename: fooGoPath, Line: 12, Column: 3}
 	text, err := w.Hover(p)
 	if err != nil {
 		t.Fatal(err)

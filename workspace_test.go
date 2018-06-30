@@ -12,14 +12,13 @@ import (
 	"testing"
 
 	"github.com/object88/langd/log"
-	"golang.org/x/tools/go/buildutil"
+	"github.com/spf13/afero"
 )
 
-func workspaceSetup(t *testing.T, startingPath string, packages map[string]map[string]string, expectFailure bool) (*Workspace, *Loader, func()) {
-	fc := buildutil.FakeContext(packages)
+func workspaceSetup(t *testing.T, startingPath string, overlayFs afero.Fs, expectFailure bool) (*Workspace, func()) {
 	le := NewLoaderEngine()
 	l := NewLoader(le, startingPath, runtime.GOOS, runtime.GOARCH, runtime.GOROOT(), func(l *Loader) {
-		l.context = fc
+		l.fs = afero.NewCopyOnWriteFs(l.fs, overlayFs)
 	})
 	w := CreateWorkspace(le, log.CreateLog(os.Stdout))
 	w.AssignLoader(l)
@@ -61,7 +60,7 @@ func workspaceSetup(t *testing.T, startingPath string, packages map[string]map[s
 		}
 	}
 
-	return w, l, func() { le.Close() }
+	return w, func() { le.Close() }
 }
 
 func testDeclaration(t *testing.T, w *Workspace, usagePosition, expectedDeclPosition *token.Position) {

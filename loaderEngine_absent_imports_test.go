@@ -5,9 +5,8 @@ import (
 	"runtime"
 	"testing"
 
-	"github.com/spf13/afero"
-
 	"github.com/object88/langd/log"
+	"github.com/spf13/afero"
 )
 
 // Looking to test circumstance where a package gets imported, but the
