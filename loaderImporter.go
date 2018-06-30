@@ -12,8 +12,8 @@ type loaderImporter struct {
 }
 
 // Import is the implementation of types.Importer
-func (lci *loaderImporter) Import(path string) (*types.Package, error) {
-	dp, err := lci.locatePackages(path)
+func (li *loaderImporter) Import(path string) (*types.Package, error) {
+	dp, err := li.locatePackages(path)
 	if err != nil {
 		return nil, err
 	}
