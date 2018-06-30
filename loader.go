@@ -103,7 +103,7 @@ func NewLoader(le *LoaderEngine, startDir, goos, goarch, goroot string, options 
 
 	l.config = &types.Config{
 		Error:    l.HandleTypeCheckerError,
-		Importer: &loaderContextImporter{l: l},
+		Importer: &loaderImporter{l: l},
 	}
 	l.hash = calculateHashFromStrings(append([]string{goarch, goos}, l.Tags...)...)
 	l.unsafePath = filepath.Join(l.context.GOROOT, "src", "unsafe")

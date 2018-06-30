@@ -7,12 +7,12 @@ import (
 	"github.com/pkg/errors"
 )
 
-type loaderContextImporter struct {
+type loaderImporter struct {
 	l *Loader
 }
 
 // Import is the implementation of types.Importer
-func (lci *loaderContextImporter) Import(path string) (*types.Package, error) {
+func (lci *loaderImporter) Import(path string) (*types.Package, error) {
 	dp, err := lci.locatePackages(path)
 	if err != nil {
 		return nil, err
@@ -25,14 +25,14 @@ func (lci *loaderContextImporter) Import(path string) (*types.Package, error) {
 }
 
 // ImportFrom is the implementation of types.ImporterFrom
-func (lci *loaderContextImporter) ImportFrom(path, srcDir string, mode types.ImportMode) (*types.Package, error) {
-	absPath, err := lci.l.findImportPath(path, srcDir)
+func (li *loaderImporter) ImportFrom(path, srcDir string, mode types.ImportMode) (*types.Package, error) {
+	absPath, err := li.l.findImportPath(path, srcDir)
 	if err != nil {
 		msg := fmt.Sprintf("Failed to locate import path for %s, %s", path, srcDir)
 		return nil, errors.Wrap(err, msg)
 	}
 
-	dp, err := lci.locatePackages(absPath)
+	dp, err := li.locatePackages(absPath)
 	if err != nil {
 		msg := fmt.Sprintf("Failed to locate package %s\n\tfrom %s, %s", absPath, path, srcDir)
 		return nil, errors.Wrap(err, msg)
@@ -45,10 +45,10 @@ func (lci *loaderContextImporter) ImportFrom(path, srcDir string, mode types.Imp
 	return dp.typesPkg, nil
 }
 
-func (lci *loaderContextImporter) locatePackages(path string) (*DistinctPackage, error) {
+func (li *loaderImporter) locatePackages(path string) (*DistinctPackage, error) {
 	phash := calculateHashFromString(path)
-	chash := combineHashes(phash, lci.l.hash)
-	n, ok := lci.l.le.caravan.Find(chash)
+	chash := combineHashes(phash, li.l.hash)
+	n, ok := li.l.le.caravan.Find(chash)
 	if !ok {
 		return nil, fmt.Errorf("Failed to import %s", path)
 	}
