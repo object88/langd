@@ -2,6 +2,12 @@
 
 
 [[projects]]
+  name = "github.com/OneOfOne/xxhash"
+  packages = ["."]
+  revision = "6def279d2ce6c81a79dd1c1be580f03bb216fb8a"
+  version = "v1.2.2"
+
+[[projects]]
   name = "github.com/cloudfoundry/gosigar"
   packages = [
     ".",
@@ -250,6 +256,6 @@
 [solve-meta]
   analyzer-name = "dep"
   analyzer-version = 1
-  inputs-digest = "88d81f9e2c44fe49e96915c1dbf20d6d7d26d4ee9962721906162f38975be5eb"
+  inputs-digest = "cc41316207cb9287057dda0ee9d18c3f93a86f7f717da888c65a8c584cbd0e55"
   solver-name = "gps-cdcl"
   solver-version = 1

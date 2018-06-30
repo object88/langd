@@ -50,6 +50,10 @@
   name = "github.com/dgryski/go-mph"
 
 [[constraint]]
+  name = "github.com/spf13/afero"
+  version = "1.0.2"
+
+[[constraint]]
   name = "github.com/spf13/viper"
   version = "1.0.0"
 
@@ -60,3 +64,7 @@
 [[constraint]]
   name = "github.com/pkg/errors"
   version = "0.8.0"
+
+[[constraint]]
+  name = "github.com/OneOfOne/xxhash"
+  version = "1.2.2"
