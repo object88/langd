@@ -63,6 +63,12 @@
   revision = "bbd03ef6da3a115852eaf24c8a1c46aeb39aa175"
 
 [[projects]]
+  name = "github.com/google/uuid"
+  packages = ["."]
+  revision = "064e2069ce9c359c118179501254f67d7d37ba24"
+  version = "0.2"
+
+[[projects]]
   branch = "master"
   name = "github.com/hashicorp/hcl"
   packages = [
@@ -205,12 +211,6 @@
 
 [[projects]]
   branch = "master"
-  name = "golang.org/x/tools"
-  packages = ["go/buildutil"]
-  revision = "ce871d178848e3eea1e8795e5cfb74053dde4bb9"
-
-[[projects]]
-  branch = "master"
   name = "google.golang.org/genproto"
   packages = ["googleapis/rpc/status"]
   revision = "2b5a72b8730b0b16380010cfe5286c42108d88e7"
@@ -256,6 +256,6 @@
 [solve-meta]
   analyzer-name = "dep"
   analyzer-version = 1
-  inputs-digest = "f8aea30fb983e458e7932c380551e0269cc301c7e4ba6169da18a61d6d2c9c7c"
+  inputs-digest = "4a1d6575be78a4bef9f055c6e00e18dfc64649c81893edac70ecb3d841366d07"
   solver-name = "gps-cdcl"
   solver-version = 1

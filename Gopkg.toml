@@ -26,6 +26,10 @@
   name = "github.com/golang/protobuf"
 
 [[constraint]]
+  name = "github.com/google/uuid"
+  version = "0.2"
+
+[[constraint]]
   branch = "master"
   name = "github.com/sourcegraph/jsonrpc2"
 
