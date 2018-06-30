@@ -1,66 +1,61 @@
 package langd
 
 import (
+	"path/filepath"
 	"runtime"
 	"testing"
 
-	"golang.org/x/tools/go/buildutil"
+	"github.com/spf13/afero"
 )
-
-const aliasedImportsTestProgram1 = `package foo
-
-import (
-	baz "../bar"
-)
-
-func add1(param1 int) int {
-	baz.CountCall("add1")
-
-	if baz.TotalCalls == 100 {
-		// That's a lot of calls...
-		return param1
-	}
-
-	param1++
-	return param1
-}
-`
-
-const aliasedImportsTestProgram2 = `package bar
-
-var calls = map[string]int{}
-var TotalCalls = 0
-
-func CountCall(source string) {
-	TotalCalls++
-
-	call, ok := calls[source]
-	if !ok {
-		call = 1
-	} else {
-		call++
-	}
-	calls[source] = call
-}
-`
 
 func Test_Load_AliasedImports(t *testing.T) {
-	packages := map[string]map[string]string{
-		"foo": map[string]string{
-			"foo.go": aliasedImportsTestProgram1,
-		},
-		"bar": map[string]string{
-			"bar.go": aliasedImportsTestProgram2,
-		},
-	}
+	const aliasedImportsTestProgram1 = `package foo
 
-	fc := buildutil.FakeContext(packages)
+	import (
+		baz "../bar"
+	)
+
+	func add1(param1 int) int {
+		baz.CountCall("add1")
+
+		if baz.TotalCalls == 100 {
+			// That's a lot of calls...
+			return param1
+		}
+
+		param1++
+		return param1
+	}`
+
+	const aliasedImportsTestProgram2 = `package bar
+
+	var calls = map[string]int{}
+	var TotalCalls = 0
+
+	func CountCall(source string) {
+		TotalCalls++
+
+		call, ok := calls[source]
+		if !ok {
+			call = 1
+		} else {
+			call++
+		}
+		calls[source] = call
+	}`
+
+	rootPath, overlayFs := createOverlay(map[string]string{
+		filepath.Join("foo", "foo.go"): aliasedImportsTestProgram1,
+		filepath.Join("bar", "bar.go"): aliasedImportsTestProgram2,
+	})
+	fooPath := filepath.Join(rootPath, "foo")
+
 	le := NewLoaderEngine()
 	defer le.Close()
-	l := NewLoader(le, "/go/src/foo", runtime.GOOS, runtime.GOARCH, "/go", func(l *Loader) {
-		l.context = fc
+	l := NewLoader(le, fooPath, runtime.GOOS, runtime.GOARCH, runtime.GOROOT(), func(l *Loader) {
+		l.fs = afero.NewCopyOnWriteFs(l.fs, overlayFs)
 	})
-	l.LoadDirectory("/go/src/foo")
+	l.LoadDirectory(fooPath)
 	l.Wait()
 
 	errCount := 0

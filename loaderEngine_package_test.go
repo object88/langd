@@ -1,10 +1,11 @@
 package langd
 
 import (
+	"path/filepath"
 	"runtime"
 	"testing"
 
-	"golang.org/x/tools/go/buildutil"
+	"github.com/spf13/afero"
 )
 
 func Test_Load_Own_Package(t *testing.T) {
@@ -12,20 +13,18 @@ func Test_Load_Own_Package(t *testing.T) {
 	import "../bar"
 	var Bar int = 0`
 
-	packages := map[string]map[string]string{
-		"bar": map[string]string{
-			"bar.go": src,
-		},
-	}
+	rootPath, overlayFs := createOverlay(map[string]string{
+		filepath.Join("bar", "bar.go"): src,
+	})
+	barPath := filepath.Join(rootPath, "bar")
 
-	fc := buildutil.FakeContext(packages)
 	le := NewLoaderEngine()
 	defer le.Close()
-	l := NewLoader(le, "/go/src/bar", runtime.GOOS, runtime.GOARCH, "/go", func(l *Loader) {
-		l.context = fc
+	l := NewLoader(le, barPath, runtime.GOOS, runtime.GOARCH, runtime.GOROOT(), func(l *Loader) {
+		l.fs = afero.NewCopyOnWriteFs(l.fs, overlayFs)
 	})
 
-	err := l.LoadDirectory("/go/src/bar")
+	err := l.LoadDirectory(barPath)
 	if err != nil {
 		t.Fatalf("Error while loading: %s", err.Error())
 	}

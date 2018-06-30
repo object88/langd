@@ -1,10 +1,11 @@
 package langd
 
 import (
+	"path/filepath"
 	"runtime"
 	"testing"
 
-	"golang.org/x/tools/go/buildutil"
+	"github.com/spf13/afero"
 )
 
 func Test_Load_PackageWithDifferentDir(t *testing.T) {
@@ -18,22 +19,18 @@ func Test_Load_PackageWithDifferentDir(t *testing.T) {
 	src2 := `package bar
 	var TotalCalls = 0`
 
-	packages := map[string]map[string]string{
-		"foo": map[string]string{
-			"foo.go": src1,
-		},
-		"gobar": map[string]string{
-			"bar.go": src2,
-		},
-	}
+	rootPath, overlayFs := createOverlay(map[string]string{
+		filepath.Join("foo", "foo.go"):   src1,
+		filepath.Join("gobar", "bar.go"): src2,
+	})
+	fooPath := filepath.Join(rootPath, "foo")
 
-	fc := buildutil.FakeContext(packages)
 	le := NewLoaderEngine()
 	defer le.Close()
-	l := NewLoader(le, "/go/src/foo", runtime.GOOS, runtime.GOARCH, "/go", func(l *Loader) {
-		l.context = fc
+	l := NewLoader(le, fooPath, runtime.GOOS, runtime.GOARCH, runtime.GOROOT(), func(l *Loader) {
+		l.fs = afero.NewCopyOnWriteFs(l.fs, overlayFs)
 	})
-	l.LoadDirectory("/go/src/foo")
+	l.LoadDirectory(fooPath)
 	l.Wait()
 
 	errCount := 0

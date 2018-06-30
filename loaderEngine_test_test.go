@@ -1,9 +1,11 @@
 package langd
 
 import (
+	"path/filepath"
+	"runtime"
 	"testing"
 
-	"golang.org/x/tools/go/buildutil"
+	"github.com/spf13/afero"
 )
 
 func Test_Loader_Load_Tests(t *testing.T) {
@@ -21,24 +23,21 @@ func Test_Loader_Load_Tests(t *testing.T) {
 	srcFoo := `package foo
 	var FooVal int = 1`
 
-	packages := map[string]map[string]string{
-		"bar": map[string]string{
-			"bar.go":      srcBar,
-			"bar_test.go": srcBarTest,
-		},
-		"foo": map[string]string{
-			"foo.go": srcFoo,
-		},
-	}
+	rootPath, overlayFs := createOverlay(map[string]string{
+		filepath.Join("bar", "bar.go"):      srcBar,
+		filepath.Join("bar", "bar_test.go"): srcBarTest,
+		filepath.Join("foo", "foo.go"):      srcFoo,
+	})
+	barPath := filepath.Join(rootPath, "bar")
 
 	le := NewLoaderEngine()
 	defer le.Close()
 
-	l := NewLoader(le, "/go/src/bar", "darwin", "x86", "/go", func(l *Loader) {
-		l.context = buildutil.FakeContext(packages)
+	l := NewLoader(le, barPath, "darwin", "x86", runtime.GOROOT(), func(l *Loader) {
+		l.fs = afero.NewCopyOnWriteFs(l.fs, overlayFs)
 	})
 
-	err := l.LoadDirectory("/go/src/bar")
+	err := l.LoadDirectory(barPath)
 	if err != nil {
 		t.Fatalf("(1) Error while loading: %s", err.Error())
 	}
