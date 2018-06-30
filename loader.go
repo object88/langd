@@ -254,7 +254,7 @@ func (l *Loader) FindImportPath(dp *DistinctPackage, importPath string) (string,
 
 // LoadDirectory adds the contents of a directory to the Loader
 func (l *Loader) LoadDirectory(path string) error {
-	if !l.IsDir(path) {
+	if !l.context.IsDir(path) {
 		return fmt.Errorf("Argument '%s' is not a directory", path)
 	}
 
@@ -284,23 +284,6 @@ func (l *Loader) isAllowed(absPath string) bool {
 // package for the loader context
 func (l *Loader) isUnsafe(dp *DistinctPackage) bool {
 	return l.unsafePath == dp.Package.AbsPath
-}
-
-func (l *Loader) IsDir(absPath string) bool {
-	return l.context.IsDir(absPath)
-}
-
-func (l *Loader) OpenFile(absFilepath string) io.ReadCloser {
-	r, err := l.context.OpenFile(absFilepath)
-	if err != nil {
-		l.Log.Debugf("loader.OpenFile: ERROR: Failed to open file %s:\n\t%s\n", absFilepath, err.Error())
-		return nil
-	}
-	return r
-}
-
-func (l *Loader) ReadDir(absPath string) ([]os.FileInfo, error) {
-	return l.context.ReadDir(absPath)
 }
 
 func (l *Loader) Signal() {

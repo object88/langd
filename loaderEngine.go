@@ -127,7 +127,7 @@ func (le *LoaderEngine) readDir(l *Loader, absPath string) {
 
 	le.ensureDistinctPackage(l, absPath)
 
-	fis, err := l.ReadDir(absPath)
+	fis, err := l.context.ReadDir(absPath)
 	if err != nil {
 		panic(fmt.Sprintf("Dang:\n\t%s", err.Error()))
 	}
@@ -500,7 +500,11 @@ func (le *LoaderEngine) findImportPathsFromAst(astf *ast.File, importPaths map[s
 func (le *LoaderEngine) getFileReader(l *Loader, absFilepath string) (io.Reader, bool) {
 	var r io.Reader
 	if of, err := le.openedFiles.Get(absFilepath); err != nil {
-		r = l.OpenFile(absFilepath)
+		r, err = l.context.OpenFile(absFilepath)
+		if err != nil {
+			l.Log.Debugf("LoaderEngine.getFileReader: failed to open file %s\n\t%s\n", absFilepath, err.Error())
+			return nil, false
+		}
 		if r == nil {
 			return nil, false
 		}
