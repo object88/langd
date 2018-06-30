@@ -126,8 +126,8 @@
     ".",
     "mem"
   ]
-  revision = "bb8f1927f2a9d3ab41c9340aa034f6b803f4359c"
-  version = "v1.0.2"
+  revision = "787d034dfe70e44075ccc060d346146ef53270ad"
+  version = "v1.1.1"
 
 [[projects]]
   name = "github.com/spf13/cast"
@@ -256,6 +256,6 @@
 [solve-meta]
   analyzer-name = "dep"
   analyzer-version = 1
-  inputs-digest = "cc41316207cb9287057dda0ee9d18c3f93a86f7f717da888c65a8c584cbd0e55"
+  inputs-digest = "f8aea30fb983e458e7932c380551e0269cc301c7e4ba6169da18a61d6d2c9c7c"
   solver-name = "gps-cdcl"
   solver-version = 1
