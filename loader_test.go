@@ -1,32 +1,14 @@
 package langd
 
 import (
-	"os"
 	"path/filepath"
 	"runtime"
 	"sync"
 	"testing"
 
-	"github.com/google/uuid"
 	"github.com/object88/langd/collections"
 	"github.com/spf13/afero"
 )
-
-func createOverlay(files map[string]string) (string, afero.Fs) {
-	fs := afero.NewMemMapFs()
-	rootPath := filepath.Join(string(os.PathSeparator), uuid.New().String(), "go", "src")
-
-	for path, contents := range files {
-		completePath := filepath.Join(rootPath, path)
-
-		fs.MkdirAll(filepath.Dir(completePath), 0644)
-		fh, _ := fs.Create(completePath)
-		fh.WriteString(contents)
-		fh.Close()
-	}
-
-	return rootPath, fs
-}
 
 func Test_LoadContext_Same_Package_Same_Env(t *testing.T) {
 	src := `package bar

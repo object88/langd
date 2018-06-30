@@ -8,12 +8,30 @@ import (
 	"fmt"
 	"go/token"
 	"os"
+	"path/filepath"
 	"runtime"
 	"testing"
 
+	"github.com/google/uuid"
 	"github.com/object88/langd/log"
 	"github.com/spf13/afero"
 )
+
+func createOverlay(files map[string]string) (string, afero.Fs) {
+	fs := afero.NewMemMapFs()
+	rootPath := filepath.Join(string(os.PathSeparator), uuid.New().String(), "go", "src")
+
+	for path, contents := range files {
+		completePath := filepath.Join(rootPath, path)
+
+		fs.MkdirAll(filepath.Dir(completePath), 0644)
+		fh, _ := fs.Create(completePath)
+		fh.WriteString(contents)
+		fh.Close()
+	}
+
+	return rootPath, fs
+}
 
 func workspaceSetup(t *testing.T, startingPath string, overlayFs afero.Fs, expectFailure bool) (*Workspace, func()) {
 	le := NewLoaderEngine()
