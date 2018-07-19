@@ -96,7 +96,7 @@ func NewHandler(load *health.Load, le *langd.LoaderEngine) *Handler {
 
 // ConfigureLoaderContext will instantiate the loader if its not present, and provide
 // the GOROOT specified by the settings
-func (h *Handler) ConfigureLoaderContext(startDir string, settings *viper.Viper) {
+func (h *Handler) ConfigureLoaderContext(settings *viper.Viper) {
 	root := settings.GetString("go.goroot")
 	if root == "" {
 		root = runtime.GOROOT()
@@ -109,7 +109,7 @@ func (h *Handler) ConfigureLoaderContext(startDir string, settings *viper.Viper)
 	if goos == "" {
 		goos = runtime.GOOS
 	}
-	loader := langd.NewLoader(h.workspace.LoaderEngine, startDir, goos, goarch, root)
+	loader := langd.NewLoader(h.workspace.LoaderEngine, goos, goarch, root)
 
 	h.workspace.AssignLoader(loader)
 }

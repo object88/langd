@@ -27,7 +27,7 @@ func Test_Load_PackageWithDifferentDir(t *testing.T) {
 
 	le := NewLoaderEngine()
 	defer le.Close()
-	l := NewLoader(le, fooPath, runtime.GOOS, runtime.GOARCH, runtime.GOROOT(), func(l *Loader) {
+	l := NewLoader(le, runtime.GOOS, runtime.GOARCH, runtime.GOROOT(), func(l *Loader) {
 		l.fs = afero.NewCopyOnWriteFs(l.fs, overlayFs)
 	})
 	l.LoadDirectory(fooPath)

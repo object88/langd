@@ -35,7 +35,7 @@ func createOverlay(files map[string]string) (string, afero.Fs) {
 
 func workspaceSetup(t *testing.T, startingPath string, overlayFs afero.Fs, expectFailure bool) (*Workspace, func()) {
 	le := NewLoaderEngine()
-	l := NewLoader(le, startingPath, runtime.GOOS, runtime.GOARCH, runtime.GOROOT(), func(l *Loader) {
+	l := NewLoader(le, runtime.GOOS, runtime.GOARCH, runtime.GOROOT(), func(l *Loader) {
 		l.fs = afero.NewCopyOnWriteFs(l.fs, overlayFs)
 	})
 	w := CreateWorkspace(le, log.CreateLog(os.Stdout))

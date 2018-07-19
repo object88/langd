@@ -22,11 +22,11 @@ func Test_LoadContext_Same_Package_Same_Env(t *testing.T) {
 	le := NewLoaderEngine()
 	defer le.Close()
 
-	l1 := NewLoader(le, barPath, "darwin", "x86", runtime.GOROOT(), func(l *Loader) {
+	l1 := NewLoader(le, "darwin", "x86", runtime.GOROOT(), func(l *Loader) {
 		l.fs = afero.NewCopyOnWriteFs(l.fs, overlayFs)
 	})
 
-	l2 := NewLoader(le, barPath, "linux", "arm", runtime.GOROOT(), func(l *Loader) {
+	l2 := NewLoader(le, "linux", "arm", runtime.GOROOT(), func(l *Loader) {
 		l.fs = afero.NewCopyOnWriteFs(l.fs, overlayFs)
 	})
 
@@ -122,7 +122,7 @@ func Test_LoadContext_Same_Package_Different_Env(t *testing.T) {
 		ii := i
 		env := envs[i]
 		go func() {
-			l := NewLoader(le, barPath, env[0], env[1], runtime.GOROOT(), func(l *Loader) {
+			l := NewLoader(le, env[0], env[1], runtime.GOROOT(), func(l *Loader) {
 				l.fs = afero.NewCopyOnWriteFs(l.fs, overlayFs)
 			})
 			ls[ii] = l

@@ -20,7 +20,7 @@ func Test_Load_Own_Package(t *testing.T) {
 
 	le := NewLoaderEngine()
 	defer le.Close()
-	l := NewLoader(le, barPath, runtime.GOOS, runtime.GOARCH, runtime.GOROOT(), func(l *Loader) {
+	l := NewLoader(le, runtime.GOOS, runtime.GOARCH, runtime.GOROOT(), func(l *Loader) {
 		l.fs = afero.NewCopyOnWriteFs(l.fs, overlayFs)
 	})
 

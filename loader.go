@@ -49,21 +49,13 @@ type Loader struct {
 type LoaderOption func(l *Loader)
 
 // NewLoader creates a new Loader
-func NewLoader(le *LoaderEngine, startDir, goos, goarch, goroot string, options ...LoaderOption) *Loader {
+func NewLoader(le *LoaderEngine, goos, goarch, goroot string, options ...LoaderOption) *Loader {
 	globs := make([]glob.Glob, 2)
 	globs[0] = glob.MustCompile(filepath.Join("**", ".*"))
 	globs[1] = glob.MustCompile(filepath.Join("**", "testdata"))
 
-	if strings.HasPrefix(startDir, "file://") {
-		startDir = startDir[utf8.RuneCountInString("file://"):]
-	}
-	startDir, err := filepath.Abs(startDir)
-	if err != nil {
-		return nil
-	}
-
 	l := &Loader{
-		StartDir:      startDir,
+		StartDir:      "--",
 		context:       build.Default,
 		filteredPaths: globs,
 		fs:            afero.NewReadOnlyFs(afero.NewOsFs()),
@@ -261,18 +253,22 @@ func (l *Loader) FindImportPath(dp *DistinctPackage, importPath string) (string,
 }
 
 // LoadDirectory adds the contents of a directory to the Loader
-func (l *Loader) LoadDirectory(path string) error {
-	if !l.context.IsDir(path) {
-		return fmt.Errorf("Argument '%s' is not a directory", path)
+func (l *Loader) LoadDirectory(startDir string) error {
+	if strings.HasPrefix(startDir, "file://") {
+		startDir = startDir[utf8.RuneCountInString("file://"):]
 	}
-
-	absPath, err := filepath.Abs(path)
+	startDir, err := filepath.Abs(startDir)
 	if err != nil {
-		return fmt.Errorf("Could not get absolute path for '%s'", absPath)
+		return errors.Wrapf(err, "Could not get absolute path for '%s'", startDir)
 	}
 
-	l.Log.Verbosef("Loader.LoadDirectory: reading dir '%s'\n", absPath)
-	l.le.readDir(l, absPath)
+	if !l.context.IsDir(startDir) {
+		return fmt.Errorf("Argument '%s' is not a directory", startDir)
+	}
+
+	l.StartDir = startDir
+	l.Log.Verbosef("Loader.LoadDirectory: reading dir '%s'\n", l.StartDir)
+	l.le.readDir(l, l.StartDir)
 
 	return nil
 }

@@ -54,7 +54,7 @@ func Test_LoaderContext_Shared_Package(t *testing.T) {
 	for i := 0; i < 2; i++ {
 		ii := i
 		go func() {
-			l := NewLoader(le, paths[ii], runtime.GOOS, runtime.GOARCH, runtime.GOROOT(), func(l *Loader) {
+			l := NewLoader(le, runtime.GOOS, runtime.GOARCH, runtime.GOROOT(), func(l *Loader) {
 				l.fs = afero.NewCopyOnWriteFs(l.fs, overlayFs)
 			})
 			ls[ii] = l

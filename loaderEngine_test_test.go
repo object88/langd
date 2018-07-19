@@ -33,7 +33,7 @@ func Test_Loader_Load_Tests(t *testing.T) {
 	le := NewLoaderEngine()
 	defer le.Close()
 
-	l := NewLoader(le, barPath, "darwin", "x86", runtime.GOROOT(), func(l *Loader) {
+	l := NewLoader(le, "darwin", "x86", runtime.GOROOT(), func(l *Loader) {
 		l.fs = afero.NewCopyOnWriteFs(l.fs, overlayFs)
 	})
 

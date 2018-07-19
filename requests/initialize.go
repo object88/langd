@@ -28,7 +28,7 @@ func (h *Handler) processInit(p *json.RawMessage) (interface{}, error) {
 	h.hFunc = h.initedHandler
 	h.rootURI = rootURI
 
-	h.ConfigureLoaderContext(rootURI, viper.New())
+	h.ConfigureLoaderContext(viper.New())
 
 	go h.readRoot(rootURI)
 

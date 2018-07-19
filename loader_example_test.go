@@ -36,7 +36,7 @@ func Test_Scale(t *testing.T) {
 	logger.SetLevel(log.Debug)
 	le := NewLoaderEngine()
 	defer le.Close()
-	l := NewLoader(le, path, "darwin", "amd64", runtime.GOROOT())
+	l := NewLoader(le, "darwin", "amd64", runtime.GOROOT())
 	w := CreateWorkspace(le, logger)
 	w.AssignLoader(l)
 
@@ -81,7 +81,7 @@ func Benchmark_Scale(b *testing.B) {
 	for n := 0; n < b.N; n++ {
 		le := NewLoaderEngine()
 		defer le.Close()
-		l := NewLoader(le, path, "darwin", "amd64", runtime.GOROOT())
+		l := NewLoader(le, "darwin", "amd64", runtime.GOROOT())
 		w := CreateWorkspace(le, logger)
 		w.AssignLoader(l)
 
