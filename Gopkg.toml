@@ -43,7 +43,7 @@
 
 [[constraint]]
   name = "google.golang.org/grpc"
-  version = "1.10.0"
+  version = "1.13.0"
 
 [[constraint]]
   name = "github.com/gobwas/glob"
@@ -59,7 +59,7 @@
 
 [[constraint]]
   name = "github.com/spf13/viper"
-  version = "1.0.0"
+  version = "1.0.2"
 
 [[constraint]]
   name = "github.com/cloudfoundry/gosigar"
