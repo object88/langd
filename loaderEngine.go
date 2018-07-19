@@ -64,6 +64,9 @@ func NewLoaderEngine() *LoaderEngine {
 	return le
 }
 
+// InvalidatePackage invalidates all the distinct packages that point to the
+// package at this path, as well as any paths that import this, and down the
+// import graph.
 func (le *LoaderEngine) InvalidatePackage(absPath string) {
 	p, ok := le.packages[absPath]
 	if !ok {
@@ -72,10 +75,12 @@ func (le *LoaderEngine) InvalidatePackage(absPath string) {
 	}
 
 	nodesMap := map[*collections.Node]bool{}
+	p.m.Lock()
 	for l := range p.loaders {
 		n, _ := le.caravan.Find(l.calculateDistinctPackageHash(absPath))
 		nodesMap[n] = true
 	}
+	p.m.Unlock()
 
 	nodes := make([]*collections.Node, len(nodesMap))
 	i := 0

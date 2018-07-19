@@ -75,7 +75,7 @@ func (c *Caravan) Ensure(hash Hash, create func() Hasher) (*Node, bool) {
 		newP := create()
 		n = c.insert(newP)
 		if newP.Hash() != hash {
-			message := fmt.Sprintf("Attempt to add a Hasher whose hash (0x%x) does not match the provided hash (0x%x)", newP.Hash(), hash)
+			message := fmt.Sprintf("Attempt to add a Hasher whose hash (0x%016x) does not match the provided hash (0x%016x)", newP.Hash(), hash)
 			panic(message)
 		}
 	}

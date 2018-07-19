@@ -35,7 +35,7 @@ type Loader struct {
 	fs afero.Fs
 
 	config     *types.Config
-	context    *build.Context
+	context    build.Context
 	unsafePath string
 
 	distinctPackageHashSet map[collections.Hash]bool
@@ -64,7 +64,7 @@ func NewLoader(le *LoaderEngine, startDir, goos, goarch, goroot string, options 
 
 	l := &Loader{
 		StartDir:      startDir,
-		context:       &build.Default,
+		context:       build.Default,
 		filteredPaths: globs,
 		fs:            afero.NewReadOnlyFs(afero.NewOsFs()),
 		le:            le,
@@ -110,8 +110,8 @@ func NewLoader(le *LoaderEngine, startDir, goos, goarch, goroot string, options 
 		Error:    l.HandleTypeCheckerError,
 		Importer: &loaderImporter{l: l},
 	}
-	l.hash = calculateHashFromStrings(append([]string{goarch, goos}, l.Tags...)...)
-	l.unsafePath = filepath.Join(l.context.GOROOT, "src", "unsafe")
+	l.hash = calculateHashFromStrings(append([]string{goroot, goarch, goos}, l.Tags...)...)
+	l.unsafePath = filepath.Join(goroot, "src", "unsafe")
 
 	return l
 }
@@ -126,7 +126,7 @@ func (l *Loader) Errors(handleErrs func(file string, errs []FileError)) {
 			// will bubble up to the user, who will have no idea what the hash means.
 			errs := []FileError{
 				FileError{
-					Message: fmt.Sprintf("Failed to find node in caravan with hash 0x%x", hash),
+					Message: fmt.Sprintf("Failed to find node in caravan with hash 0x%016x", hash),
 					Warning: false,
 				},
 			}
@@ -149,9 +149,12 @@ func (l *Loader) calculateDistinctPackageHash(absPath string) collections.Hash {
 	return chash
 }
 
+// GetTags produces a string detailing the GOROOT, GOARCH, GOOS, and any tags
 func (l *Loader) GetTags() string {
 	var sb strings.Builder
 	sb.WriteRune('[')
+	sb.WriteString(l.context.GOROOT)
+	sb.WriteRune(',')
 	sb.WriteString(l.context.GOARCH)
 	sb.WriteRune(',')
 	sb.WriteString(l.context.GOOS)
@@ -183,7 +186,7 @@ func (l *Loader) areAllPackagesComplete() bool {
 	for chash := range l.distinctPackageHashSet {
 		n, ok := caravan.Find(chash)
 		if !ok {
-			fmt.Printf("loader.areAllPackagesComplete (%s): package hash 0x%x not found in caravan\n", l, chash)
+			fmt.Printf("loader.areAllPackagesComplete (%s): package hash 0x%016x not found in caravan\n", l, chash)
 			complete = false
 			break
 		}
@@ -214,16 +217,16 @@ func (l *Loader) checkPackage(dp *DistinctPackage) error {
 func (l *Loader) ensureDistinctPackage(absPath string) (*DistinctPackage, bool) {
 	chash := l.calculateDistinctPackageHash(absPath)
 	n, created := l.le.caravan.Ensure(chash, func() collections.Hasher {
-		l.Log.Debugf("ensureDistinctPackage: miss on hash 0x%x; creating package for '%s'.\n", chash, absPath)
+		l.Log.Debugf("ensureDistinctPackage: miss on hash 0x%016x; creating package for '%s'.\n", chash, absPath)
 
 		p, _ := l.le.ensurePackage(absPath)
 		return NewDistinctPackage(l, p)
 	})
 	dp := n.Element.(*DistinctPackage)
 
-	dp.m.Lock()
+	dp.Package.m.Lock()
 	dp.Package.loaders[l] = true
-	dp.m.Unlock()
+	dp.Package.m.Unlock()
 
 	l.m.Lock()
 	l.distinctPackageHashSet[chash] = true
