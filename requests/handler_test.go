@@ -8,6 +8,7 @@ import (
 	"strconv"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/object88/langd"
 	"github.com/object88/langd/health"
@@ -18,9 +19,9 @@ func Test_Handler_Created(t *testing.T) {
 	load := health.StartLoadMonitoring()
 	defer load.Close()
 
-	loader := langd.NewLoader()
+	le := langd.NewLoaderEngine()
 
-	h := NewHandler(load, loader)
+	h := NewHandler(load, le)
 	if h == nil {
 		t.Fatal("Failed to create Handler")
 	}
@@ -160,6 +161,8 @@ func Test_Handler_Inited_TextDocument_didOpen(t *testing.T) {
 		t.Errorf("RequestHandler is nil")
 	}
 
+	time.Sleep(1 * time.Second)
+
 	// Checking too soon; must be able to wait until we know that the request is processed.
 	rhID := <-h.incomingQueue
 
@@ -167,9 +170,9 @@ func Test_Handler_Inited_TextDocument_didOpen(t *testing.T) {
 		t.Errorf("Bad ID %d from incoming queue", rhID)
 	}
 
-	// if conn.calls["Reply"] != 1 {
-	// 	t.Errorf("Incorrect number of calls to Reply; expected 1, got %d\n%s", conn.calls["Reply"], conn.DumpCalls())
-	// }
+	if conn.calls["Notify"] != 1 {
+		t.Errorf("Incorrect number of calls to Notify; expected 1, got %d\n%s", conn.calls["Notify"], conn.DumpCalls())
+	}
 }
 
 func Test_Handler_Timing(t *testing.T) {
@@ -185,8 +188,8 @@ func Test_Handler_Timing(t *testing.T) {
 func setupHandler() (*MockConn, *Handler, func()) {
 	load := health.StartLoadMonitoring()
 
-	loader := langd.NewLoader()
-	h := NewHandler(load, loader)
+	le := langd.NewLoaderEngine()
+	h := NewHandler(load, le)
 	conn := NewMockConn()
 	h.SetConnection(conn)
 

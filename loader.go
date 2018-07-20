@@ -2,511 +2,349 @@ package langd
 
 import (
 	"fmt"
-	"go/ast"
-	"go/parser"
-	"go/token"
+	"go/build"
 	"go/types"
 	"io"
-	"io/ioutil"
 	"os"
-	"os/exec"
 	"path/filepath"
-	"strconv"
+	"sort"
 	"strings"
+	"sync"
+	"unicode/utf8"
 
+	"github.com/gobwas/glob"
 	"github.com/object88/langd/collections"
 	"github.com/object88/langd/log"
+	"github.com/pkg/errors"
+	"github.com/spf13/afero"
 )
 
-type stateChangeEvent struct {
-	lc   *LoaderContext
-	hash collections.Hash
-}
-
-// Loader is a Go code loader
+// Loader is the workspace-specific configuration and context for
+// building and type-checking
 type Loader struct {
-	closer chan bool
+	StartDir string
 
-	caravan     *collections.Caravan
-	openedFiles *OpenedFiles
-	packages    map[string]*Package
-
-	stateChange chan *stateChangeEvent
+	filteredPaths []glob.Glob
+	hash          collections.Hash
+	Tags          []string
 
 	Log *log.Log
+
+	le *LoaderEngine
+
+	fs afero.Fs
+
+	config     *types.Config
+	context    build.Context
+	unsafePath string
+
+	distinctPackageHashSet map[collections.Hash]bool
+
+	m sync.Mutex
+	c *sync.Cond
 }
 
-// NewLoader creates a new loader
-func NewLoader() *Loader {
+// LoaderOption provides a hook for NewLoader to set or modify
+// the new loader's build.Context
+type LoaderOption func(l *Loader)
+
+// NewLoader creates a new Loader
+func NewLoader(le *LoaderEngine, goos, goarch, goroot string, options ...LoaderOption) *Loader {
+	globs := make([]glob.Glob, 2)
+	globs[0] = glob.MustCompile(filepath.Join("**", ".*"))
+	globs[1] = glob.MustCompile(filepath.Join("**", "testdata"))
+
 	l := &Loader{
-		caravan:     collections.CreateCaravan(),
-		closer:      make(chan bool),
-		Log:         log.Stdout(),
-		openedFiles: NewOpenedFiles(),
-		packages:    map[string]*Package{},
-		stateChange: make(chan *stateChangeEvent),
+		StartDir:      "--",
+		context:       build.Default,
+		filteredPaths: globs,
+		fs:            afero.NewReadOnlyFs(afero.NewOsFs()),
+		le:            le,
+		distinctPackageHashSet: map[collections.Hash]bool{},
 	}
 
-	go func() {
-		stop := false
-		for !stop {
-			select {
-			case <-l.closer:
-				stop = true
-			case e := <-l.stateChange:
-				go l.processStateChange(e)
-			}
-		}
+	l.c = sync.NewCond(&l.m)
+	l.context.GOARCH = goarch
+	l.context.GOOS = goos
+	l.context.GOROOT = goroot
 
-		l.Log.Debugf("Start: ending anon go func\n")
-	}()
+	for _, opt := range options {
+		opt(l)
+	}
+
+	l.context.IsDir = func(path string) bool {
+		fi, err := l.fs.Stat(path)
+		return err == nil && fi.IsDir()
+	}
+	l.context.OpenFile = func(path string) (io.ReadCloser, error) {
+		f, err := l.fs.Open(path)
+		if err != nil {
+			return nil, err
+		}
+		return f, nil
+	}
+	l.context.ReadDir = func(dir string) ([]os.FileInfo, error) {
+		f, err := l.fs.Open(dir)
+		if err != nil {
+			return nil, err
+		}
+		list, err := f.Readdir(-1)
+		f.Close()
+		if err != nil {
+			return nil, err
+		}
+		sort.Slice(list, func(i, j int) bool { return list[i].Name() < list[j].Name() })
+
+		return list, nil
+	}
+
+	l.config = &types.Config{
+		Error:    l.HandleTypeCheckerError,
+		Importer: &loaderImporter{l: l},
+	}
+	l.hash = calculateHashFromStrings(append([]string{goroot, goarch, goos}, l.Tags...)...)
+	l.unsafePath = filepath.Join(goroot, "src", "unsafe")
 
 	return l
 }
 
-func (l *Loader) InvalidatePackage(absPath string) {
-	p, ok := l.packages[absPath]
-	if !ok {
-		fmt.Printf("No package at %s\n", absPath)
-		return
-	}
+// Errors exposes problems with code found during compilation on a file-by-file
+// basis.
+func (l *Loader) Errors(handleErrs func(file string, errs []FileError)) {
+	for hash := range l.distinctPackageHashSet {
+		n, ok := l.le.caravan.Find(hash)
+		if !ok {
+			// TODO: This is probably a poor way of handling this problem.  The error
+			// will bubble up to the user, who will have no idea what the hash means.
+			errs := []FileError{
+				FileError{
+					Message: fmt.Sprintf("Failed to find node in caravan with hash 0x%016x", hash),
+					Warning: false,
+				},
+			}
+			handleErrs("", errs)
+			continue
+		}
 
-	nodesMap := map[*collections.Node]bool{}
-	for lc := range p.loaderContexts {
-		n, _ := l.caravan.Find(lc.calculateDistinctPackageHash(absPath))
-		nodesMap[n] = true
-	}
-
-	nodes := make([]*collections.Node, len(nodesMap))
-	i := 0
-	for n := range nodesMap {
-		nodes[i] = n
-		i++
-	}
-
-	dps := flattenAscendants(true, nodes...)
-
-	fmt.Printf("Have %d distinct packages\n", len(dps))
-
-	for _, dp := range dps {
-		fmt.Printf("Invalidating %s\n", dp)
-		dp.Invalidate()
-		lc := dp.lc
-
-		l.stateChange <- &stateChangeEvent{
-			hash: dp.Hash(),
-			lc:   lc,
+		dp := n.Element.(*DistinctPackage)
+		for fname, f := range dp.files {
+			if len(f.errs) != 0 {
+				handleErrs(filepath.Join(dp.Package.AbsPath, fname), f.errs)
+			}
 		}
 	}
 }
 
-// Close stops the loader processing
-func (l *Loader) Close() error {
-	l.closer <- true
+func (l *Loader) calculateDistinctPackageHash(absPath string) collections.Hash {
+	phash := calculateHashFromString(absPath)
+	chash := combineHashes(phash, l.hash)
+	return chash
+}
+
+// GetTags produces a string detailing the GOROOT, GOARCH, GOOS, and any tags
+func (l *Loader) GetTags() string {
+	var sb strings.Builder
+	sb.WriteRune('[')
+	sb.WriteString(l.context.GOROOT)
+	sb.WriteRune(',')
+	sb.WriteString(l.context.GOARCH)
+	sb.WriteRune(',')
+	sb.WriteString(l.context.GOOS)
+	for _, v := range l.Tags {
+		sb.WriteRune(',')
+		sb.WriteString(v)
+	}
+	sb.WriteRune(']')
+	return sb.String()
+}
+
+func (l *Loader) areAllPackagesComplete() bool {
+	l.m.Lock()
+
+	if len(l.distinctPackageHashSet) == 0 {
+		// NOTE: this is a stopgap to address the problem where a loader context
+		// will report that all packages are loaded before any of them have been
+		// processed.  If we have a situation where a loader context is reading
+		// a directory structure where there are legitimately no packages, this
+		// will be a problem.
+		fmt.Printf("loader.areAllPackagesComplete (%s): have zero packages\n", l)
+		l.m.Unlock()
+		return false
+	}
+
+	complete := true
+
+	caravan := l.le.caravan
+	for chash := range l.distinctPackageHashSet {
+		n, ok := caravan.Find(chash)
+		if !ok {
+			fmt.Printf("loader.areAllPackagesComplete (%s): package hash 0x%016x not found in caravan\n", l, chash)
+			complete = false
+			break
+		}
+		dp := n.Element.(*DistinctPackage)
+		if !ok {
+			fmt.Printf("loader.areAllPackagesComplete (%s): distinct package for %s not found\n", l, dp)
+			complete = false
+			break
+		}
+		loadState := dp.loadState.get()
+		if loadState != done {
+			complete = false
+			break
+		}
+	}
+
+	l.m.Unlock()
+	return complete
+}
+
+func (l *Loader) checkPackage(dp *DistinctPackage) error {
+	l.m.Lock()
+	err := dp.check()
+	l.m.Unlock()
+	return err
+}
+
+func (l *Loader) ensureDistinctPackage(absPath string) (*DistinctPackage, bool) {
+	chash := l.calculateDistinctPackageHash(absPath)
+	n, created := l.le.caravan.Ensure(chash, func() collections.Hasher {
+		l.Log.Debugf("ensureDistinctPackage: miss on hash 0x%016x; creating package for '%s'.\n", chash, absPath)
+
+		p, _ := l.le.ensurePackage(absPath)
+		return NewDistinctPackage(l, p)
+	})
+	dp := n.Element.(*DistinctPackage)
+
+	dp.Package.m.Lock()
+	dp.Package.loaders[l] = true
+	dp.Package.m.Unlock()
+
+	l.m.Lock()
+	l.distinctPackageHashSet[chash] = true
+	l.m.Unlock()
+
+	return dp, created
+}
+
+// FindDistinctPackage will locate the distinct package at the provided path
+func (l *Loader) FindDistinctPackage(absPath string) (*DistinctPackage, error) {
+	chash := l.calculateDistinctPackageHash(absPath)
+	n, ok := l.le.caravan.Find(chash)
+	if !ok {
+		return nil, errors.Errorf("Loader does not have an entry for %s with tags %s", absPath, l.GetTags())
+	}
+	dp := n.Element.(*DistinctPackage)
+	return dp, nil
+}
+
+func (l *Loader) FindImportPath(dp *DistinctPackage, importPath string) (string, error) {
+	targetPath, err := l.findImportPath(importPath, dp.Package.AbsPath)
+	if err != nil {
+		err := errors.Wrap(err, fmt.Sprintf("Failed to find import %s", importPath))
+		return "", err
+	}
+	if targetPath == dp.Package.AbsPath {
+		l.Log.Debugf("Failed due to self-import\n")
+		return "", err
+	}
+
+	return targetPath, nil
+}
+
+// LoadDirectory adds the contents of a directory to the Loader
+func (l *Loader) LoadDirectory(startDir string) error {
+	if strings.HasPrefix(startDir, "file://") {
+		startDir = startDir[utf8.RuneCountInString("file://"):]
+	}
+	startDir, err := filepath.Abs(startDir)
+	if err != nil {
+		return errors.Wrapf(err, "Could not get absolute path for '%s'", startDir)
+	}
+
+	if !l.context.IsDir(startDir) {
+		return fmt.Errorf("Argument '%s' is not a directory", startDir)
+	}
+
+	l.StartDir = startDir
+	l.Log.Verbosef("Loader.LoadDirectory: reading dir '%s'\n", l.StartDir)
+	l.le.readDir(l, l.StartDir)
+
 	return nil
 }
 
-// ensurePackage will check for a package at the given path, and if one does
-// not exist, create it.
-func (l *Loader) ensurePackage(absPath string) (*Package, bool) {
-	p, ok := l.packages[absPath]
-	if !ok {
-		p = NewPackage(absPath)
-		l.packages[absPath] = p
-	}
-	return p, !ok
-}
-
-func (l *Loader) readDir(lc *LoaderContext, absPath string) {
-	if !lc.isAllowed(absPath) {
-		l.Log.Verbosef("readDir: directory '%s' is not allowed\n", absPath)
-		return
-	}
-
-	l.Log.Debugf("readDir: queueing '%s'...\n", absPath)
-
-	l.ensureDistinctPackage(lc, absPath)
-
-	fis, err := lc.ReadDir(absPath)
-	if err != nil {
-		panic(fmt.Sprintf("Dang:\n\t%s", err.Error()))
-	}
-	for _, fi := range fis {
-		// Ignore individual files
-		if !fi.IsDir() {
-			continue
-		}
-
-		if fi.Name() == "vendor" {
-			continue
-		}
-
-		l.readDir(lc, filepath.Join(absPath, fi.Name()))
-	}
-}
-
-func (l *Loader) processStateChange(sce *stateChangeEvent) {
-	n, _ := l.caravan.Find(sce.hash)
-	dp := n.Element.(*DistinctPackage)
-
-	loadState := dp.loadState.get()
-
-	l.Log.Debugf("PSC: %s: current state: %d\n", dp, loadState)
-
-	switch loadState {
-	case queued:
-		l.processDirectory(sce.lc, dp)
-
-		dp.loadState.increment()
-		dp.c.Broadcast()
-		l.stateChange <- sce
-	case unloaded:
-		importPaths := map[string]bool{}
-		haveGo := l.processGoFiles(sce.lc, dp, importPaths)
-		haveCgo := l.processCgoFiles(sce.lc, dp, importPaths)
-		if haveGo || haveCgo {
-			imports := importPathMapToArray(importPaths)
-			l.processPackages(sce.lc, dp, imports, false)
-			l.processComplete(sce.lc, dp)
-		}
-
-		dp.loadState.increment()
-		dp.c.Broadcast()
-		l.stateChange <- sce
-	case loadedGo:
-		importPaths := map[string]bool{}
-		haveTestGo := l.processTestGoFiles(sce.lc, dp, importPaths)
-		if haveTestGo {
-			imports := importPathMapToArray(importPaths)
-			l.processPackages(sce.lc, dp, imports, true)
-			l.processComplete(sce.lc, dp)
-		}
-
-		dp.loadState.increment()
-		dp.c.Broadcast()
-		l.stateChange <- sce
-	case loadedTest:
-		// Short circuiting directly to next state.  Will add external test
-		// packages later.
-
-		dp.loadState.increment()
-		dp.c.Broadcast()
-		l.stateChange <- sce
-	case done:
-		if sce.lc.areAllPackagesComplete() {
-			l.Log.Debugf("All packages are loaded\n")
-			sce.lc.Signal()
-		}
-	}
-}
-
-func importPathMapToArray(imports map[string]bool) []string {
-	results := make([]string, len(imports))
-	i := 0
-	for k := range imports {
-		results[i] = k
-		i++
-	}
-	return results
-}
-
-func (l *Loader) processComplete(lc *LoaderContext, dp *DistinctPackage) {
-	if lc.isUnsafe(dp) {
-		l.Log.Debugf(" PC: %s: Checking unsafe (skipping)\n", dp)
-		return
-	}
-
-	err := lc.checkPackage(dp)
-	if err != nil {
-		l.Log.Debugf(" PC: %s: Error while checking %s:\n\t%s\n\n", dp, dp.Package.AbsPath, err.Error())
-	}
-}
-
-func (l *Loader) processDirectory(lc *LoaderContext, dp *DistinctPackage) {
-	if lc.isUnsafe(dp) {
-		l.Log.Debugf("*** Loading `%s`, replacing with types.Unsafe\n", dp)
-		dp.typesPkg = types.Unsafe
-
-		l.caravan.Insert(dp)
-	} else {
-		err := dp.generateBuildPackage()
-		if err != nil {
-			l.Log.Debugf("importBuildPackage: %s\n", err.Error())
-		}
-	}
-}
-
-func (l *Loader) processGoFiles(lc *LoaderContext, dp *DistinctPackage, importPaths map[string]bool) bool {
-	if lc.isUnsafe(dp) || dp.buildPkg == nil {
-		return false
-	}
-
-	fnames := dp.buildPkg.GoFiles
-	if len(fnames) == 0 {
-		return false
-	}
-
-	for _, fname := range fnames {
-		fpath := filepath.Join(dp.Package.AbsPath, fname)
-		l.processFile(lc, dp, fname, fpath, fpath, importPaths)
-	}
-
-	return true
-}
-
-func (l *Loader) processCgoFiles(lc *LoaderContext, dp *DistinctPackage, importPaths map[string]bool) bool {
-	if lc.isUnsafe(dp) || dp.buildPkg == nil {
-		return false
-	}
-
-	fnames := dp.buildPkg.CgoFiles
-	if len(fnames) == 0 {
-		return false
-	}
-
-	cgoCPPFLAGS, _, _, _ := cflags(dp.buildPkg, true)
-	_, cgoexeCFLAGS, _, _ := cflags(dp.buildPkg, false)
-
-	if len(dp.buildPkg.CgoPkgConfig) > 0 {
-		pcCFLAGS, err := pkgConfigFlags(dp.buildPkg)
-		if err != nil {
-			l.Log.Debugf("CGO: %s: Failed to get flags: %s\n", dp, err.Error())
-			return false
-		}
-		cgoCPPFLAGS = append(cgoCPPFLAGS, pcCFLAGS...)
-	}
-
-	fpaths := make([]string, len(fnames))
-	for k, v := range fnames {
-		fpaths[k] = filepath.Join(dp.Package.AbsPath, v)
-	}
-
-	tmpdir, _ := ioutil.TempDir("", strings.Replace(dp.Package.AbsPath, "/", "_", -1)+"_C")
-	var files, displayFiles []string
-
-	// _cgo_gotypes.go (displayed "C") contains the type definitions.
-	files = append(files, filepath.Join(tmpdir, "_cgo_gotypes.go"))
-	displayFiles = append(displayFiles, "C")
-	for _, fname := range fnames {
-		// "foo.cgo1.go" (displayed "foo.go") is the processed Go source.
-		f := cgoRe.ReplaceAllString(fname[:len(fname)-len("go")], "_")
-		files = append(files, filepath.Join(tmpdir, f+"cgo1.go"))
-		displayFiles = append(displayFiles, fname)
-	}
-
-	var cgoflags []string
-	if dp.buildPkg.Goroot && dp.buildPkg.ImportPath == "runtime/cgo" {
-		cgoflags = append(cgoflags, "-import_runtime_cgo=false")
-	}
-	if dp.buildPkg.Goroot && dp.buildPkg.ImportPath == "runtime/race" || dp.buildPkg.ImportPath == "runtime/cgo" {
-		cgoflags = append(cgoflags, "-import_syscall=false")
-	}
-
-	args := []string{
-		"tool",
-		"cgo",
-		"-objdir",
-		tmpdir,
-	}
-	for _, f := range cgoflags {
-		args = append(args, f)
-	}
-	args = append(args, "--")
-	args = append(args, "-I")
-	args = append(args, tmpdir)
-	for _, v := range cgoCPPFLAGS {
-		args = append(args, v)
-	}
-	for _, v := range cgoexeCFLAGS {
-		args = append(args, v)
-	}
-	for _, f := range fnames {
-		args = append(args, f)
-	}
-
-	cmd := exec.Command("go", args...)
-	cmd.Dir = dp.Package.AbsPath
-	cmd.Stdout = os.Stdout // os.Stderr
-	cmd.Stderr = os.Stdout // os.Stderr
-	if err := cmd.Run(); err != nil {
-		l.Log.Debugf("CGO: %s: ERROR: cgo failed: %s\n\t%s\n", dp, args, err.Error())
-		return false
-	}
-
-	for i, fpath := range files {
-		fname := filepath.Base(fpath)
-		l.processFile(lc, dp, fname, fpath, displayFiles[i], importPaths)
-	}
-	l.Log.Debugf("CGO: %s: Done processing\n", dp)
-
-	return true
-}
-
-func (l *Loader) processTestGoFiles(lc *LoaderContext, dp *DistinctPackage, importPaths map[string]bool) bool {
-	if lc.isUnsafe(dp) || dp.buildPkg == nil {
-		return false
-	}
-
-	// If we are in vendor; exclude test files.  It is possible for imports to
-	// contain references for packages which are not available.  May want to
-	// revisit this later; loading as much as possible for completion sake,
-	// but not reporting them as complete errors.
-	for _, part := range strings.Split(dp.Package.AbsPath, string(filepath.Separator)) {
-		if part == "vendor" {
+func (l *Loader) isAllowed(absPath string) bool {
+	for _, g := range l.filteredPaths {
+		if g.Match(absPath) {
+			// We are looking at a filtered out path.
 			return false
 		}
 	}
 
-	fnames := dp.buildPkg.TestGoFiles
-	if len(fnames) == 0 {
-		// No test files; continue on.
-		return false
-	}
-
-	l.Log.Debugf("TFG: %s: processing %d test Go files\n", dp, len(fnames))
-	for _, fname := range fnames {
-		fpath := filepath.Join(dp.Package.AbsPath, fname)
-		l.processFile(lc, dp, fname, fpath, fpath, importPaths)
-	}
-
-	l.Log.Debugf("TFG: %s: processing complete\n", dp)
 	return true
 }
 
-func (l *Loader) processFile(lc *LoaderContext, dp *DistinctPackage, fname, fpath, displayPath string, importPaths map[string]bool) {
-	r, ok := l.getFileReader(lc, fpath)
-	if !ok {
-		return
-	}
-
-	hash := calculateHash(r)
-	if s, ok := r.(io.Seeker); ok {
-		s.Seek(0, io.SeekStart)
-	} else {
-		if c, ok := r.(io.Closer); ok {
-			c.Close()
-		}
-		r, _ = l.getFileReader(lc, fpath)
-	}
-
-	astf, err := parser.ParseFile(dp.Package.Fset, displayPath, r, parser.AllErrors)
-
-	if c, ok := r.(io.Closer); ok {
-		c.Close()
-	}
-
-	if err != nil {
-		l.Log.Debugf("ERROR: While parsing %s:\n\t%s\n", fpath, err.Error())
-	}
-
-	l.findImportPathsFromAst(astf, importPaths)
-
-	dp.Package.m.Lock()
-	dp.Package.fileHashes[fname] = hash
-	dp.Package.m.Unlock()
-
-	dp.files[fname] = &File{
-		errs: []FileError{},
-		file: astf,
-	}
+// isUnsafe returns whether the provided package represents the `unsafe`
+// package for the loader context
+func (l *Loader) isUnsafe(dp *DistinctPackage) bool {
+	return l.unsafePath == dp.Package.AbsPath
 }
 
-func (l *Loader) processPackages(lc *LoaderContext, dp *DistinctPackage, importPaths []string, testing bool) {
-	loadState := dp.loadState.get()
-	l.Log.Debugf(" PP: %s: %d: started\n", dp, loadState)
+func (l *Loader) Signal() {
+	l.c.Broadcast()
+}
 
-	importedPackages := map[string]bool{}
-
-	for _, importPath := range importPaths {
-		targetPath, err := lc.FindImportPath(dp, importPath)
-		if err != nil {
-			l.Log.Debugf(" PP: %s: %d: %s\n\t%s\n", dp, loadState, err.Error())
-			continue
-		}
-		l.ensureDistinctPackage(lc, targetPath)
-
-		importedPackages[targetPath] = true
+// Wait blocks until all packages have been loaded
+func (l *Loader) Wait() {
+	if l.areAllPackagesComplete() {
+		return
 	}
+	l.c.L.Lock()
+	l.c.Wait()
+	l.c.L.Unlock()
+}
 
-	// TEMPORARY
-	func() {
-		imprts := []string{}
-		for importedPackage := range importedPackages {
-			if targetDp, err := lc.FindDistinctPackage(importedPackage); err != nil {
-				continue
-			} else {
-				imprts = append(imprts, targetDp.String())
-			}
-		}
-		allImprts := strings.Join(imprts, ", ")
-		l.Log.Debugf(" PP: %s: %d: -> %s\n", dp, loadState, allImprts)
-	}()
+// String is the implementation of fmt.Stringer
+func (l *Loader) String() string {
+	return fmt.Sprintf("%s %s", l.StartDir, l.GetTags())
+}
 
-	for importPath := range importedPackages {
-		targetDp, err := lc.FindDistinctPackage(importPath)
+// HandleTypeCheckerError is invoked from the types.Checker when it encounters
+// errors
+func (l *Loader) HandleTypeCheckerError(e error) {
+	if terror, ok := e.(types.Error); ok {
+		position := terror.Fset.Position(terror.Pos)
+		absPath := filepath.Dir(position.Filename)
+		dp, err := l.FindDistinctPackage(absPath)
 		if err != nil {
-			l.Log.Debugf(" PP: %s: %d: import path is missing: %s\n", dp, loadState, importPath)
-			continue
+			l.Log.Debugf("ERROR: (missing) No package for %s\n\t%s\n", absPath, err.Error())
+			return
 		}
 
-		targetDp.WaitUntilReady(loadState)
+		baseFilename := filepath.Base(position.Filename)
+		ferr := FileError{
+			Position: position,
+			Message:  terror.Msg,
+			Warning:  terror.Soft,
+		}
 
-		if testing {
-			err = l.caravan.WeakConnect(dp, targetDp)
+		f, ok := dp.files[baseFilename]
+		if !ok {
+			l.Log.Debugf("ERROR: (missing file) %s\n", position.Filename)
 		} else {
-			err = l.caravan.Connect(dp, targetDp)
-		}
-
-		if err != nil {
-			panic(fmt.Sprintf(" PP: %s: %d: [weak] connect failed:\n\tfrom: %s\n\tto: %s\n\terr: %s\n\n", dp, loadState, dp, targetDp, err.Error()))
-		}
-	}
-	// All dependencies are loaded; can proceed.
-	l.Log.Debugf(" PP: %s: %d: all imports fulfilled.\n", dp, loadState)
-}
-
-func (l *Loader) ensureDistinctPackage(lc *LoaderContext, absPath string) {
-	dp, created := lc.ensureDistinctPackage(absPath)
-
-	if created {
-		l.stateChange <- &stateChangeEvent{
-			lc:   lc,
-			hash: dp.Hash(),
-		}
-	}
-}
-
-func (l *Loader) findImportPathsFromAst(astf *ast.File, importPaths map[string]bool) {
-	for _, decl := range astf.Decls {
-		decl, ok := decl.(*ast.GenDecl)
-		if !ok || decl.Tok != token.IMPORT {
-			continue
-		}
-
-		for _, spec := range decl.Specs {
-			spec := spec.(*ast.ImportSpec)
-
-			path, err := strconv.Unquote(spec.Path.Value)
-			if err != nil || path == "C" {
-				// Ignore any error and skip the C pseudo package
-				continue
-			}
-
-			importPaths[path] = true
-		}
-	}
-}
-
-func (l *Loader) getFileReader(lc *LoaderContext, absFilepath string) (io.Reader, bool) {
-	var r io.Reader
-	if of, err := l.openedFiles.Get(absFilepath); err != nil {
-		r = lc.OpenFile(absFilepath)
-		if r == nil {
-			return nil, false
+			f.errs = append(f.errs, ferr)
+			l.Log.Debugf("ERROR: (types error) %s\n", terror.Error())
 		}
 	} else {
-		r = of.NewReader()
+		l.Log.Debugf("ERROR: (unknown) %#v\n", e)
 	}
+}
 
-	return r, true
+func (l *Loader) findImportPath(path, src string) (string, error) {
+	buildPkg, err := l.context.Import(path, src, build.FindOnly)
+	if err != nil {
+		msg := fmt.Sprintf("Failed to find import path:\n\tAttempted build.Import('%s', '%s', build.FindOnly)", path, src)
+		return "", errors.Wrap(err, msg)
+	}
+	return buildPkg.Dir, nil
 }

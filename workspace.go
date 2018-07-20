@@ -16,8 +16,8 @@ import (
 
 // Workspace is a mass of code
 type Workspace struct {
-	Loader        *Loader
-	LoaderContext *LoaderContext
+	LoaderEngine *LoaderEngine
+	Loader       *Loader
 
 	log *log.Log
 
@@ -25,24 +25,24 @@ type Workspace struct {
 }
 
 // CreateWorkspace returns a new instance of the Workspace struct
-func CreateWorkspace(loader *Loader, log *log.Log) *Workspace {
+func CreateWorkspace(le *LoaderEngine, log *log.Log) *Workspace {
 	return &Workspace{
-		Loader:   loader,
-		log:      log,
-		settings: viper.New(),
+		LoaderEngine: le,
+		log:          log,
+		settings:     viper.New(),
 	}
 }
 
-// AssignLoaderContext attaches the new loader context to the workspace.  The
+// AssignLoader attaches the new loader context to the workspace.  The
 // workspace should start to reload the packages.
-func (w *Workspace) AssignLoaderContext(lc *LoaderContext) {
-	w.LoaderContext = lc
+func (w *Workspace) AssignLoader(l *Loader) {
+	w.Loader = l
 	// TODO: reload packages
 }
 
 // ChangeFile applies changes to an opened file
 func (w *Workspace) ChangeFile(absFilepath string, startLine, startCharacter, endLine, endCharacter int, text string) error {
-	buf, err := w.Loader.openedFiles.Get(absFilepath)
+	buf, err := w.LoaderEngine.openedFiles.Get(absFilepath)
 	if err != nil {
 		return err
 	}
@@ -67,14 +67,14 @@ func (w *Workspace) ChangeFile(absFilepath string, startLine, startCharacter, en
 		return errors.Wrap(err, "ChangeFile: failed to alter the file buffer")
 	}
 
-	w.Loader.InvalidatePackage(filepath.Dir(absFilepath))
+	w.LoaderEngine.InvalidatePackage(filepath.Dir(absFilepath))
 
 	return nil
 }
 
 // CloseFile will take a file out of the OpenedFiles struct and reparse
 func (w *Workspace) CloseFile(absPath string) error {
-	if err := w.Loader.openedFiles.Close(absPath); err != nil {
+	if err := w.LoaderEngine.openedFiles.Close(absPath); err != nil {
 		w.log.Warnf(err.Error())
 	}
 
@@ -257,7 +257,7 @@ func (w *Workspace) getVarType(sb *strings.Builder, v *types.Var) {
 		case *types.Basic:
 			sb.WriteString(getBasicType(t))
 		case *types.Named:
-			dpkg, err := w.LoaderContext.FindDistinctPackage(t.Obj().Pkg().Path())
+			dpkg, err := w.Loader.FindDistinctPackage(t.Obj().Pkg().Path())
 			if err != nil {
 				sb.WriteString("error")
 			} else {
@@ -321,7 +321,7 @@ func getConstType(o *types.Const) string {
 func (w *Workspace) LocateIdent(p *token.Position) (*ast.Ident, error) {
 	absPath := filepath.Dir(p.Filename)
 
-	dpkg, err := w.LoaderContext.FindDistinctPackage(absPath)
+	dpkg, err := w.Loader.FindDistinctPackage(absPath)
 	if err != nil {
 		return nil, errors.Wrapf(err, "No package loaded for '%s'", p.Filename)
 	}
@@ -408,12 +408,12 @@ func (w *Workspace) LocateReferences(p *token.Position) []token.Position {
 func (w *Workspace) OpenFile(absFilepath, text string) error {
 	hash := calculateHashFromString(text)
 
-	if err := w.Loader.openedFiles.EnsureOpened(absFilepath, text); err != nil {
+	if err := w.LoaderEngine.openedFiles.EnsureOpened(absFilepath, text); err != nil {
 		return errors.Wrap(err, "From OpenFile")
 	}
 
 	absPath := filepath.Dir(absFilepath)
-	dp, err := w.LoaderContext.FindDistinctPackage(absPath)
+	dp, err := w.Loader.FindDistinctPackage(absPath)
 	if err != nil {
 		return errors.Wrapf(err, "Failed to find package for %s", absPath)
 	}
@@ -423,7 +423,7 @@ func (w *Workspace) OpenFile(absFilepath, text string) error {
 		return nil
 	}
 
-	w.Loader.InvalidatePackage(absPath)
+	w.LoaderEngine.InvalidatePackage(absPath)
 
 	w.log.Debugf("Shadowed file '%s'\n", absFilepath)
 
@@ -432,12 +432,12 @@ func (w *Workspace) OpenFile(absFilepath, text string) error {
 
 // ReplaceFile replaces the entire contents of an opened file
 func (w *Workspace) ReplaceFile(absFilepath, text string) error {
-	if err := w.Loader.openedFiles.Replace(absFilepath, text); err != nil {
+	if err := w.LoaderEngine.openedFiles.Replace(absFilepath, text); err != nil {
 		return err
 	}
 
 	absPath := filepath.Dir(absFilepath)
-	w.Loader.InvalidatePackage(absPath)
+	w.LoaderEngine.InvalidatePackage(absPath)
 
 	return nil
 }
@@ -445,7 +445,7 @@ func (w *Workspace) ReplaceFile(absFilepath, text string) error {
 func (w *Workspace) locateDeclaration(p *token.Position) (types.Object, *DistinctPackage, error) {
 	absPath := filepath.Dir(p.Filename)
 
-	dpkg, err := w.LoaderContext.FindDistinctPackage(absPath)
+	dpkg, err := w.Loader.FindDistinctPackage(absPath)
 	if err != nil {
 		return nil, nil, errors.Wrapf(err, "No package loaded for '%s'", p.Filename)
 	}
@@ -555,7 +555,7 @@ func (w *Workspace) processSelectorExpr(v *ast.SelectorExpr, dpkg *DistinctPacka
 			fmt.Printf("Workspace.processSelectorExpr: Have PkgName %s, type %s\n", v1.Name(), v1.Type())
 			absPath := v1.Imported().Path()
 
-			dpkg1, err := w.LoaderContext.FindDistinctPackage(absPath)
+			dpkg1, err := w.Loader.FindDistinctPackage(absPath)
 			if err != nil {
 				return nil, nil, errors.Wrapf(err, "Workspace.processSelectorExpr: Failed to find distinct package mentioned in %s", v1)
 			}
@@ -569,7 +569,7 @@ func (w *Workspace) processSelectorExpr(v *ast.SelectorExpr, dpkg *DistinctPacka
 		case *types.Var:
 			fmt.Printf("Workspace.processSelectorExpr: Have Var %s, type %s\n\tv1: %#v\n\tv1.Sel: %#v\n", v1.Name(), v1.Type(), v1, v.Sel)
 			vSelObj := dpkg.checker.ObjectOf(v.Sel)
-			dpkg1, err := w.LoaderContext.FindDistinctPackage(vSelObj.Pkg().Path())
+			dpkg1, err := w.Loader.FindDistinctPackage(vSelObj.Pkg().Path())
 			if err != nil {
 				return nil, nil, errors.Wrapf(err, "Workspace.processSelectorExpr: Unknown package referenced in types.Var %s", v1)
 			}
@@ -580,7 +580,7 @@ func (w *Workspace) processSelectorExpr(v *ast.SelectorExpr, dpkg *DistinctPacka
 		if vSelObj == nil {
 			return nil, nil, errors.Errorf("Workspace.processSelectorExpr: Failed to find object for ast.SelectorExpr %s", v.Sel)
 		}
-		dpkg1, err := w.LoaderContext.FindDistinctPackage(vSelObj.Pkg().Path())
+		dpkg1, err := w.Loader.FindDistinctPackage(vSelObj.Pkg().Path())
 		if err != nil {
 			return nil, nil, errors.Wrapf(err, "Workspace.processSelectorExpr: Unknown package referenced in ast.SelectorExpr %s", v.Sel)
 		}

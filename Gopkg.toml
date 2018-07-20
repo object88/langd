@@ -26,6 +26,10 @@
   name = "github.com/golang/protobuf"
 
 [[constraint]]
+  name = "github.com/google/uuid"
+  version = "0.2"
+
+[[constraint]]
   branch = "master"
   name = "github.com/sourcegraph/jsonrpc2"
 
@@ -39,7 +43,7 @@
 
 [[constraint]]
   name = "google.golang.org/grpc"
-  version = "1.10.0"
+  version = "1.13.0"
 
 [[constraint]]
   name = "github.com/gobwas/glob"
@@ -50,8 +54,12 @@
   name = "github.com/dgryski/go-mph"
 
 [[constraint]]
+  name = "github.com/spf13/afero"
+  version = "1.1.1"
+
+[[constraint]]
   name = "github.com/spf13/viper"
-  version = "1.0.0"
+  version = "1.0.2"
 
 [[constraint]]
   name = "github.com/cloudfoundry/gosigar"
@@ -60,3 +68,7 @@
 [[constraint]]
   name = "github.com/pkg/errors"
   version = "0.8.0"
+
+[[constraint]]
+  name = "github.com/OneOfOne/xxhash"
+  version = "1.2.2"

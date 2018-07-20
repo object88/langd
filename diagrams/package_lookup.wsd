@@ -1,6 +1,6 @@
 @startuml Package lookup
 
-participant loader
+participant loaderEngine
 
 participant caravan
 
@@ -12,7 +12,7 @@ collections distincts
 
 participant DistinctPackage
 
-loader -> caravan : "ensure(abspath, os, arch)"
+loaderEngine -> caravan : "ensure(abspath, os, arch)"
 
 activate caravan
 
@@ -62,6 +62,6 @@ end
 
 deactivate caravan
 
-loader <-- caravan : package
+loaderEngine <-- caravan : package
 
 @enduml

@@ -5,8 +5,8 @@ entity SocketHandler
 entity Handler << jsonrpc2.Handler >>
 participant Conn << jsonrpc2.Conn >>
 participant Workspace
+participant LoaderEngine
 participant Loader
-participant LoaderContext
 
 Client -> SocketHandler : 
 

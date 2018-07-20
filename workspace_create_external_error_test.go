@@ -1,6 +1,9 @@
 package langd
 
-import "testing"
+import (
+	"path/filepath"
+	"testing"
+)
 
 func Test_Workspace_Change_Creates_Error(t *testing.T) {
 	src1 := `package foo
@@ -13,26 +16,24 @@ func Test_Workspace_Change_Creates_Error(t *testing.T) {
 		return foo.Foof
 	}`
 
-	packages := map[string]map[string]string{
-		"foo": map[string]string{
-			"foo.go": src1,
-		},
-		"bar": map[string]string{
-			"bar.go": src2,
-		},
-	}
+	rootPath, overlayFs := createOverlay(map[string]string{
+		filepath.Join("foo", "foo.go"): src1,
+		filepath.Join("bar", "bar.go"): src2,
+	})
+	barPath := filepath.Join(rootPath, "bar")
+	fooGoPath := filepath.Join(rootPath, "foo", "foo.go")
 
-	w, lc, closer := workspaceSetup(t, "/go/src/bar", packages, false)
+	w, closer := workspaceSetup(t, barPath, overlayFs, false)
 	defer closer()
 
-	w.OpenFile("/go/src/foo/foo.go", src1)
-	lc.Wait()
+	w.OpenFile(fooGoPath, src1)
+	w.Loader.Wait()
 
-	w.ChangeFile("/go/src/foo/foo.go", 1, 5, 1, 9, "FOOF")
-	lc.Wait()
+	w.ChangeFile(fooGoPath, 1, 5, 1, 9, "FOOF")
+	w.Loader.Wait()
 
 	errCount := 0
-	w.LoaderContext.Errors(func(file string, errs []FileError) {
+	w.Loader.Errors(func(file string, errs []FileError) {
 		errCount += len(errs)
 	})
 
@@ -60,29 +61,25 @@ func Test_Workspace_Change_Creates_Error_Indirect(t *testing.T) {
 		return b.F.Add()
 	}`
 
-	packages := map[string]map[string]string{
-		"foo": map[string]string{
-			"foo.go": src1,
-		},
-		"bar": map[string]string{
-			"bar.go": src2,
-		},
-		"baz": map[string]string{
-			"baz.go": src3,
-		},
-	}
+	rootPath, overlayFs := createOverlay(map[string]string{
+		filepath.Join("foo", "foo.go"): src1,
+		filepath.Join("bar", "bar.go"): src2,
+		filepath.Join("baz", "baz.go"): src3,
+	})
+	bazPath := filepath.Join(rootPath, "baz")
+	fooGoPath := filepath.Join(rootPath, "foo", "foo.go")
 
-	w, lc, closer := workspaceSetup(t, "/go/src/baz", packages, false)
+	w, closer := workspaceSetup(t, bazPath, overlayFs, false)
 	defer closer()
 
-	w.OpenFile("/go/src/foo/foo.go", src1)
-	lc.Wait()
+	w.OpenFile(fooGoPath, src1)
+	w.Loader.Wait()
 
-	w.ChangeFile("/go/src/foo/foo.go", 2, 15, 2, 18, "Inc")
-	lc.Wait()
+	w.ChangeFile(fooGoPath, 2, 15, 2, 18, "Inc")
+	w.Loader.Wait()
 
 	errCount := 0
-	w.LoaderContext.Errors(func(file string, errs []FileError) {
+	w.Loader.Errors(func(file string, errs []FileError) {
 		errCount += len(errs)
 	})
 
